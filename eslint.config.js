@@ -50,6 +50,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/web/components/ui/**'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
     files: ['src/lib/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', {
