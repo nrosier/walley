@@ -1,0 +1,31 @@
+{
+  "name": "walley",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "npm run dev:web",
+    "dev:web": "vite",
+    "build": "npm run clean && npm run build:server && npm run build:web",
+    "build:server": "tsc -p src/server/tsconfig.build.json",
+    "build:web": "vite build",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/lib && tsc --noEmit -p src/server && tsc --noEmit -p src/web"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  }
+}
