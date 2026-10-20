@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(!.env.example)",
+      "Read(*.db)",
+      "Read(*.db-journal)",
+      "Read(*.db-wal)",
+      "Read(/data/**)",
+      "Read(node_modules/**)",
+      "Read(coverage/**)"
+    ]
+  }
+}

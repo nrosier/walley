@@ -8,3 +8,4 @@ coverage
 *.db-journal
 *.db-wal
 data/
+.claude/worktrees/
