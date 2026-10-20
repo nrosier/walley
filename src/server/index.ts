@@ -1,2 +1,11 @@
-// Issues #5 and #9 complete this entry point (Fastify app and typed config).
-export {};
+import { buildApp } from './app.js';
+
+async function main(): Promise<void> {
+  const app = buildApp({ logger: true });
+  await app.listen({ port: 3000, host: '127.0.0.1' });
+}
+
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
