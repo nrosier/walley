@@ -52,6 +52,8 @@ Copy `.env.example` to `.env` and set the values below. Walley refuses to start 
 | --- | --- | --- | --- |
 | `APP_SECRET` | Yes | none | Master key for deriving per-user encryption keys. Use at least 32 random characters. |
 | `DATABASE_PATH` | Yes | none | Path to the SQLite file, for example `./data/walley.db` |
+| `PORT` | No | `3000` | Port to listen on, an integer from 1 to 65535 |
+| `HOST` | No | `127.0.0.1` | Address to bind. Docker deployments set `0.0.0.0` in compose. |
 | `ALLOW_REGISTRATION` | No | `false` | Set to `true` to allow new accounts. In local mode this opens the register form. In OIDC mode it lets a first single sign-on create an account. |
 | `OIDC_ISSUER` | All four or none | none | OIDC issuer URL. Setting all four OIDC variables turns on OIDC mode and turns off password login. |
 | `OIDC_CLIENT_ID` | All four or none | none | OIDC client ID |
