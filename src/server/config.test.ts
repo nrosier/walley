@@ -195,3 +195,16 @@ describe('secret hygiene', () => {
     expect(typeof config.appSecret).toBe('string');
   });
 });
+
+describe('loadConfig serveWeb', () => {
+  it('is true only for NODE_ENV exactly production', () => {
+    expect(loadConfig({ ...base, NODE_ENV: 'production' }).serveWeb).toBe(true);
+  });
+
+  it.each([undefined, 'development', 'test', 'Production', 'production ', ''])(
+    'is false for NODE_ENV %j',
+    (value) => {
+      expect(loadConfig({ ...base, NODE_ENV: value }).serveWeb).toBe(false);
+    },
+  );
+});

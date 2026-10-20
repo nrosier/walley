@@ -11,6 +11,7 @@ interface BaseConfig {
   readonly appSecret: string;
   readonly databasePath: string;
   readonly allowRegistration: boolean;
+  readonly serveWeb: boolean;
   readonly port: number;
   readonly host: string;
 }
@@ -113,6 +114,8 @@ export function loadConfig(env: Env): AppConfig {
     }
   }
 
+  const serveWeb = env['NODE_ENV'] === 'production';
+
   const oidcValues = OIDC_NAMES.map((name) => present(env, name));
   const missingOidc = OIDC_NAMES.filter((_, index) => oidcValues[index] === undefined);
   let oidc: OidcConfig | null = null;
@@ -143,7 +146,14 @@ export function loadConfig(env: Env): AppConfig {
     throw new ConfigError(problems);
   }
 
-  const base: BaseConfig = { appSecret, databasePath, allowRegistration, port, host };
+  const base: BaseConfig = {
+    appSecret,
+    databasePath,
+    allowRegistration,
+    serveWeb,
+    port,
+    host,
+  };
   hide(base, 'appSecret');
 
   if (oidc === null) {
