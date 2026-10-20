@@ -46,19 +46,28 @@ The dev server starts the Fastify backend and the Vite frontend. Open the URL th
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set the values below. Walley refuses to start if a required variable is missing, or if `APP_SECRET` is shorter than 32 characters.
+Copy `.env.example` to `.env` and set the values below. Walley refuses to start if a required variable is missing, if `APP_SECRET` is shorter than 32 characters, or if only some of the four OIDC variables are set.
 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `APP_SECRET` | Yes | none | Master key for deriving per-user encryption keys. Use at least 32 random characters. |
 | `DATABASE_PATH` | Yes | none | Path to the SQLite file, for example `./data/walley.db` |
-| `ALLOW_REGISTRATION` | No | `false` | Set to `true` to let people create local accounts |
-| `OIDC_ISSUER` | No | none | OIDC issuer URL, to enable single sign-on |
-| `OIDC_CLIENT_ID` | No | none | OIDC client ID |
-| `OIDC_CLIENT_SECRET` | No | none | OIDC client secret |
-| `OIDC_CALLBACK_URL` | No | none | OIDC callback URL registered with your identity provider |
+| `ALLOW_REGISTRATION` | No | `false` | Set to `true` to allow new accounts. In local mode this opens the register form. In OIDC mode it lets a first single sign-on create an account. |
+| `OIDC_ISSUER` | All four or none | none | OIDC issuer URL. Setting all four OIDC variables turns on OIDC mode and turns off password login. |
+| `OIDC_CLIENT_ID` | All four or none | none | OIDC client ID |
+| `OIDC_CLIENT_SECRET` | All four or none | none | OIDC client secret |
+| `OIDC_CALLBACK_URL` | All four or none | none | OIDC callback URL registered with your identity provider |
 
-Registration is off by default. Turn it on only for an instance you trust.
+### Sign-in modes
+
+Walley uses one of two sign-in modes, depending on the OIDC variables.
+
+- **Local mode** (no OIDC variables set): people sign in with an email and password. New accounts can register only when `ALLOW_REGISTRATION` is `true`.
+- **OIDC mode** (all four OIDC variables set): single sign-on is the only way in. Password login, registration and password change are turned off. A first sign-on creates a new account only when `ALLOW_REGISTRATION` is `true`.
+
+Registration is off by default. Turn it on only for an instance you trust, or to create the first account and then turn it off again.
+
+**Moving from local mode to OIDC mode.** An existing account is linked on its first single sign-on if your identity provider reports the same email address as verified. The account keeps its saved connections and matches. Accounts that are not linked cannot sign in until the email addresses match. Password sessions end when Walley restarts in OIDC mode.
 
 ### Generating `APP_SECRET`
 
@@ -79,7 +88,7 @@ Your credentials are encrypted before they are stored. They are never sent back 
 
 ## Security
 
-- Passwords are hashed with Argon2id.
+- Local passwords are hashed with Argon2id. In OIDC mode, password login, registration and password change are turned off.
 - Wallos API keys, Actual Budget passwords and sync keys are encrypted with AES-256-GCM. Each user's key is derived from `APP_SECRET` with HKDF-SHA256 and a per-user salt.
 - Sessions use HTTP-only cookies bound to the user.
 - Every query is scoped to the signed-in user.

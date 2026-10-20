@@ -48,9 +48,19 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 
 ### 1. App Authentication
 - Multi-user authentication support.
-- Local password auth (Argon2id hashing) with option to enable/disable local user registration in settings/env.
-- OIDC integration (Issuer, Client ID, Client Secret, Callback URL) mapping external subject IDs to internal user records.
-- Secure, HTTP-only cookie-based session management (`user_id` bound).
+- Walley runs in exactly one auth mode, chosen at startup from environment variables:
+  - **OIDC mode:** all four of `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `OIDC_CALLBACK_URL` are set. OIDC is the only way to sign in. Local password login, local registration and password change are disabled, and their endpoints return `403` with error code `local_auth_disabled`.
+  - **Local mode:** none of the four OIDC variables is set. Local password auth (Argon2id hashing). Local registration is allowed only when `ALLOW_REGISTRATION=true` (default `false`). Otherwise it returns `403` with error code `registration_disabled`.
+  - Setting some but not all of the four OIDC variables is a configuration error. Startup fails with a message that names the missing variables and prints no values. An empty value counts as unset.
+- OIDC maps `(issuer, subject)` to an internal user through the `user_identities` table. On each OIDC login:
+  1. A known `(issuer, subject)` signs in the mapped user.
+  2. Otherwise, if the ID token has `email_verified: true` and its email matches an existing user (case-insensitive) who has no identity at this issuer, Walley links the identity to that user and signs them in. This is how local accounts move to OIDC.
+  3. Otherwise, if `ALLOW_REGISTRATION=true`, Walley creates a new user with no password and links the identity.
+  4. Otherwise sign-in is refused, and the login page says that no Walley account is linked to the identity.
+- `ALLOW_REGISTRATION` means "new accounts may be created": through the register form in local mode, and through a first OIDC login in OIDC mode.
+- Linking keeps the user's `id` and `key_salt`, so their encrypted credentials stay readable. The password hash is kept but is not used while OIDC mode is on.
+- Secure, HTTP-only cookie-based session management (`user_id` bound). Each session records how it was created (`local` or `oidc`). A session whose method does not match the current mode is treated as no session.
+- The login page reads the mode from the public `GET /api/auth/config` endpoint. It shows either the email and password form or a single "Sign in with SSO" button, never both.
 
 ### 2. Secrets Encryption (Per User)
 - Each user's Wallos API credentials, Actual Budget passwords, and sync keys must be stored in the database encrypted at rest using AES-256-GCM.
@@ -61,7 +71,8 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 ## Data Integration & Mapping Rules
 
 ### 1. Multi-Tenant Database Schema (`walley.db`)
-- `users`: `id`, `email`, `password_hash`, `created_at`
+- `users`: `id`, `email` (unique, stored lowercased), `password_hash` (nullable; null for users created through OIDC), `key_salt`, `created_at`
+- `user_identities`: `id`, `user_id` (FK), `issuer`, `subject`, `created_at`; unique `(issuer, subject)` and unique `(user_id, issuer)`
 - `user_configs`: `user_id` (FK), `wallos_url`, `wallos_api_key_enc`, `actual_url`, `actual_password_enc`, `actual_sync_key_enc`, `actual_budget_id`, `tolerance_percent`
 - `matches`: `id`, `user_id` (FK), `wallos_id`, `actual_schedule_id`, `status` (`LINKED` | `IGNORED_WALLOS` | `IGNORED_ACTUAL`), `last_known_wallos_hash`, `last_known_actual_hash`
 
@@ -114,4 +125,4 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 - Personal Wallos Config (URL, API Key, Test Connection button).
 - Personal Actual Budget Config (Server URL, Password/Sync Key, Budget Selector dropdown, Base Currency auto-detect).
 - Matching Settings (Amount Tolerance Percentage input/slider).
-- Account / Security Settings (Password update, OIDC identity details).
+- Account / Security Settings (Password update in local mode only; in OIDC mode, a note that the password is managed by the identity provider. Linked OIDC issuer and subject when present.)

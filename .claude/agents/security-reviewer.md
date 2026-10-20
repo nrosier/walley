@@ -17,7 +17,7 @@ Non-negotiable rules from CLAUDE.md:
 - Secrets are AES-256-GCM encrypted at rest and never returned to the browser or written to logs.
 - Passwords are hashed with Argon2id.
 - Session cookies are HTTP-only and bound to user_id.
-- /api is default-deny. Only login, register and the OIDC callback are public.
+- /api is default-deny. Only POST /api/auth/login, POST /api/auth/register, GET /api/auth/config, and the OIDC login and callback routes are public. In OIDC mode, login, register and password change return 403 local_auth_disabled.
 
 Method:
 1. List the changed files with `git diff main...HEAD --name-only`, or use the files named in your task.
