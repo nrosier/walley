@@ -88,7 +88,7 @@ Do not open a public issue for a security problem. Contact the maintainer direct
 
 ## Project layout
 
-```
+```text
 src/server/   Fastify backend, routes and services
 src/web/      React and Vite frontend
 src/lib/      Shared code, including the frequency mapper
@@ -97,6 +97,11 @@ src/lib/      Shared code, including the frequency mapper
 ## Contributing
 
 Work is tracked as GitHub issues, grouped into milestones M1 to M9. Each issue lists its acceptance criteria. Pick an open issue in the earliest milestone that has no unresolved `needs-decision` label.
+
+Branching rules:
+
+- Issue and milestone work goes on a branch named after the issue, for example `issue-5-fastify-setup`, and merges to `main` through a pull request.
+- Small changes that are not tied to an issue, such as docs or agent definitions, may be committed directly to `main` once the checks in the release checklist pass.
 
 ## License
 
