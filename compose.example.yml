@@ -1,0 +1,49 @@
+services:
+  walley:
+    image: ghcr.io/nrosier/walley:0.1.0
+    container_name: walley
+    platform: linux/amd64
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /data/walley.db
+      PORT: "3000"
+      HOST: 0.0.0.0
+      TZ: ${TZ:-Etc/UTC}
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
+    volumes:
+      - data:/data
+    networks:
+      - proxy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=proxy
+      - traefik.http.routers.walley.rule=Host(`${WALLEY_HOSTNAME:?set WALLEY_HOSTNAME in .env}`)
+      - traefik.http.routers.walley.entrypoints=websecure
+      - traefik.http.routers.walley.tls.certresolver=cloudflare
+      - traefik.http.routers.walley.priority=100
+      - traefik.http.services.walley.loadbalancer.server.port=3000
+      - dockflare.enable=true
+      - dockflare.hostname=${WALLEY_HOSTNAME:?set WALLEY_HOSTNAME in .env}
+      - dockflare.service=${DOCKFLARE_SERVICE:?set DOCKFLARE_SERVICE in .env}
+      - dockflare.http2_origin=true
+      - dockflare.match_sni_to_host=true
+volumes:
+  data:
+networks:
+  proxy:
+    external: true
