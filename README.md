@@ -1,2 +1,103 @@
-# walley
-Actual Budget Schedule and Wallos Subscription bi-directional sync app
+# Walley
+
+Walley is a multi-user web app that keeps recurring subscriptions in sync between [Wallos](https://github.com/ellite/Wallos) and [Actual Budget](https://actualbudget.org). It matches Wallos subscriptions to Actual Budget schedules, flags drift between them, and creates the missing side in either direction.
+
+Each user connects their own Wallos and Actual Budget instances. Credentials are encrypted at rest.
+
+> **Status:** early development. The project is scaffolded in the milestones tracked in the issue tracker. There is no runnable app yet.
+
+## Features
+
+- Match Wallos subscriptions with Actual Budget schedules, automatically by saved pairs and by suggestion from name and amount.
+- Detect mismatches on a manual sync check and resolve them: overwrite either side, ignore the difference, or unlink.
+- Create an Actual schedule from a Wallos subscription, or a Wallos subscription from an Actual schedule, with the fields pre-filled.
+- Convert multi-currency prices to the Actual Budget base currency.
+- Light and dark themes, with dark as the default.
+
+## Requirements
+
+- Node.js 20 or later (planned)
+- npm
+- A Wallos instance with API access and an API key
+- An Actual Budget server with a budget and either its password or sync key
+
+## Getting started
+
+These commands will exist once the scaffold lands (milestone M1).
+
+```bash
+npm ci
+cp .env.example .env   # then set APP_SECRET and DATABASE_PATH
+npm run dev
+```
+
+The dev server starts the Fastify backend and the Vite frontend. Open the URL that Vite prints.
+
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the backend and the Vite dev server |
+| `npm run build` | Build the backend and the frontend |
+| `npm test` | Run the test suite |
+| `npm run lint` | Lint the source |
+| `npx tsc --noEmit` | Type check without emitting files |
+
+## Configuration
+
+Copy `.env.example` to `.env` and set the values below. Walley refuses to start if a required variable is missing, or if `APP_SECRET` is shorter than 32 characters.
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `APP_SECRET` | Yes | none | Master key for deriving per-user encryption keys. Use at least 32 random characters. |
+| `DATABASE_PATH` | Yes | none | Path to the SQLite file, for example `./data/walley.db` |
+| `ALLOW_REGISTRATION` | No | `false` | Set to `true` to let people create local accounts |
+| `OIDC_ISSUER` | No | none | OIDC issuer URL, to enable single sign-on |
+| `OIDC_CLIENT_ID` | No | none | OIDC client ID |
+| `OIDC_CLIENT_SECRET` | No | none | OIDC client secret |
+| `OIDC_CALLBACK_URL` | No | none | OIDC callback URL registered with your identity provider |
+
+Registration is off by default. Turn it on only for an instance you trust.
+
+### Generating `APP_SECRET`
+
+```bash
+openssl rand -base64 48
+```
+
+Store `APP_SECRET` somewhere safe. If it changes, every stored Wallos key and Actual Budget password becomes unreadable, and users must enter them again.
+
+## Connecting your accounts
+
+1. Sign in, then open **Settings**.
+2. Under **Wallos**, enter your instance URL and API key, then choose **Test Connection**.
+3. Under **Actual Budget**, enter your server URL and password or sync key. Pick a budget from the list. Walley detects the base currency.
+4. Under **Matching**, set the amount tolerance. The default is 5%.
+
+Your credentials are encrypted before they are stored. They are never sent back to the browser.
+
+## Security
+
+- Passwords are hashed with Argon2id.
+- Wallos API keys, Actual Budget passwords and sync keys are encrypted with AES-256-GCM. Each user's key is derived from `APP_SECRET` with HKDF-SHA256 and a per-user salt.
+- Sessions use HTTP-only cookies bound to the user.
+- Every query is scoped to the signed-in user.
+- Login and registration are rate limited.
+
+Do not open a public issue for a security problem. Contact the maintainer directly instead.
+
+## Project layout
+
+```
+src/server/   Fastify backend, routes and services
+src/web/      React and Vite frontend
+src/lib/      Shared code, including the frequency mapper
+```
+
+## Contributing
+
+Work is tracked as GitHub issues, grouped into milestones M1 to M9. Each issue lists its acceptance criteria. Pick an open issue in the earliest milestone that has no unresolved `needs-decision` label.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
