@@ -6,7 +6,8 @@
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client"],
-    "noEmit": true
+    "noEmit": true,
+    "paths": { "@/*": ["./src/web/*"] }
   },
   "include": ["src", "*.config.ts"]
 }

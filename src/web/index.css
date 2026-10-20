@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: Inter, system-ui, -apple-system, sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+}
+
+/* Dark theme is the default. The light theme and toggle are tracked in #42. */
+:root {
+  --background: #0c0f19;
+  --foreground: #f8fafc;
+  --card: #1e293b;
+  --border: #334155;
+  --primary: #4f46e5;
+  --primary-foreground: #ffffff; /* Walley convention, pending #42 */
+  --ring: #6366f1; /* Walley convention, pending #42 */
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+  }
+}
