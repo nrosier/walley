@@ -22,6 +22,7 @@
     "start": "node dist/server/index.js"
   },
   "dependencies": {
+    "@fastify/static": "10.1.6",
     "class-variance-authority": "0.7.1",
     "cn": "0.5.0",
     "fastify": "5.12.7",

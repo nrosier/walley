@@ -55,6 +55,7 @@ Copy `.env.example` to `.env` and set the values below. Walley refuses to start 
 | `PORT` | No | `3000` | Port to listen on, an integer from 1 to 65535 |
 | `HOST` | No | `127.0.0.1` | Address to bind. Docker deployments set `0.0.0.0` in compose. |
 | `ALLOW_REGISTRATION` | No | `false` | Set to `true` to allow new accounts. In local mode this opens the register form. In OIDC mode it lets a first single sign-on create an account. |
+| `NODE_ENV` | No | unset | Set to `production` to serve the built web app from `dist/web`. Any other value, or none, serves the API only. Use it for built or Docker runs. |
 | `OIDC_ISSUER` | All four or none | none | OIDC issuer URL. Setting all four OIDC variables turns on OIDC mode and turns off password login. |
 | `OIDC_CLIENT_ID` | All four or none | none | OIDC client ID |
 | `OIDC_CLIENT_SECRET` | All four or none | none | OIDC client secret |
