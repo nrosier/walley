@@ -28,6 +28,10 @@ function isSpaRoute(method: string, rawUrl: string): boolean {
   if (path === '/api' || path.startsWith('/api/')) {
     return false;
   }
+  // A decoded traversal sequence is never a client route, even without a dot in the last segment.
+  if (path.split(/[/\\]/).includes('..') || path.includes('\\')) {
+    return false;
+  }
   const lastSegment = path.slice(path.lastIndexOf('/') + 1);
   return !lastSegment.includes('.');
 }

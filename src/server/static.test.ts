@@ -91,12 +91,19 @@ describe('buildApp with a web root', () => {
     expect(res.headers['cache-control']).toBe('no-cache');
   });
 
-  it('does not serve files outside the web root', async () => {
-    const res = await build().inject({ method: 'GET', url: '/..%2f..%2fetc/passwd' });
-    // The decoded last segment has no dot, so this is a client route and gets
-    // the SPA shell. What matters is that no file outside the web root is read.
-    expect(res.body === INDEX || res.statusCode >= 400).toBe(true);
+  // Encoded slashes and backslashes survive routing, so the guard sees them.
+  // %2e%2e is collapsed by the router before any handler runs, so it is not
+  // covered here; it reaches the same file lookup as any unknown path, and
+  // @fastify/static is confined to the web root.
+  it.each([
+    '/..%2f..%2fetc/passwd',
+    '/..%5c..%5cetc',
+    '/a/..%2f..%2fsecret',
+  ])('answers %s with 404, never the SPA shell', async (url) => {
+    const res = await build().inject({ method: 'GET', url });
+    expect(res.statusCode).toBe(404);
     expect(res.body).not.toContain('root:');
+    expect(res.body).not.toBe(INDEX);
   });
 
   it('keeps GET /api/health as JSON', async () => {
