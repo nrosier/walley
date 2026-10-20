@@ -16,7 +16,7 @@ Each user connects their own Wallos and Actual Budget instances. Credentials are
 
 ## Requirements
 
-- Node.js 20 or later (planned)
+- Node.js 24 or later
 - npm
 - A Wallos instance with API access and an API key
 - An Actual Budget server with a budget and either its password or sync key
@@ -42,6 +42,7 @@ The dev server starts the Fastify backend and the Vite frontend. Open the URL th
 | `npm test` | Run the test suite |
 | `npm run lint` | Lint the source |
 | `npx tsc --noEmit` | Type check without emitting files |
+| `npm run typecheck` | Type check every folder with its own tsconfig |
 
 ## Configuration
 
