@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+node_modules
+dist
+coverage
+data
+.env
+.env.*
+*.db
+*.db-journal
+*.db-wal
+compose.yml
+compose.example.yml
+Dockerfile
+.dockerignore

@@ -60,6 +60,10 @@ Copy `.env.example` to `.env` and set the values below. Walley refuses to start 
 | `OIDC_CLIENT_ID` | All four or none | none | OIDC client ID |
 | `OIDC_CLIENT_SECRET` | All four or none | none | OIDC client secret |
 | `OIDC_CALLBACK_URL` | All four or none | none | OIDC callback URL registered with your identity provider |
+| `WALLEY_HOSTNAME` | Compose only | none | Public hostname for the Traefik route and the Cloudflare tunnel. Read by `compose.yml`, not by Walley. |
+| `DOCKFLARE_SERVICE` | Compose only | none | Origin URL that DockFlare points the tunnel at, for example `https://<traefik LAN IP>`. Read by `compose.yml`, not by Walley. |
+
+For Docker, copy `compose.example.yml` to `compose.yml`, then fill in `.env`, including the compose-only `WALLEY_HOSTNAME` and `DOCKFLARE_SERVICE`. `compose.yml` is git-ignored, so your hostnames stay out of the repo.
 
 ### Sign-in modes
 
