@@ -1,9 +1,25 @@
 import { existsSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
+import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
+import type { AuthMode } from '../lib/auth-mode.js';
+import {
+  SESSION_COOKIE,
+  clearSessionCookies,
+  deleteSession,
+  findSession,
+  type SessionContext,
+} from './auth/sessions.js';
 import type { AppDatabase } from './db/client.js';
 import { healthRoutes } from './routes/health.js';
+
+export interface AuthOptions {
+  readonly mode: AuthMode;
+  readonly secureCookies: boolean;
+  /** Clock in ms since the epoch. Tests inject one; the default is Date.now. */
+  readonly now?: () => number;
+}
 
 export interface BuildAppOptions {
   readonly logger?: boolean;
@@ -11,11 +27,16 @@ export interface BuildAppOptions {
   readonly webRoot?: string;
   /** Open database handle. The caller owns it and closes it. */
   readonly db?: AppDatabase;
+  /** Turns on cookie sessions. Requires `db`. */
+  readonly auth?: AuthOptions;
 }
 
 declare module 'fastify' {
   interface FastifyInstance {
     db: AppDatabase | null;
+  }
+  interface FastifyRequest {
+    auth: SessionContext | null;
   }
 }
 
@@ -45,10 +66,58 @@ function isSpaRoute(method: string, rawUrl: string): boolean {
   return !lastSegment.includes('.');
 }
 
+function isApiPath(rawUrl: string): boolean {
+  const path = rawUrl.split('?')[0] ?? '';
+  return path === '/api' || path.startsWith('/api/');
+}
+
+function registerAuth(app: FastifyInstance, db: AppDatabase, auth: AuthOptions): void {
+  const clock = auth.now ?? Date.now;
+  void app.register(fastifyCookie);
+  app.decorateRequest('auth', null);
+  // buildApp is synchronous, so the cookie plugin has not loaded yet. A plain addHook here
+  // would be queued ahead of the plugin's own onRequest hook and would see no request.cookies.
+  // `after` runs once the plugin is loaded, so this hook is registered behind it.
+  app.after(() => {
+    app.addHook('onRequest', (request, reply, done) => {
+      if (isApiPath(request.url)) {
+        const token = request.cookies[SESSION_COOKIE];
+        request.auth = findSession(db, token, auth.mode, clock());
+        if (token !== undefined && request.auth === null) {
+          clearSessionCookies(reply, auth.secureCookies);
+        }
+      }
+      done();
+    });
+    //
+    // slot 3: deny hook (#19)
+    //
+    // slot 4: CSRF hook (#20)
+    //
+    app.post('/api/auth/logout', (request, reply) => {
+      if (request.auth === null) {
+        return reply.code(401).send({ error: 'unauthenticated' });
+      }
+      deleteSession(db, request.auth);
+      clearSessionCookies(reply, auth.secureCookies);
+      return reply.code(204).send();
+    });
+  });
+}
+
 export function buildApp(opts?: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger: opts?.logger ?? false });
   app.decorate('db', opts?.db ?? null);
   void app.register(healthRoutes, { prefix: '/api' });
+
+  const auth = opts?.auth;
+  if (auth !== undefined) {
+    const db = opts?.db;
+    if (db === undefined) {
+      throw new Error('auth requires db');
+    }
+    registerAuth(app, db, auth);
+  }
 
   const webRoot = opts?.webRoot;
   if (webRoot !== undefined) {
