@@ -4,7 +4,7 @@ Walley is a multi-user web app that keeps recurring subscriptions in sync betwee
 
 Each user connects their own Wallos and Actual Budget instances. Credentials are encrypted at rest.
 
-> **Status:** early development. The project is scaffolded in the milestones tracked in the issue tracker. There is no runnable app yet.
+> **Status:** early development. The server, database, secret encryption and the web shell run. Authentication (M3) and the sync features are not built yet, so there is no sign-in or sync screen to use.
 
 ## Features
 
@@ -23,7 +23,7 @@ Each user connects their own Wallos and Actual Budget instances. Credentials are
 
 ## Getting started
 
-These commands will exist once the scaffold lands (milestone M1).
+These commands run the app locally. `npm run dev` starts the API and the Vite dev server together.
 
 ```bash
 npm ci
