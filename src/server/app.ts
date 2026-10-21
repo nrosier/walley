@@ -2,12 +2,21 @@ import { existsSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
+import type { AppDatabase } from './db/client.js';
 import { healthRoutes } from './routes/health.js';
 
 export interface BuildAppOptions {
   readonly logger?: boolean;
   /** Absolute path to the built web folder. When omitted, no static files are served. */
   readonly webRoot?: string;
+  /** Open database handle. The caller owns it and closes it. */
+  readonly db?: AppDatabase;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    db: AppDatabase | null;
+  }
 }
 
 const IMMUTABLE = 'public, max-age=31536000, immutable';
@@ -38,6 +47,7 @@ function isSpaRoute(method: string, rawUrl: string): boolean {
 
 export function buildApp(opts?: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger: opts?.logger ?? false });
+  app.decorate('db', opts?.db ?? null);
   void app.register(healthRoutes, { prefix: '/api' });
 
   const webRoot = opts?.webRoot;

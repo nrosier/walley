@@ -46,6 +46,31 @@ jobs:
           done
           test "$(curl -fsS http://127.0.0.1:3000/api/health)" = '{"status":"ok"}'
           curl -fsS http://127.0.0.1:3000/ | grep -q 'id="root"'
+          docker exec walley-smoke ls dist/server/db/migrations/meta/_journal.json
+          check_db='
+            const Database = require("better-sqlite3");
+            const fs = require("node:fs");
+            const db = new Database("/data/walley.db", { readonly: true });
+            const tables = db
+              .prepare("SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE ? ORDER BY name")
+              .all("table", "sqlite_%")
+              .map((r) => r.name)
+              .join(",");
+            const expected = "__drizzle_migrations,matches,user_configs,user_identities,users";
+            if (tables !== expected) throw new Error("unexpected tables: " + tables);
+            const journal = JSON.parse(fs.readFileSync("dist/server/db/migrations/meta/_journal.json", "utf8"));
+            const count = db.prepare("SELECT count(*) AS n FROM __drizzle_migrations").get().n;
+            if (count !== journal.entries.length) throw new Error("journal count " + count + " != " + journal.entries.length);
+            console.log("db ok: " + count + " migration(s)");
+          '
+          docker exec walley-smoke node -e "$check_db"
+          docker restart -t 10 walley-smoke
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then break; fi
+            sleep 1
+          done
+          test "$(curl -fsS http://127.0.0.1:3000/api/health)" = '{"status":"ok"}'
+          docker exec walley-smoke node -e "$check_db"
           docker stop -t 10 walley-smoke
           test "$(docker inspect -f '{{.State.ExitCode}}' walley-smoke)" = "0"
       - name: Container logs
