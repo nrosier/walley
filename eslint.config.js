@@ -83,6 +83,21 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/server/**/*.ts'],
+    ignores: ['src/server/db/**'],
+    rules: {
+      // Flat config replaces rule options, so the src/server patterns above are repeated here.
+      'no-restricted-imports': ['error', {
+        patterns: [
+          { group: ['react', 'react-*'], message: 'src/server must not import React.' },
+          { group: ['**/web/**'], message: 'src/server must not import src/web.' },
+          { group: ['@/*'], message: 'src/server must not use the @/ alias.' },
+          { group: ['drizzle-orm', 'drizzle-orm/*', '**/db/schema*'], message: 'Query through createUserRepo' },
+        ],
+      }],
+    },
+  },
+  {
     files: ['src/web/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', {
