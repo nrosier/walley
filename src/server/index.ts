@@ -35,7 +35,12 @@ async function main(): Promise<void> {
   const webRoot = config.serveWeb ? fileURLToPath(new URL('../web/', import.meta.url)) : undefined;
   let app;
   try {
-    app = buildApp({ logger: true, webRoot, db });
+    app = buildApp({
+      logger: true,
+      webRoot,
+      db,
+      auth: { mode: config.authMode, secureCookies: config.secureCookies },
+    });
   } catch (error: unknown) {
     closeDatabase(db);
     throw error;

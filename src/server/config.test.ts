@@ -208,3 +208,16 @@ describe('loadConfig serveWeb', () => {
     },
   );
 });
+
+describe('loadConfig secureCookies', () => {
+  it('is true only for NODE_ENV exactly production', () => {
+    expect(loadConfig({ ...base, NODE_ENV: 'production' }).secureCookies).toBe(true);
+  });
+
+  it.each([undefined, 'development', 'test', 'Production', 'production ', ''])(
+    'is false for NODE_ENV %j',
+    (value) => {
+      expect(loadConfig({ ...base, NODE_ENV: value }).secureCookies).toBe(false);
+    },
+  );
+});

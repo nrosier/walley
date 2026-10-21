@@ -24,6 +24,7 @@
     "db:check": "drizzle-kit check"
   },
   "dependencies": {
+    "@fastify/cookie": "11.1.3",
     "@fastify/static": "10.1.6",
     "better-sqlite3": "13.0.3",
     "class-variance-authority": "0.7.1",
