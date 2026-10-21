@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as accounts from './accounts.js';
+import * as lookup from './lookup.js';
 import * as repo from './repo.js';
 
 describe('data layer exports', () => {
@@ -9,5 +10,14 @@ describe('data layer exports', () => {
 
   it('accounts.ts exports only createUser', () => {
     expect(Object.keys(accounts).sort()).toEqual(['createUser']);
+  });
+
+  it('lookup.ts exports only the four pre-sign-in reads', () => {
+    expect(Object.keys(lookup).sort()).toEqual([
+      'findLinkCandidate',
+      'findLoginByEmail',
+      'findSessionByIdHash',
+      'findUserIdByIdentity',
+    ]);
   });
 });

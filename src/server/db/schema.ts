@@ -2,12 +2,14 @@ import { sql } from 'drizzle-orm';
 import {
   blob,
   check,
+  index,
   integer,
   real,
   sqliteTable,
   text,
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
+import { AUTH_METHODS } from '../../lib/auth-mode.js';
 import { MATCH_STATUSES } from '../../lib/match-status.js';
 
 const createdAt = () =>
@@ -44,6 +46,31 @@ export const userIdentities = sqliteTable(
   (t) => [
     uniqueIndex('user_identities_issuer_subject_unique').on(t.issuer, t.subject),
     uniqueIndex('user_identities_user_issuer_unique').on(t.userId, t.issuer),
+  ],
+);
+
+/**
+ * `id` is the hex SHA-256 of the session token, never the token itself, so reading
+ * the database gives no live session. `csrf_hash` is the SHA-256 of the CSRF token.
+ */
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    authMethod: text('auth_method', { enum: AUTH_METHODS }).notNull(),
+    csrfHash: text('csrf_hash').notNull(),
+    createdAt: createdAt(),
+    lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => [
+    index('sessions_user_id_idx').on(t.userId),
+    check('sessions_id_length_check', sql`length(${t.id}) = 64`),
+    check('sessions_auth_method_check', sql`${t.authMethod} IN ('local','oidc')`),
+    check('sessions_csrf_hash_length_check', sql`length(${t.csrfHash}) = 64`),
   ],
 );
 
@@ -98,6 +125,7 @@ export const matches = sqliteTable(
 
 export type UserRow = typeof users.$inferSelect;
 export type UserIdentityRow = typeof userIdentities.$inferSelect;
+export type SessionRow = typeof sessions.$inferSelect;
 export type UserConfigRow = typeof userConfigs.$inferSelect;
 export type MatchRow = typeof matches.$inferSelect;
 export type NewMatchRow = typeof matches.$inferInsert;

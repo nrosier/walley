@@ -51,6 +51,7 @@ describe('openDatabase', () => {
     expect(tableNames(db)).toEqual([
       '__drizzle_migrations',
       'matches',
+      'sessions',
       'user_configs',
       'user_identities',
       'users',
@@ -63,11 +64,11 @@ describe('openDatabase', () => {
     first.$client
       .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
       .run('u1', 'a@example.com', Buffer.alloc(32, 1));
-    expect(journalCount(first)).toBe(1);
+    expect(journalCount(first)).toBe(2);
     closeDatabase(first);
 
     const second = track(openDatabase(path));
-    expect(journalCount(second)).toBe(1);
+    expect(journalCount(second)).toBe(2);
     const users = second.$client.prepare('SELECT id FROM users').all() as { id: string }[];
     expect(users).toEqual([{ id: 'u1' }]);
   });
