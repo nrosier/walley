@@ -19,10 +19,11 @@ describe('buildApp', () => {
     expect(res.headers['content-type']).toContain('application/json');
   });
 
-  it('GET /api/nope returns 404', async () => {
+  it('GET /api/nope returns 401 unauthenticated', async () => {
     app = buildApp();
     const res = await app.inject({ method: 'GET', url: '/api/nope' });
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toBe('{"error":"unauthenticated"}');
   });
 
   it('exposes the db option on app.db', () => {

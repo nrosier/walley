@@ -64,10 +64,11 @@ describe('buildApp with a web root', () => {
   );
 
   it.each(['/api/nope', '/api', '/api/', '/%61pi/nope', '/API/nope', '/Api'])(
-    'GET %s returns the JSON 404',
+    'GET %s returns the JSON 401 unauthenticated',
     async (url) => {
       const res = await build().inject({ method: 'GET', url });
-      expect(res.statusCode).toBe(404);
+      expect(res.statusCode).toBe(401);
+      expect(res.body).toBe('{"error":"unauthenticated"}');
       expect(res.headers['content-type']).toContain('application/json');
       expect(res.body).not.toContain('id="root"');
     },

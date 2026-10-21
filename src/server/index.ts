@@ -39,7 +39,11 @@ async function main(): Promise<void> {
       logger: true,
       webRoot,
       db,
-      auth: { mode: config.authMode, secureCookies: config.secureCookies },
+      auth: {
+        mode: config.authMode,
+        secureCookies: config.secureCookies,
+        allowRegistration: config.allowRegistration,
+      },
     });
   } catch (error: unknown) {
     closeDatabase(db);

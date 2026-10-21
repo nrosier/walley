@@ -40,7 +40,12 @@ export function makeClock(start = Date.UTC(2030, 0, 1)): TestClock {
 
 /** Opens an in-memory database and builds the app with cookie sessions and an injectable clock. */
 export function makeAuthApp(
-  opts: { mode?: AuthMode; secureCookies?: boolean; clock?: TestClock } = {},
+  opts: {
+    mode?: AuthMode;
+    secureCookies?: boolean;
+    allowRegistration?: boolean;
+    clock?: TestClock;
+  } = {},
 ): AuthApp {
   const db = openDatabase(':memory:');
   const clock = opts.clock ?? makeClock();
@@ -49,6 +54,7 @@ export function makeAuthApp(
     auth: {
       mode: opts.mode ?? 'local',
       secureCookies: opts.secureCookies ?? false,
+      allowRegistration: opts.allowRegistration ?? false,
       now: () => clock.now(),
     },
   });

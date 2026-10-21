@@ -91,18 +91,19 @@ describe('POST /api/auth/logout', () => {
     );
   });
 
-  it('buildApp without auth has no logout route (404)', async () => {
+  it('buildApp without auth has no logout route (401)', async () => {
     const app: FastifyInstance = buildApp();
     try {
       const res = await app.inject({ method: 'POST', url: '/api/auth/logout' });
-      expect(res.statusCode).toBe(404);
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: 'unauthenticated' });
     } finally {
       await app.close();
     }
   });
 
   it('buildApp rejects auth without db', () => {
-    expect(() => buildApp({ auth: { mode: 'local', secureCookies: false } })).toThrow(
+    expect(() => buildApp({ auth: { mode: 'local', secureCookies: false, allowRegistration: false } })).toThrow(
       'auth requires db',
     );
   });
