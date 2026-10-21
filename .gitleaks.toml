@@ -1,0 +1,10 @@
+# Extends gitleaks' default rules. Only the paths listed here are exempt, and only
+# for the rule named. Everything else is scanned as before.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "HKDF golden test vector: a fixed public test output, not a credential (#14)"
+paths = ['''src/server/crypto/keys\.test\.ts$''']
+rules = ["generic-api-key"]
