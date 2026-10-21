@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
 import { ConfigError, loadConfig } from './config.js';
+import { closeDatabase, openDatabase, type AppDatabase } from './db/client.js';
 import { registerShutdown } from './shutdown.js';
 
 async function main(): Promise<void> {
@@ -21,8 +22,27 @@ async function main(): Promise<void> {
     throw error;
   }
 
+  let db: AppDatabase;
+  try {
+    db = openDatabase(config.databasePath);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('Failed to open database: ' + message);
+    process.exitCode = 1;
+    return;
+  }
+
   const webRoot = config.serveWeb ? fileURLToPath(new URL('../web/', import.meta.url)) : undefined;
-  const app = buildApp({ logger: true, webRoot });
+  let app;
+  try {
+    app = buildApp({ logger: true, webRoot, db });
+  } catch (error: unknown) {
+    closeDatabase(db);
+    throw error;
+  }
+  app.addHook('onClose', () => {
+    closeDatabase(db);
+  });
   registerShutdown(app);
   app.log.info({ authMode: config.authMode, serveWeb: config.serveWeb }, 'starting');
   try {
@@ -30,6 +50,7 @@ async function main(): Promise<void> {
   } catch (error: unknown) {
     app.log.error(error);
     process.exitCode = 1;
+    await app.close();
   }
 }
 

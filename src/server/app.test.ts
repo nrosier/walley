@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
+import { closeDatabase, openDatabase } from './db/client.js';
 
 describe('buildApp', () => {
   let app: FastifyInstance | undefined;
@@ -22,5 +23,15 @@ describe('buildApp', () => {
     app = buildApp();
     const res = await app.inject({ method: 'GET', url: '/api/nope' });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('exposes the db option on app.db', () => {
+    const db = openDatabase(':memory:');
+    try {
+      app = buildApp({ db });
+      expect(app.db).toBe(db);
+    } finally {
+      closeDatabase(db);
+    }
   });
 });

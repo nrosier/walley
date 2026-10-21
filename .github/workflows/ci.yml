@@ -27,6 +27,10 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - name: Migration drift guard
+        run: |
+          npx drizzle-kit generate
+          test -z "$(git status --porcelain src/server/db/migrations)"
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest

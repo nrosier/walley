@@ -1,0 +1,113 @@
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { closeDatabase, openDatabase, type AppDatabase } from './client.js';
+
+interface NameRow {
+  name: string;
+}
+
+function tableNames(db: AppDatabase): string[] {
+  const rows = db.$client
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+    .all() as NameRow[];
+  return rows.map((row) => row.name).sort();
+}
+
+function journalCount(db: AppDatabase): number {
+  const row = db.$client.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get() as {
+    n: number;
+  };
+  return row.n;
+}
+
+describe('openDatabase', () => {
+  let dir: string;
+  const open: AppDatabase[] = [];
+
+  function track(db: AppDatabase): AppDatabase {
+    open.push(db);
+    return db;
+  }
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'walley-db-'));
+  });
+
+  afterEach(() => {
+    for (const db of open.splice(0)) {
+      if (db.$client.open) {
+        closeDatabase(db);
+      }
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('creates the folder, the file and every table', () => {
+    const path = join(dir, 'nested', 'deeper', 'walley.db');
+    const db = track(openDatabase(path));
+    expect(existsSync(path)).toBe(true);
+    expect(tableNames(db)).toEqual([
+      '__drizzle_migrations',
+      'matches',
+      'user_configs',
+      'user_identities',
+      'users',
+    ]);
+  });
+
+  it('is idempotent and keeps data across a second open', () => {
+    const path = join(dir, 'walley.db');
+    const first = openDatabase(path);
+    first.$client
+      .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
+      .run('u1', 'a@example.com', Buffer.alloc(32, 1));
+    expect(journalCount(first)).toBe(1);
+    closeDatabase(first);
+
+    const second = track(openDatabase(path));
+    expect(journalCount(second)).toBe(1);
+    const users = second.$client.prepare('SELECT id FROM users').all() as { id: string }[];
+    expect(users).toEqual([{ id: 'u1' }]);
+  });
+
+  it('turns foreign keys on', () => {
+    const db = track(openDatabase(join(dir, 'walley.db')));
+    expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+  });
+
+  it('uses WAL for a file database', () => {
+    const db = track(openDatabase(join(dir, 'walley.db')));
+    expect(db.$client.pragma('journal_mode', { simple: true })).toBe('wal');
+  });
+
+  it('opens an in-memory database with migrations applied', () => {
+    const db = track(openDatabase(':memory:'));
+    expect(tableNames(db)).toContain('users');
+    expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+  });
+
+  it('throws for a path under a file', () => {
+    const file = join(dir, 'plain-file');
+    writeFileSync(file, 'x');
+    expect(() => openDatabase(join(file, 'walley.db'))).toThrow();
+  });
+
+  it('throws when the migrations cannot be applied', () => {
+    const path = join(dir, 'walley.db');
+    const first = openDatabase(path);
+    // With no journal, the first migration runs again and fails on the existing tables.
+    first.$client.exec('DROP TABLE __drizzle_migrations');
+    closeDatabase(first);
+    expect(() => openDatabase(path)).toThrow();
+  });
+});
+
+describe('closeDatabase', () => {
+  it('closes the underlying handle', () => {
+    const db = openDatabase(':memory:');
+    closeDatabase(db);
+    expect(db.$client.open).toBe(false);
+  });
+});
