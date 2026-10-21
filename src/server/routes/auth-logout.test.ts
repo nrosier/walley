@@ -107,3 +107,19 @@ describe('POST /api/auth/logout', () => {
     );
   });
 });
+
+describe('session hook scope', () => {
+  it('a stale session cookie on GET /api/health is cleared', async () => {
+    const t = setup();
+    const res = await t.app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { cookie: `walley_session=${'x'.repeat(43)}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const cookies = setCookies(res.headers['set-cookie']);
+    expect(
+      cookies.some((c) => c.startsWith('walley_session=') && c.includes('Max-Age=0')),
+    ).toBe(true);
+  });
+});
