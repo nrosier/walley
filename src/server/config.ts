@@ -1,4 +1,6 @@
-export type AuthMode = 'local' | 'oidc';
+import type { AuthMode } from '../lib/auth-mode.js';
+
+export type { AuthMode };
 
 export interface OidcConfig {
   readonly issuer: string;

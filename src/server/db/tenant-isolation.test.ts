@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createUser } from './accounts.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './client.js';
+import { findSessionByIdHash } from './lookup.js';
 import { createUserRepo, type UserRepo } from './repo.js';
 
 describe('tenant isolation', () => {
@@ -57,5 +58,48 @@ describe('tenant isolation', () => {
     a.upsertConfig({ wallosUrl: 'https://a.test', tolerancePercent: 1 });
     expect(b.getConfig()).toEqual(before);
     expect(a.getConfig()?.wallosUrl).toBe('https://a.test');
+  });
+
+  describe('sessions', () => {
+    const idHash = 'b'.repeat(64);
+    const now = new Date(1_000_000);
+    const later = new Date(2_000_000);
+
+    beforeEach(() => {
+      b.createSession({
+        idHash,
+        authMethod: 'local',
+        csrfHash: 'c'.repeat(64),
+        now,
+        expiresAt: new Date(now.getTime() + 3_600_000),
+      });
+    });
+
+    it('A touchSession of a B session id returns false and leaves the row unchanged', () => {
+      const before = findSessionByIdHash(db, idHash);
+      expect(a.touchSession(idHash, later)).toBe(false);
+      expect(findSessionByIdHash(db, idHash)).toEqual(before);
+      expect(b.touchSession(idHash, later)).toBe(true);
+      expect(findSessionByIdHash(db, idHash)?.lastSeenAt).toEqual(later);
+    });
+
+    it('A deleteSession of a B session id returns false and the row still exists', () => {
+      const before = findSessionByIdHash(db, idHash);
+      expect(a.deleteSession(idHash)).toBe(false);
+      expect(findSessionByIdHash(db, idHash)).toEqual(before);
+      expect(b.deleteSession(idHash)).toBe(true);
+      expect(findSessionByIdHash(db, idHash)).toBeUndefined();
+    });
+
+    it('A linkIdentity does not affect B and the same identity cannot be linked twice', () => {
+      expect(a.linkIdentity('https://idp', 's1')).toBe(true);
+      expect(b.linkIdentity('https://idp', 's1')).toBe(false);
+      expect(b.linkIdentity('https://idp', 's2')).toBe(true);
+    });
+
+    it('A getEmail returns only A email', () => {
+      expect(a.getEmail()).toBe('a@example.com');
+      expect(b.getEmail()).toBe('b@example.com');
+    });
   });
 });

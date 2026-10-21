@@ -7,7 +7,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MATCH_STATUSES, isMatchStatus, type MatchStatus } from '../../lib/match-status.js';
 import * as schema from './schema.js';
-import { matches, userConfigs, userIdentities, users } from './schema.js';
+import { matches, sessions, userConfigs, userIdentities, users } from './schema.js';
 
 const migrationsFolder = fileURLToPath(new URL('./migrations/', import.meta.url));
 
@@ -44,11 +44,17 @@ afterEach(() => {
 });
 
 describe('migration', () => {
-  it('creates users, user_identities, user_configs and matches', () => {
+  it('creates users, user_identities, user_configs, matches and sessions', () => {
     const rows = sqlite
       .prepare("select name from sqlite_master where type = 'table' and name not like '%migrations' order by name")
       .all() as { name: string }[];
-    expect(rows.map((r) => r.name)).toEqual(['matches', 'user_configs', 'user_identities', 'users']);
+    expect(rows.map((r) => r.name)).toEqual([
+      'matches',
+      'sessions',
+      'user_configs',
+      'user_identities',
+      'users',
+    ]);
   });
 });
 
@@ -164,6 +170,76 @@ describe('user_identities', () => {
     expect(() =>
       db.insert(userIdentities).values({ id: 'i2', userId: 'u1', issuer: 'https://idp', subject: 's2' }).run(),
     ).toThrow(/UNIQUE/);
+  });
+});
+
+const HASH = 'a'.repeat(64);
+
+function addSession(id: string, userId: string, overrides: Record<string, string> = {}): void {
+  const row = { id, user_id: userId, auth_method: 'local', csrf_hash: HASH, ...overrides };
+  sqlite
+    .prepare(
+      'insert into sessions (id, user_id, auth_method, csrf_hash, last_seen_at, expires_at) values (@id, @user_id, @auth_method, @csrf_hash, 1, 2)',
+    )
+    .run(row);
+}
+
+describe('sessions', () => {
+  it('has the expected columns', () => {
+    const cols = sqlite.prepare("select name, \"notnull\" as nn, pk from pragma_table_info('sessions') order by cid").all() as {
+      name: string;
+      nn: number;
+      pk: number;
+    }[];
+    expect(cols.map((c) => c.name)).toEqual([
+      'id',
+      'user_id',
+      'auth_method',
+      'csrf_hash',
+      'created_at',
+      'last_seen_at',
+      'expires_at',
+    ]);
+    expect(cols.filter((c) => c.pk === 1).map((c) => c.name)).toEqual(['id']);
+    for (const c of cols.filter((c) => c.name !== 'id')) expect(c.nn).toBe(1);
+  });
+
+  it('has the user_id index and nothing else besides the primary key', () => {
+    const idx = sqlite
+      .prepare("select name from pragma_index_list('sessions') where origin = 'c'")
+      .all() as { name: string }[];
+    expect(idx.map((i) => i.name)).toEqual(['sessions_user_id_idx']);
+    const cols = sqlite.prepare("select name from pragma_index_info('sessions_user_id_idx')").all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toEqual(['user_id']);
+  });
+
+  it('accepts local and oidc and sets created_at by default', () => {
+    addSession('a'.repeat(64), 'u1');
+    addSession('b'.repeat(64), 'u1', { auth_method: 'oidc' });
+    const rows = db.select().from(sessions).all();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.createdAt.getTime()).toBeGreaterThan(0);
+  });
+
+  it('rejects an auth_method outside local and oidc', () => {
+    expect(() => { addSession('a'.repeat(64), 'u1', { auth_method: 'saml' }); }).toThrow(/CHECK/);
+  });
+
+  it('rejects an id or csrf_hash that is not 64 characters', () => {
+    expect(() => { addSession('short', 'u1'); }).toThrow(/CHECK/);
+    expect(() => { addSession('a'.repeat(65), 'u1'); }).toThrow(/CHECK/);
+    expect(() => { addSession('a'.repeat(64), 'u1', { csrf_hash: 'x'.repeat(63) }); }).toThrow(/CHECK/);
+  });
+
+  it('rejects a session for an unknown user', () => {
+    expect(() => { addSession('a'.repeat(64), 'nobody'); }).toThrow(/FOREIGN KEY/);
+  });
+
+  it('deleting a user deletes their sessions and keeps other users', () => {
+    addSession('a'.repeat(64), 'u1');
+    addSession('b'.repeat(64), 'u2');
+    db.delete(users).where(eq(users.id, 'u1')).run();
+    expect(db.select().from(sessions).all().map((s) => s.userId)).toEqual(['u2']);
   });
 });
 

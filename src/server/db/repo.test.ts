@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createUser } from './accounts.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './client.js';
+import { findSessionByIdHash } from './lookup.js';
 import { createUserRepo, type MatchInput, type MatchPatch } from './repo.js';
 
 describe('createUserRepo', () => {
@@ -79,5 +80,88 @@ describe('createUserRepo', () => {
     const row = repo.insertMatch({ wallosId: 'w1', actualScheduleId: null, status: 'IGNORED_WALLOS' });
     expect(repo.updateMatch(row.id, {})).toBe(true);
     expect(repo.updateMatch('missing', {})).toBe(false);
+  });
+
+  it('getEmail returns the stored lowercase email, or undefined for an unknown user', () => {
+    expect(createUserRepo(db, userId).getEmail()).toBe('a@example.com');
+    expect(createUserRepo(db, 'no-such-user').getEmail()).toBeUndefined();
+  });
+
+  describe('sessions', () => {
+    const csrfHash = 'c'.repeat(64);
+    const t0 = new Date(1_000_000);
+
+    function create(repo: ReturnType<typeof createUserRepo>, ch: string, expiresAt: Date, now = t0) {
+      repo.createSession({ idHash: ch.repeat(64), authMethod: 'local', csrfHash, now, expiresAt });
+    }
+
+    it('createSession then findSessionByIdHash returns the row', () => {
+      const repo = createUserRepo(db, userId);
+      const expiresAt = new Date(t0.getTime() + 43_200_000);
+      repo.createSession({ idHash: 'a'.repeat(64), authMethod: 'oidc', csrfHash, now: t0, expiresAt });
+      expect(findSessionByIdHash(db, 'a'.repeat(64))).toEqual({
+        id: 'a'.repeat(64),
+        userId,
+        authMethod: 'oidc',
+        csrfHash,
+        createdAt: t0,
+        lastSeenAt: t0,
+        expiresAt,
+      });
+      expect(findSessionByIdHash(db, 'f'.repeat(64))).toBeUndefined();
+    });
+
+    it('createSession prunes this user expired rows and leaves another user rows alone', () => {
+      const mine = createUserRepo(db, userId);
+      const theirs = createUserRepo(db, otherId);
+      const later = new Date(t0.getTime() + 10_000);
+      create(mine, 'a', new Date(t0.getTime() + 1_000)); // expired by `later`
+      create(mine, 'b', new Date(t0.getTime() + 100_000)); // still live
+      create(theirs, 'c', new Date(t0.getTime() + 1_000)); // other user, expired
+      create(mine, 'd', new Date(later.getTime() + 100_000), later);
+      expect(findSessionByIdHash(db, 'a'.repeat(64))).toBeUndefined();
+      expect(findSessionByIdHash(db, 'b'.repeat(64))).toBeDefined();
+      expect(findSessionByIdHash(db, 'c'.repeat(64))).toBeDefined();
+      expect(findSessionByIdHash(db, 'd'.repeat(64))).toBeDefined();
+    });
+
+    it('createSession prunes a session that expires exactly now', () => {
+      const mine = createUserRepo(db, userId);
+      create(mine, 'a', t0);
+      create(mine, 'b', new Date(t0.getTime() + 100_000));
+      expect(findSessionByIdHash(db, 'a'.repeat(64))).toBeUndefined();
+    });
+
+    it('createSession with a duplicate id throws and keeps the existing row', () => {
+      const mine = createUserRepo(db, userId);
+      create(mine, 'a', new Date(t0.getTime() + 100_000));
+      expect(() => { create(createUserRepo(db, otherId), 'a', new Date(t0.getTime() + 100_000)); }).toThrow(/UNIQUE|PRIMARY/);
+      expect(findSessionByIdHash(db, 'a'.repeat(64))?.userId).toBe(userId);
+    });
+
+    it('touchSession sets last_seen_at and deleteSession removes the row', () => {
+      const repo = createUserRepo(db, userId);
+      create(repo, 'a', new Date(t0.getTime() + 100_000));
+      const seen = new Date(t0.getTime() + 5_000);
+      expect(repo.touchSession('a'.repeat(64), seen)).toBe(true);
+      expect(findSessionByIdHash(db, 'a'.repeat(64))?.lastSeenAt).toEqual(seen);
+      expect(repo.touchSession('f'.repeat(64), seen)).toBe(false);
+      expect(repo.deleteSession('a'.repeat(64))).toBe(true);
+      expect(repo.deleteSession('a'.repeat(64))).toBe(false);
+    });
+  });
+
+  describe('linkIdentity', () => {
+    it('links once, then returns false for a duplicate (issuer, subject)', () => {
+      expect(createUserRepo(db, userId).linkIdentity('https://idp', 's1')).toBe(true);
+      expect(createUserRepo(db, otherId).linkIdentity('https://idp', 's1')).toBe(false);
+    });
+
+    it('returns false when the user already has an identity at that issuer', () => {
+      const repo = createUserRepo(db, userId);
+      expect(repo.linkIdentity('https://idp', 's1')).toBe(true);
+      expect(repo.linkIdentity('https://idp', 's2')).toBe(false);
+      expect(repo.linkIdentity('https://other', 's2')).toBe(true);
+    });
   });
 });
