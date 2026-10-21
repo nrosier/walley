@@ -1,4 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { get } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -64,14 +66,39 @@ describe('buildApp with a web root', () => {
   );
 
   it.each(['/api/nope', '/api', '/api/', '/%61pi/nope', '/API/nope', '/Api'])(
-    'GET %s returns the JSON 404',
+    'GET %s returns the JSON 401 unauthenticated',
     async (url) => {
       const res = await build().inject({ method: 'GET', url });
-      expect(res.statusCode).toBe(404);
+      expect(res.statusCode).toBe(401);
+      expect(res.body).toBe('{"error":"unauthenticated"}');
       expect(res.headers['content-type']).toContain('application/json');
       expect(res.body).not.toContain('id="root"');
     },
   );
+
+  it('an absolute-form /api path never gets the SPA shell', async () => {
+    const app = build();
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+    const path = `http://127.0.0.1:${String(port)}/api/nope`;
+    const res = await new Promise<{ status: number | undefined; body: string }>(
+      (resolve, reject) => {
+        get({ host: '127.0.0.1', port, path }, (incoming) => {
+          let body = '';
+          incoming.setEncoding('utf8');
+          incoming.on('data', (chunk: string) => {
+            body += chunk;
+          });
+          incoming.on('end', () => {
+            resolve({ status: incoming.statusCode, body });
+          });
+        }).on('error', reject);
+      },
+    );
+    expect(res.status).not.toBe(200);
+    expect(res.body).not.toContain('<div id="root">');
+    expect(res.body).not.toContain('<!doctype');
+  });
 
   it('never serves index.html for a path that does not decode', async () => {
     const res = await build().inject({ method: 'GET', url: '/%E0%A4%A' });
