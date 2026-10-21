@@ -76,6 +76,8 @@ function isSpaRoute(method: string, rawUrl: string): boolean {
 /** True for `/api` and `/api/...`, after percent-decoding, ignoring case. Undecodable paths count as API. */
 function isApiPath(rawUrl: string): boolean {
   const rawPath = rawUrl.split('?')[0] ?? '';
+  // Absolute-form targets are routed to /api, so they count as API paths. Fail closed.
+  if (!rawPath.startsWith('/')) return true;
   let path: string;
   try {
     path = decodeURIComponent(rawPath).toLowerCase();

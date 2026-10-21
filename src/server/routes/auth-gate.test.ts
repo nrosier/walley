@@ -1,3 +1,5 @@
+import { get } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AuthMode } from '../../lib/auth-mode.js';
 import { buildApp } from '../app.js';
@@ -59,9 +61,12 @@ describe('default-deny', () => {
           }
         }
       });
+      // Not public and never reads request.auth, so only the deny hook can answer 401.
+      app.get('/api/__probe', () => ({ ok: true }));
       await app.ready();
       expect(routes.map((r) => `${r.method} ${r.url}`)).toContain('GET /api/auth/me');
       expect(routes.map((r) => `${r.method} ${r.url}`)).toContain('POST /api/auth/logout');
+      expect(routes.map((r) => `${r.method} ${r.url}`)).toContain('GET /api/__probe');
       for (const { method, url } of routes) {
         const res = await app.inject({ method: method as 'GET', url });
         expect(res.statusCode, `${method} ${url}`).toBe(401);
@@ -126,6 +131,33 @@ describe('default-deny', () => {
     const res = await app.inject({ method: 'GET', url: '/api/nope' });
     expect(res.statusCode).toBe(401);
     expect(res.json()).toEqual(UNAUTHENTICATED);
+  });
+
+  it('an absolute-form request to an unknown /api path returns 401', async () => {
+    const { app } = setup('local', false);
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    try {
+      const { port } = app.server.address() as AddressInfo;
+      const path = `http://127.0.0.1:${String(port)}/api/nope`;
+      const res = await new Promise<{ status: number | undefined; body: string }>(
+        (resolve, reject) => {
+          get({ host: '127.0.0.1', port, path }, (incoming) => {
+            let body = '';
+            incoming.setEncoding('utf8');
+            incoming.on('data', (chunk: string) => {
+              body += chunk;
+            });
+            incoming.on('end', () => {
+              resolve({ status: incoming.statusCode, body });
+            });
+          }).on('error', reject);
+        },
+      );
+      expect(res.status).toBe(401);
+      expect(res.body).toBe('{"error":"unauthenticated"}');
+    } finally {
+      await app.close();
+    }
   });
 
   it('unknown /api path with a session returns 404', async () => {
