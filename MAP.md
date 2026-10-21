@@ -25,7 +25,7 @@ Walley syncs recurring subscriptions between Wallos and Actual Budget. Start wit
 | --- | --- | --- |
 | `src/server/` | Fastify backend; see `src/server/MAP.md` | Server routes, startup, config |
 | `src/web/` | React and Vite frontend | UI work |
-| `src/lib/` | Code shared by server and web, with no Node or DOM types; holds the match-status enum | Anything both sides use |
+| `src/lib/` | Code shared by server and web, with no Node or DOM types; holds the match-status enum (`match-status.ts`) and the auth method list (`auth-mode.ts`) | Anything both sides use |
 
 ## Conventions
 

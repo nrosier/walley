@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AUTH_METHODS } from '../../lib/auth-mode.js';
 import { MATCH_STATUSES, isMatchStatus, type MatchStatus } from '../../lib/match-status.js';
 import * as schema from './schema.js';
 import { matches, sessions, userConfigs, userIdentities, users } from './schema.js';
@@ -219,6 +220,12 @@ describe('sessions', () => {
     const rows = db.select().from(sessions).all();
     expect(rows).toHaveLength(2);
     expect(rows[0]?.createdAt.getTime()).toBeGreaterThan(0);
+  });
+
+  it('accepts every AUTH_METHODS value in sessions', () => {
+    for (const method of AUTH_METHODS) {
+      expect(() => { addSession(method.padEnd(64, '0'), 'u1', { auth_method: method }); }).not.toThrow();
+    }
   });
 
   it('rejects an auth_method outside local and oidc', () => {
