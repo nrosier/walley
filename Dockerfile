@@ -15,6 +15,6 @@ COPY --chown=node:node package.json package-lock.json .npmrc ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean --force
 COPY --chown=node:node --from=build /app/dist ./dist
 COPY --chown=node:node LICENSE ./
-ENV HOST=0.0.0.0 PORT=3000 DATABASE_PATH=/data/walley.db
+ENV HOST=0.0.0.0 PORT=3000 DATABASE_PATH=/data/walley.db DATA_DIR=/data
 EXPOSE 3000
 CMD ["node", "dist/server/index.js"]

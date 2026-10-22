@@ -27,7 +27,7 @@ These commands run the app locally. `npm run dev` starts the API and the Vite de
 
 ```bash
 npm ci
-cp .env.example .env   # then set APP_SECRET, PUBLIC_ORIGIN and DATABASE_PATH
+cp .env.example .env   # then set APP_SECRET, PUBLIC_ORIGIN, DATABASE_PATH and DATA_DIR
 npm run dev
 ```
 
@@ -54,6 +54,7 @@ Copy `.env.example` to `.env` and set the values below. Walley refuses to start 
 | --- | --- | --- | --- |
 | `APP_SECRET` | Yes | none | Master key for deriving per-user encryption keys. Use at least 32 random characters. |
 | `DATABASE_PATH` | Yes | none | Path to the SQLite file, for example `./data/walley.db`. Walley creates the parent folder and the file, and runs the database migrations at start |
+| `DATA_DIR` | Yes | none | Folder for per-user Actual Budget data, for example `./data`. Walley creates `actual/<userId>` under it for each user |
 | `PUBLIC_ORIGIN` | Yes | none | Required. Public origin of Walley, for example `https://walley.example.com`. Use https, or http only for `localhost`, `127.0.0.1` or `[::1]`. No path, query, fragment, credentials or trailing dot. |
 | `PORT` | No | `3000` | Port to listen on, an integer from 1 to 65535 |
 | `HOST` | No | `127.0.0.1` | Address to bind. Docker deployments set `0.0.0.0` in compose. |

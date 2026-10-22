@@ -11,6 +11,7 @@ const BASE_ENV = {
   APP_SECRET: 'a'.repeat(40),
   PUBLIC_ORIGIN: 'http://localhost:3000',
   DATABASE_PATH: ':memory:',
+  DATA_DIR: './data/test-data',
 };
 const OIDC_ENV = {
   OIDC_ISSUER: 'https://idp.example.test',

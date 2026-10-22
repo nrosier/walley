@@ -13,6 +13,8 @@ export interface OidcConfig {
 interface BaseConfig {
   readonly appSecret: string;
   readonly databasePath: string;
+  /** Root for per-user Actual Budget data. Each user gets DATA_DIR/actual/<userId>. */
+  readonly dataDir: string;
   readonly allowRegistration: boolean;
   /** The origin browsers use to reach Walley, e.g. https://walley.example.com. No trailing slash. */
   readonly publicOrigin: string;
@@ -279,6 +281,11 @@ export function loadConfig(env: Env): AppConfig {
     problems.push('DATABASE_PATH is required');
   }
 
+  const dataDir = present(env, 'DATA_DIR');
+  if (dataDir === undefined) {
+    problems.push('DATA_DIR is required');
+  }
+
   let publicOrigin: string | undefined;
   const rawPublicOrigin = present(env, 'PUBLIC_ORIGIN');
   if (rawPublicOrigin === undefined) {
@@ -428,6 +435,7 @@ export function loadConfig(env: Env): AppConfig {
     problems.length > 0 ||
     appSecret === undefined ||
     databasePath === undefined ||
+    dataDir === undefined ||
     publicOrigin === undefined
   ) {
     throw new ConfigError(problems);
@@ -436,6 +444,7 @@ export function loadConfig(env: Env): AppConfig {
   const base: BaseConfig = {
     appSecret,
     databasePath,
+    dataDir,
     allowRegistration,
     publicOrigin,
     serveWeb,

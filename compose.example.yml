@@ -10,6 +10,7 @@ services:
       - .env
     environment:
       DATABASE_PATH: /data/walley.db
+      DATA_DIR: /data
       PORT: "3000"
       HOST: 0.0.0.0
       TZ: ${TZ:-Etc/UTC}

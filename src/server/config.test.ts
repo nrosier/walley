@@ -8,6 +8,7 @@ const CLIENT_SECRET = 'fake-oidc-client-secret-value-987654';
 const base = {
   APP_SECRET: SECRET,
   DATABASE_PATH: './data/test.db',
+  DATA_DIR: './data/test-data',
   PUBLIC_ORIGIN: 'https://walley.example.com',
 };
 const oidcAll = {
@@ -47,7 +48,11 @@ describe('PUBLIC_ORIGIN', () => {
   const REQUIRED = 'PUBLIC_ORIGIN is required';
   const INVALID =
     'PUBLIC_ORIGIN must be an absolute http or https origin with no path, query, fragment or credentials';
-  const withoutOrigin = { APP_SECRET: base.APP_SECRET, DATABASE_PATH: base.DATABASE_PATH };
+  const withoutOrigin = {
+    APP_SECRET: base.APP_SECRET,
+    DATABASE_PATH: base.DATABASE_PATH,
+    DATA_DIR: base.DATA_DIR,
+  };
 
   it('accepts an https origin', () => {
     expect(loadConfig({ ...base, PUBLIC_ORIGIN: 'https://walley.example.com' }).publicOrigin).toBe(
@@ -381,7 +386,7 @@ describe('required variables', () => {
     expect(loadConfig({ ...base, APP_SECRET: padded }).appSecret).toBe(padded);
   });
 
-  it('reports APP_SECRET, DATABASE_PATH and PUBLIC_ORIGIN when missing', () => {
+  it('reports APP_SECRET, DATABASE_PATH, DATA_DIR and PUBLIC_ORIGIN when missing', () => {
     try {
       loadConfig({});
       expect.unreachable();
@@ -389,17 +394,32 @@ describe('required variables', () => {
       expect(error).toBeInstanceOf(ConfigError);
       const message = (error as ConfigError).message;
       expect(message).toBe(
-        'Invalid configuration:\n  - APP_SECRET is required\n  - DATABASE_PATH is required\n  - PUBLIC_ORIGIN is required\nSee .env.example.',
+        'Invalid configuration:\n  - APP_SECRET is required\n  - DATABASE_PATH is required\n  - DATA_DIR is required\n  - PUBLIC_ORIGIN is required\nSee .env.example.',
       );
     }
   });
 
   it('counts empty and whitespace-only values as missing', () => {
-    expect(problemsOf({ APP_SECRET: '', DATABASE_PATH: '   ', PUBLIC_ORIGIN: ' ' })).toEqual([
+    expect(
+      problemsOf({
+        APP_SECRET: '',
+        DATABASE_PATH: '   ',
+        DATA_DIR: '',
+        PUBLIC_ORIGIN: ' ',
+      }),
+    ).toEqual([
       'APP_SECRET is required',
       'DATABASE_PATH is required',
+      'DATA_DIR is required',
       'PUBLIC_ORIGIN is required',
     ]);
+  });
+});
+
+describe('DATA_DIR', () => {
+  it('is required and exposed as dataDir', () => {
+    expect(loadConfig(base).dataDir).toBe('./data/test-data');
+    expect(problemsOf({ ...base, DATA_DIR: undefined })).toEqual(['DATA_DIR is required']);
   });
 });
 
