@@ -1,7 +1,7 @@
 // Bidirectional mapper between Wallos billing intervals and Actual Budget
 // schedule recurrence (the `frequency` and `interval` fields of a schedule's
 // RecurConfig). Start date, patterns and end mode are the caller's concern.
-// UNVERIFIED against @actual-app/api (not installed when written); see #32.
+// Verified against RecurConfig in @actual-app/core (api 26.10.0), see #32.
 
 export const WALLOS_INTERVAL_TYPES = ['monthly', 'yearly', 'weekly', 'custom_days'] as const;
 export type WallosIntervalType = (typeof WALLOS_INTERVAL_TYPES)[number];
