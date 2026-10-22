@@ -73,6 +73,7 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 ### 1. Multi-Tenant Database Schema (`walley.db`)
 - `users`: `id`, `email` (unique, stored lowercased), `password_hash` (nullable; null for users created through OIDC), `key_salt`, `created_at`
 - `user_identities`: `id`, `user_id` (FK), `issuer`, `subject`, `created_at`; unique `(issuer, subject)` and unique `(user_id, issuer)`
+- `sessions`: `id` (primary key, 64 characters; the SHA-256 of the session token), `user_id` (FK, cascade on delete, indexed), `auth_method` (`local` | `oidc`), `csrf_hash` (64 characters; the SHA-256 of the CSRF token), `created_at`, `last_seen_at`, `expires_at`
 - `user_configs`: `user_id` (FK), `wallos_url`, `wallos_api_key_enc`, `actual_url`, `actual_password_enc`, `actual_sync_key_enc`, `actual_budget_id`, `tolerance_percent`
 - `matches`: `id`, `user_id` (FK), `wallos_id`, `actual_schedule_id`, `status` (`LINKED` | `IGNORED_WALLOS` | `IGNORED_ACTUAL`), `last_known_wallos_hash`, `last_known_actual_hash`
 
@@ -90,7 +91,7 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 - Explicitly translate Wallos interval types (`monthly`, `yearly`, `weekly`, `custom_days`) to/from Actual Budget recurrence rules (`rrule` / schedule frequency objects).
 
 ### 5. Matching & Diff Engine
-- All queries **must** be scoped to `where user_id = current_user_id`.
+- All queries **must** be scoped to `where user_id = current_user_id`. The only exceptions are the read-only sign-in lookups in `src/server/db/lookup.ts` and `createUser` in `src/server/db/accounts.ts`, which creates a user before any `user_id` exists.
 - **Heuristics:**
   - Auto-link existing pairs by saved `wallos_id` <-> `actual_schedule_id`.
   - Suggest candidates via normalized fuzzy name matching (Payee vs Subscription title) and approximate currency amounts (within configurable tolerance, e.g., ±5%).

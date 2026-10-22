@@ -4,7 +4,7 @@ Walley is a multi-user web app that keeps recurring subscriptions in sync betwee
 
 Each user connects their own Wallos and Actual Budget instances. Credentials are encrypted at rest.
 
-> **Status:** early development. The server, database, secret encryption and the web shell run. Authentication (M3) and the sync features are not built yet, so there is no sign-in or sync screen to use.
+> **Status:** early development. The server, database, secret encryption and the web shell run. Sign-in (M3) and the sync features are not built yet, so there is no sign-in or sync screen to use.
 
 ## Features
 
@@ -16,7 +16,7 @@ Each user connects their own Wallos and Actual Budget instances. Credentials are
 
 ## Requirements
 
-- Node.js 24 or later
+- Node.js 24.7 or later
 - npm
 - A Wallos instance with API access and an API key
 - An Actual Budget server with a budget and either its password or sync key
@@ -27,11 +27,13 @@ These commands run the app locally. `npm run dev` starts the API and the Vite de
 
 ```bash
 npm ci
-cp .env.example .env   # then set APP_SECRET and DATABASE_PATH
+cp .env.example .env   # then set APP_SECRET, PUBLIC_ORIGIN and DATABASE_PATH
 npm run dev
 ```
 
 The dev server starts the Fastify backend and the Vite frontend. Open the URL that Vite prints.
+
+Local development needs `PUBLIC_ORIGIN=http://127.0.0.1:5173`, the Vite dev server origin.
 
 ## Scripts
 
@@ -52,16 +54,20 @@ Copy `.env.example` to `.env` and set the values below. Walley refuses to start 
 | --- | --- | --- | --- |
 | `APP_SECRET` | Yes | none | Master key for deriving per-user encryption keys. Use at least 32 random characters. |
 | `DATABASE_PATH` | Yes | none | Path to the SQLite file, for example `./data/walley.db`. Walley creates the parent folder and the file, and runs the database migrations at start |
+| `PUBLIC_ORIGIN` | Yes | none | Required. Public origin of Walley, for example `https://walley.example.com`. Use https, or http only for `localhost`, `127.0.0.1` or `[::1]`. No path, query, fragment, credentials or trailing dot. |
 | `PORT` | No | `3000` | Port to listen on, an integer from 1 to 65535 |
 | `HOST` | No | `127.0.0.1` | Address to bind. Docker deployments set `0.0.0.0` in compose. |
 | `ALLOW_REGISTRATION` | No | `false` | Set to `true` to allow new accounts. In local mode this opens the register form. In OIDC mode it lets a first single sign-on create an account. |
 | `NODE_ENV` | No | unset | Set to `production` to serve the built web app from `dist/web`. Any other value, or none, serves the API only. Use it for built or Docker runs. |
-| `OIDC_ISSUER` | All four or none | none | OIDC issuer URL. Setting all four OIDC variables turns on OIDC mode and turns off password login. |
+| `TRUST_PROXY` | No | none | Comma-separated IP addresses or CIDR ranges of the reverse proxies in front of Walley. Leave unset when Walley is reached directly. List only the addresses of those proxies, never a client network. The proxy must append the real client address to `X-Forwarded-For`, or overwrite it. Walley trusts the entry added by the nearest untrusted hop. Any client inside a trusted range can forge its address and get past the per-IP rate limit. Ranges need an IPv4 prefix of at least /8 or an IPv6 prefix of at least /32, no zone IDs (`%`), and no host bits (write `10.0.0.0/8`, not `10.0.0.1/8`). |
+| `OIDC_ISSUER` | All four or none | none | OIDC issuer URL. It must use `https`; `http` is allowed only for `localhost`, `127.0.0.1` or `[::1]`. Setting all four OIDC variables turns on OIDC mode and turns off password login. |
 | `OIDC_CLIENT_ID` | All four or none | none | OIDC client ID |
 | `OIDC_CLIENT_SECRET` | All four or none | none | OIDC client secret |
-| `OIDC_CALLBACK_URL` | All four or none | none | OIDC callback URL registered with your identity provider |
+| `OIDC_CALLBACK_URL` | All four or none | none | OIDC callback URL registered with your identity provider. The path must be `/api/auth/oidc/callback`, and its origin must match `PUBLIC_ORIGIN`. |
 | `WALLEY_HOSTNAME` | Compose only | none | Public hostname for the Traefik route and the Cloudflare tunnel. Read by `compose.yml`, not by Walley. |
 | `DOCKFLARE_SERVICE` | Compose only | none | Origin URL that DockFlare points the tunnel at, for example `https://<traefik LAN IP>`. Read by `compose.yml`, not by Walley. |
+
+Upgrading: this version requires `PUBLIC_ORIGIN`. Walley exits at startup if it is missing or invalid. Set it before you start the new version.
 
 For Docker, copy `compose.example.yml` to `compose.yml`, then fill in `.env`, including the compose-only `WALLEY_HOSTNAME` and `DOCKFLARE_SERVICE`. `compose.yml` is git-ignored, so your hostnames stay out of the repo.
 

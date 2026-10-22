@@ -22,6 +22,12 @@ async function main(): Promise<void> {
     throw error;
   }
 
+  if (process.env['NODE_ENV'] === 'production' && config.trustProxy === false) {
+    console.warn(
+      'TRUST_PROXY is not set. Walley ignores X-Forwarded-For, so behind a reverse proxy every client shares one rate-limit bucket.',
+    );
+  }
+
   let db: AppDatabase;
   try {
     db = openDatabase(config.databasePath);
@@ -39,10 +45,12 @@ async function main(): Promise<void> {
       logger: true,
       webRoot,
       db,
+      trustProxy: config.trustProxy,
       auth: {
         mode: config.authMode,
         secureCookies: config.secureCookies,
         allowRegistration: config.allowRegistration,
+        publicOrigin: config.publicOrigin,
       },
     });
   } catch (error: unknown) {

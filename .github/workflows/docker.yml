@@ -39,7 +39,7 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Smoke test the image
         run: |
-          docker run -d --name walley-smoke -p 127.0.0.1:3000:3000 -e APP_SECRET="$(openssl rand -base64 48)" walley:smoke
+          docker run -d --name walley-smoke -p 127.0.0.1:3000:3000 -e APP_SECRET="$(openssl rand -base64 48)" -e PUBLIC_ORIGIN=http://127.0.0.1:3000 walley:smoke
           for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then break; fi
             sleep 1
@@ -73,6 +73,7 @@ jobs:
           docker exec walley-smoke node -e "$check_db"
           docker stop -t 10 walley-smoke
           test "$(docker inspect -f '{{.State.ExitCode}}' walley-smoke)" = "0"
+          docker run --rm --entrypoint node walley:smoke -e "require('node:crypto').argon2Sync('argon2id', { message: 'smoke', nonce: Buffer.alloc(16), parallelism: 1, tagLength: 32, memory: 19456, passes: 2 })"
       - name: Container logs
         if: failure()
         run: docker logs walley-smoke || true

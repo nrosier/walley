@@ -14,6 +14,10 @@ services:
       HOST: 0.0.0.0
       TZ: ${TZ:-Etc/UTC}
       APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
+      # The proxy network is external and its subnet is not pinned here. Set TRUST_PROXY in .env
+      # to the addresses or CIDR range of your reverse proxies (for example Traefik).
+      TRUST_PROXY: ${TRUST_PROXY:-}
     volumes:
       - data:/data
     networks:
