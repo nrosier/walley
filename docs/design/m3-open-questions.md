@@ -77,3 +77,9 @@ Built on as placeholders. Ask the owner at 08:00 and revisit any code that depen
 - No automatic sign-in after registering. The user must follow the link, then log in.
 - `POST /api/auth/register` returns `202 {"status":"verification_sent"}` for every outcome, with no cookie. No `email_taken` response exists any more, so the register form does not reveal whether an address has an account.
 - Login for an unverified user returns the same `401 invalid_credentials` as a wrong password.
+
+## Decided for M5 matching: range schedules (confirmed 2026-10-22)
+
+- Actual schedules whose amount is a range (`amountOp: isbetween`, `amount: {num1, num2}`) are matched using the midpoint of the range, in integer cents.
+- A range schedule is flagged as a range wherever it is shown, so the user can see the match is approximate.
+- Source: live read-only check of the budget on 2026-10-22 found 2 of 18 schedules were ranges.
