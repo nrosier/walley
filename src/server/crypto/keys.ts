@@ -34,3 +34,26 @@ export function deriveUserKey(appSecret: string, keySalt: Buffer, userId: string
     ),
   );
 }
+
+const FLOW_KEY_BYTES = 32;
+const FLOW_INFO = 'walley/oidc-flow/v1';
+
+/**
+ * Derives the OIDC flow cookie key with HKDF-SHA256: APP_SECRET is the input
+ * key material, the salt is empty and the info label is `walley/oidc-flow/v1`.
+ * Separate from the per-user keys, which use `key_salt` and the user id.
+ */
+export function deriveFlowKey(appSecret: string): Buffer {
+  if (typeof appSecret !== 'string' || appSecret.length === 0) {
+    throw new TypeError('appSecret must not be empty');
+  }
+  return Buffer.from(
+    hkdfSync(
+      'sha256',
+      Buffer.from(appSecret, 'utf8'),
+      Buffer.alloc(0),
+      Buffer.from(FLOW_INFO, 'utf8'),
+      FLOW_KEY_BYTES,
+    ),
+  );
+}

@@ -12,6 +12,8 @@ Cookie sessions and password hashing for the API. Pure server code: no routes li
 | `csrf.ts` | `createCsrfHook(publicOrigin)`: `onRequest` hook for the Origin check and the `x-csrf-token` check (SHA-256 hash, `timingSafeEqual`); registered in `app.ts` after the deny hook | Changing CSRF rules |
 | `rate-limit.ts` | `createRateLimiter({ now, maxPerEmail, maxPerIp, windowMs, maxKeys })`: sliding-window `take(key)` (`email:` and `ip:` keys) and `clear(key)`; refused attempts are not counted; expired entries swept on each call; oldest-first eviction above `maxKeys`. Exports the sign-in limit constants (5 per email, 20 per IP, 15 min, 10,000 keys) | Changing sign-in limits or the 429 rules |
 | `rate-limit.test.ts` | Window, Retry-After, sweep and eviction tests for the limiter | Changing `rate-limit.ts` |
+| `oidc.ts` | `OidcProvider` (`start()` returns `{ url, flow }`, `finish(currentUrl, flow)` returns verified claims), `OidcRuntime`, `OidcError` (fixed message, `stage`, `code`, no cause), `createOidcProvider(config, fetchImpl?)`: `openid-client` with lazy cached discovery, PKCE S256, `client_secret_basic`, `enableNonRepudiationChecks` (ID token signature), exact `iss` check, `allowInsecureRequests` only for an http loopback issuer | Changing the provider protocol, client auth or claim checks |
+| `oidc-provider.test.ts` | Provider tests against in-memory responses signed with `jose`: state, nonce, aud, iss, exp, signature, sub, PKCE, provider errors, discovery retry | Changing `oidc.ts` |
 | `sessions.test.ts` | Cookie attribute, hashing, expiry, idle, touch and mode-mismatch tests | Changing `sessions.ts` |
 
 ## Rules

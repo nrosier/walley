@@ -6,7 +6,8 @@ Fastify backend. It serves the API, the built web app (when `NODE_ENV=production
 
 | Path | What it is | Read it when |
 | --- | --- | --- |
-| `index.ts` | Entry point: loads `.env`, validates config, opens the database, builds the app and listens. Exits 1 on any startup error | Startup behaviour |
+| `index.ts` | Entry point: loads `.env`, validates config, opens the database, builds the app and listens. In OIDC mode it builds the `OidcRuntime` (`createOidcProvider`, no network I/O; `deriveFlowKey`; callback URL) and passes it as `auth.oidc`; if that fails it logs a fixed message and starts without the OIDC routes. Exits 1 on any other startup error | Startup behaviour |
+| `startup-oidc.test.ts` | Tests the startup wiring through `loadConfig` and `buildApp` with the options `index.ts` builds: OIDC login route registered in OIDC mode (discovery stubbed to fail gives 302 `oidc_failed`), 404 in local mode | Changing how startup wires OIDC |
 | `app.ts` | `buildApp({ logger, webRoot, db, auth, trustProxy })`. Registers the health route under `/api`, the static web app with cache headers, and the SPA fallback. With `auth` (needs `db`) it also registers `@fastify/cookie`, an `onRequest` session hook that sets `request.auth` for `/api` paths and clears stale cookies, `POST /api/auth/logout` and the auth routes. A deny hook (with or without `auth`) answers 401 for any `/api` request with no session unless the route has `config.public`. Never reads `process.env` | Adding a route or changing how requests are served |
 | `config.ts` | `loadConfig(env)`: a pure function that validates environment variables into `AppConfig`. Secrets are non-enumerable. Collects every problem into one `ConfigError` | Adding or changing an environment variable |
 | `trust-proxy.test.ts` | Tests that `buildApp({ trustProxy })` honours X-Forwarded-For only from trusted peers (address and CIDR forms) | Changing proxy trust or client IP handling |
