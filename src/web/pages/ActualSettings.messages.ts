@@ -1,0 +1,51 @@
+const en = {
+  url: 'Server URL',
+  password: 'Password',
+  syncKey: 'Sync key',
+  savedKeep: 'Saved - leave blank to keep',
+  savedBadge: 'Saved',
+  clearSyncKey: 'Remove sync key',
+  save: 'Save',
+  saving: 'Saving...',
+  saved: 'Saved.',
+  loadBudgets: 'Load budgets',
+  loadingBudgets: 'Loading budgets...',
+  budget: 'Budget',
+  budgetChoose: 'Choose a budget',
+  noBudgets: 'No budgets on this server',
+  budgetSaved: 'Budget saved.',
+  baseCurrency: 'Base currency',
+  detecting: 'Detecting...',
+  notSet: 'not set',
+  loadFailed: 'Could not load settings.',
+  errors: {
+    password_required: 'The server URL changed. Enter the password again to save it.',
+  },
+};
+
+const nl: typeof en = {
+  url: 'Server-URL',
+  password: 'Wachtwoord',
+  syncKey: 'Synchronisatiesleutel',
+  savedKeep: 'Opgeslagen - laat leeg om te behouden',
+  savedBadge: 'Opgeslagen',
+  clearSyncKey: 'Synchronisatiesleutel verwijderen',
+  save: 'Opslaan',
+  saving: 'Opslaan...',
+  saved: 'Opgeslagen.',
+  loadBudgets: 'Budgetten laden',
+  loadingBudgets: 'Budgetten laden...',
+  budget: 'Budget',
+  budgetChoose: 'Kies een budget',
+  noBudgets: 'Geen budgetten op deze server',
+  budgetSaved: 'Budget opgeslagen.',
+  baseCurrency: 'Basisvaluta',
+  detecting: 'Detecteren...',
+  notSet: 'niet ingesteld',
+  loadFailed: 'Instellingen konden niet worden geladen.',
+  errors: {
+    password_required: 'De server-URL is gewijzigd. Voer het wachtwoord opnieuw in om op te slaan.',
+  },
+};
+
+export const actualSettingsMessages = { en, nl };
