@@ -68,6 +68,15 @@ describe('canonicalMatchString', () => {
     expect(canonicalMatchString({ ...base, name: '  Netflix ', currency: 'eur' })).toBe(canonicalMatchString(base));
   });
 
+  it('ignores name case but not a real rename or a range bound change', () => {
+    expect(canonicalMatchString({ ...base, name: 'netflix' })).toBe(canonicalMatchString(base));
+    expect(canonicalMatchString({ ...base, name: 'NETFLIX' })).toBe(canonicalMatchString(base));
+    expect(canonicalMatchString({ ...base, name: 'Netflix Premium' })).not.toBe(canonicalMatchString(base));
+    const range = (num1: number, num2: number): MatchFieldsInput => ({ ...base, amount: { kind: 'range', num1, num2 } });
+    expect(canonicalMatchString({ ...range(-1000, -2000), name: 'netflix' })).toBe(canonicalMatchString(range(-1000, -2000)));
+    expect(canonicalMatchString({ ...range(-1000, -2001), name: 'netflix' })).not.toBe(canonicalMatchString(range(-1000, -2000)));
+  });
+
   it('hashes both range bounds', () => {
     const range = (num1: number, num2: number): MatchFieldsInput => ({ ...base, amount: { kind: 'range', num1, num2 } });
     const ref = canonicalMatchString(range(-1000, -2000));

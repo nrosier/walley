@@ -32,6 +32,21 @@ describe('hashMatchFields', () => {
     expect(hashMatchFields(base)).toMatch(/^[0-9a-f]{64}$/u);
   });
 
+  it('is the same for names that differ only in case', () => {
+    expect(hashMatchFields({ ...base, name: 'netflix' })).toBe(hashMatchFields(base));
+    expect(hashMatchFields({ ...base, name: 'NETFLIX' })).toBe(hashMatchFields(base));
+  });
+
+  it('changes on a real rename', () => {
+    expect(hashMatchFields({ ...base, name: 'Netflix Premium' })).not.toBe(hashMatchFields(base));
+  });
+
+  it('changes on a range bound change even when only the name case also differs', () => {
+    const range = (a: number, b: number): MatchFieldsInput => ({ ...base, amount: { kind: 'range', num1: a, num2: b } });
+    expect(hashMatchFields({ ...range(-100, -200), name: 'netflix' })).toBe(hashMatchFields(range(-100, -200)));
+    expect(hashMatchFields({ ...range(-100, -201), name: 'netflix' })).not.toBe(hashMatchFields(range(-100, -200)));
+  });
+
   it('changes when the amount changes', () => {
     expect(hashMatchFields({ ...base, amount: { kind: 'single', cents: -1300 } })).not.toBe(hashMatchFields(base));
   });

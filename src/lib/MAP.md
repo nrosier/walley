@@ -4,7 +4,7 @@
 - `amount-match.test.ts`: tests for `amount-match.ts`.
 - `match-badge.ts`: `MATCH_BADGES` and `matchBadge`: status to badge label and tone (Synced, Mismatch, Ignored).
 - `match-badge.test.ts`: tests for `match-badge.ts`.
-- `match-fields.ts`: browser-safe canonical form of the compared fields (`normalizeMatchFields`, `serializeMatchFields`, `canonicalMatchString`); null for pattern schedules. Hashed by `src/server/matching/hash.ts`.
+- `match-fields.ts`: browser-safe canonical form of the compared fields (`normalizeMatchFields`, `serializeMatchFields`, `canonicalMatchString`); the name is trimmed, whitespace-collapsed and lowercased; null for pattern schedules. Hashed by `src/server/matching/hash.ts`.
 - `match-fields.test.ts`: tests for `match-fields.ts`, including that it imports no Node built-ins.
 - `name-match.ts`: `normalizeName`, `nameScore` (0..1 token overlap), `namesMatch`, with `LEGAL_SUFFIXES` and `NAME_MATCH_THRESHOLD`.
 - `name-match.test.ts`: tests for `name-match.ts`.

@@ -47,8 +47,8 @@ function intOrZero(value: number): number {
 }
 
 /**
- * Trims and collapses whitespace in the name, upper-cases the currency, folds a missing interval
- * to 1 and orders range bounds. Returns null for a pattern schedule (unmappable, no hash).
+ * Trims, collapses whitespace in and lowercases the name (so a case-only rename is not drift),
+ * upper-cases the currency, folds a missing interval to 1 and orders range bounds. Returns null for a pattern schedule (unmappable, no hash).
  * Throws RangeError for a non-integer amount or interval.
  */
 export function normalizeMatchFields(input: MatchFieldsInput): CanonicalMatchFields | null {
@@ -75,7 +75,7 @@ export function normalizeMatchFields(input: MatchFieldsInput): CanonicalMatchFie
     currency: input.currency.trim().toUpperCase(),
     frequency: input.frequency,
     interval,
-    name: input.name.trim().replace(/\s+/gu, ' '),
+    name: input.name.trim().replace(/\s+/gu, ' ').toLowerCase(),
     startDate: input.startDate,
   };
 }
