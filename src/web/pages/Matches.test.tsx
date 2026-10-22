@@ -173,10 +173,17 @@ describe('Matches ignored section', () => {
   });
 });
 
-describe('Matches is read-only', () => {
-  it('imports no write client', () => {
-    expect(matchesSrc).not.toMatch(/matches\.api/);
-    expect(matchesSrc).not.toMatch(/linkPair|ignoreItem|restore/i);
+describe('Matches ignored section Restore', () => {
+  it('renders one Restore button per ignored row with the accessible name', () => {
+    const html = render({ result: fixture(), showIgnored: true });
+    expect(html.match(/aria-label="Restore \(unignore\)"/g)).toHaveLength(fixture().ignored.length);
+    expect(html).toContain('>Restore</button>');
+  });
+  it('renders Herstellen in nl', () => {
+    expect(render({ result: fixture(), showIgnored: true }, 'nl')).toContain('>Herstellen</button>');
+  });
+  it('uses only the restore write client and keeps the shared store', () => {
+    expect(matchesSrc).not.toMatch(/linkPair|ignoreItem/);
     expect(storeSrc).toContain('export function useSyncCheck');
   });
 });

@@ -19,6 +19,7 @@ export interface ItemRowProps {
   createLabel: string;
   onLink?: (wallosId: string, actualScheduleId: string, side: Side) => void;
   onIgnore?: (side: Side, itemId: string) => void;
+  onRestore?: (side: Side, matchId: string, itemId: string) => void;
 }
 
 const CELL = 'px-3 py-1.5 text-sm';
@@ -100,6 +101,19 @@ export function ItemRow(props: ItemRowProps) {
           </Button>
         </div>
       ) : null}
+      {row.ignored && row.matchId !== null && props.disabled !== true ? (
+        <div className={`flex flex-wrap items-center gap-2 pt-0 ${CELL}`}>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            aria-label={t('row.restoreLabel')}
+            onClick={() => props.onRestore?.(side, row.matchId ?? '', row.id)}
+          >
+            {t('row.restore')}
+          </Button>
+        </div>
+      ) : null}
       {props.error != null ? (
         <p role="alert" className={`text-xs text-warning ${CELL}`}>
           {props.error}
@@ -123,6 +137,7 @@ export interface ItemColumnProps {
   errorText?: string | null;
   onLink?: (wallosId: string, actualScheduleId: string, side: Side) => void;
   onIgnore?: (side: Side, itemId: string) => void;
+  onRestore?: (side: Side, matchId: string, itemId: string) => void;
 }
 
 /** Shared column body used by WallosColumn and ActualColumn. */
@@ -150,6 +165,7 @@ export function ItemColumn(props: ItemColumnProps) {
               error={props.errorRowId === row.id ? props.errorText : null}
               onLink={props.onLink}
               onIgnore={props.onIgnore}
+              onRestore={props.onRestore}
             />
           ))}
         </ul>

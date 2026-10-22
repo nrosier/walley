@@ -7,7 +7,7 @@ import type {
   UnmappableReason,
 } from '../../lib/sync-check-types';
 import { ApiError, apiRequest } from './api';
-import { ignoreItem, linkPair } from './matches.api';
+import { ignoreItem, linkPair, restoreMatch } from './matches.api';
 
 export type Side = 'wallos' | 'actual';
 
@@ -84,6 +84,8 @@ export interface RowModel {
   readonly isRange: boolean;
   readonly reason: UnmappableReason | null;
   readonly ignored: boolean;
+  /** Id of the ignore record; null on rows that are not ignored. */
+  readonly matchId: string | null;
 }
 
 const fromItem = (item: SyncItem): RowModel => ({
@@ -93,6 +95,7 @@ const fromItem = (item: SyncItem): RowModel => ({
   isRange: item.isRange,
   reason: item.reason,
   ignored: false,
+  matchId: null,
 });
 
 const fromIgnored = (row: SyncIgnored): RowModel => ({
@@ -102,6 +105,7 @@ const fromIgnored = (row: SyncIgnored): RowModel => ({
   isRange: row.isRange,
   reason: row.reason,
   ignored: true,
+  matchId: row.matchId,
 });
 
 /** Case-insensitive name filter; a blank query keeps every row. */
@@ -175,6 +179,23 @@ export function applyIgnore(result: SyncCheckResult, side: Side, itemId: string)
   };
 }
 
+/** Optimistic Restore: the ignored row leaves ignored[] and returns to its unlinked column. */
+export function applyRestore(result: SyncCheckResult, matchId: string): SyncCheckResult {
+  const row = result.ignored.find((r) => r.matchId === matchId);
+  if (row === undefined) return result;
+  const item: SyncItem = {
+    id: row.itemId,
+    name: row.name ?? row.itemId,
+    amountCents: row.amountCents,
+    isRange: row.isRange,
+    reason: row.reason,
+  };
+  const ignored = result.ignored.filter((r) => r.matchId !== matchId);
+  return row.side === 'wallos'
+    ? { ...result, ignored, unlinkedWallos: [...result.unlinkedWallos, item] }
+    : { ...result, ignored, unlinkedActual: [...result.unlinkedActual, item] };
+}
+
 /** Undo an optimistic change by returning the snapshot taken before it. */
 export function rollback(_current: SyncCheckResult, snapshot: SyncCheckResult): SyncCheckResult {
   return snapshot;
@@ -189,7 +210,8 @@ export function nextRowId(ids: readonly string[], id: string): string | null {
 
 export type RowAction =
   | { readonly kind: 'link'; readonly wallosId: string; readonly actualScheduleId: string }
-  | { readonly kind: 'ignore'; readonly side: Side; readonly itemId: string };
+  | { readonly kind: 'ignore'; readonly side: Side; readonly itemId: string }
+  | { readonly kind: 'restore'; readonly matchId: string };
 
 export type ActionOutcome = { readonly ok: true } | { readonly ok: false; readonly code: string };
 
@@ -205,14 +227,27 @@ export async function performAction(
 ): Promise<ActionOutcome> {
   const snapshot = get();
   if (snapshot === null) return { ok: false, code: 'request_failed' };
-  set(
-    action.kind === 'link'
-      ? applyLink(snapshot, action.wallosId, action.actualScheduleId)
-      : applyIgnore(snapshot, action.side, action.itemId),
-  );
+  if (action.kind === 'link') set(applyLink(snapshot, action.wallosId, action.actualScheduleId));
+  else if (action.kind === 'ignore') set(applyIgnore(snapshot, action.side, action.itemId));
+  else set(applyRestore(snapshot, action.matchId));
   try {
     if (action.kind === 'link') await linkPair(action.wallosId, action.actualScheduleId, fetchImpl);
-    else await ignoreItem(action.side, action.itemId, fetchImpl);
+    else if (action.kind === 'restore') await restoreMatch(action.matchId, fetchImpl);
+    else {
+      const created = await ignoreItem(action.side, action.itemId, fetchImpl);
+      // Give the optimistic row its real id so it can be restored without a refetch.
+      const now = get();
+      if (now !== null && typeof created.id === 'string') {
+        set({
+          ...now,
+          ignored: now.ignored.map((r) =>
+            r.matchId === PENDING && r.side === action.side && r.itemId === action.itemId
+              ? { ...r, matchId: created.id }
+              : r,
+          ),
+        });
+      }
+    }
     return { ok: true };
   } catch (error: unknown) {
     set(rollback(get() ?? snapshot, snapshot));

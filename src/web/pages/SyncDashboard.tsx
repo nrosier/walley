@@ -28,6 +28,7 @@ export interface SyncDashboardViewProps {
   onRun?: () => void;
   onLink?: (wallosId: string, actualScheduleId: string, side: Side) => void;
   onIgnore?: (side: Side, itemId: string) => void;
+  onRestore?: (side: Side, matchId: string, itemId: string) => void;
 }
 
 /** Presentational dashboard: one toolbar, Wallos on the left, Actual on the right. */
@@ -62,6 +63,7 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
       errorText: props.rowError,
       onLink: props.onLink,
       onIgnore: props.onIgnore,
+      onRestore: props.onRestore,
     };
     body = (
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2" aria-busy={running}>
@@ -163,6 +165,9 @@ export function SyncDashboard() {
       }}
       onIgnore={(side, id) => {
         act(side, id, { kind: 'ignore', side, itemId: id });
+      }}
+      onRestore={(side, matchId, id) => {
+        act(side, id, { kind: 'restore', matchId });
       }}
     />
   );

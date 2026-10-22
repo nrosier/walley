@@ -1,8 +1,10 @@
+import { errorText } from '@/i18n/translate';
 import { describe, expect, it, vi } from 'vitest';
 import type { SyncCheckResult } from '../../lib/sync-check-types';
 import {
   applyIgnore,
   applyLink,
+  applyRestore,
   buildRows,
   createSyncStore,
   filterRows,
@@ -76,6 +78,16 @@ describe('applyLink, applyIgnore, rollback', () => {
     expect(before).toEqual(sample());
     expect(rollback(next, before)).toBe(before);
   });
+  it('applyRestore moves the ignored row back to its unlinked column', () => {
+    const before = sample();
+    const next = applyRestore(before, 'm1');
+    expect(next.ignored).toEqual([]);
+    expect(next.unlinkedWallos.map((i) => i.id)).toEqual(['w1', 'w2', 'w9']);
+    expect(next.unlinkedWallos.at(-1)).toMatchObject({ name: 'Old', amountCents: 500 });
+    expect(before).toEqual(sample());
+    expect(rollback(next, before)).toBe(before);
+    expect(applyRestore(before, 'nope')).toBe(before);
+  });
   it('nextRowId prefers the next row, then the previous', () => {
     expect(nextRowId(['a', 'b', 'c'], 'b')).toBe('c');
     expect(nextRowId(['a', 'b'], 'b')).toBe('a');
@@ -114,6 +126,30 @@ describe('performAction', () => {
     const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/matches/ignore');
     expect(JSON.parse(init.body as string)).toEqual({ side: 'wallos', itemId: 'w2' });
+  });
+  it('restore 204 moves the item back and sends DELETE', async () => {
+    const h = harness();
+    const f = vi.fn(async () => new Response(null, { status: 204 }));
+    const out = await performAction(h.get, h.set, { kind: 'restore', matchId: 'm1' }, f);
+    expect(out).toEqual({ ok: true });
+    expect(h.get()?.ignored).toEqual([]);
+    expect(h.get()?.unlinkedWallos.map((i) => i.id)).toContain('w9');
+    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/matches/m1');
+    expect(init.method).toBe('DELETE');
+  });
+  it('restore 404 rolls back and returns match_not_found', async () => {
+    const h = harness();
+    const f = vi.fn(async () => json(404, { error: 'match_not_found' }));
+    const out = await performAction(h.get, h.set, { kind: 'restore', matchId: 'm1' }, f);
+    expect(out).toEqual({ ok: false, code: 'match_not_found' });
+    expect(h.get()).toEqual(sample());
+    expect(errorText('match_not_found', 'en')).toContain('no longer exists');
+  });
+  it('ignore then restore works without a refetch using the returned id', async () => {
+    const h = harness();
+    await performAction(h.get, h.set, { kind: 'ignore', side: 'wallos', itemId: 'w2' }, async () => json(201, { id: 'real', status: 'IGNORED_WALLOS' }));
+    expect(h.get()?.ignored.at(-1)?.matchId).toBe('real');
   });
   it('a network failure rolls back with request_failed', async () => {
     const h = harness();

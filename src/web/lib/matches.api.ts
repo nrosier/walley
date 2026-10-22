@@ -14,3 +14,8 @@ export function linkPair(wallosId: string, actualScheduleId: string, fetchImpl?:
 export function ignoreItem(side: 'wallos' | 'actual', itemId: string, fetchImpl?: typeof fetch): Promise<MatchCreated> {
   return apiRequest<MatchCreated>('/api/matches/ignore', { method: 'POST', body: { side, itemId }, fetchImpl });
 }
+
+/** DELETE /api/matches/:id (204). Throws ApiError with the server code (match_not_found, invalid_state). */
+export function restoreMatch(matchId: string, fetchImpl?: typeof fetch): Promise<void> {
+  return apiRequest(`/api/matches/${encodeURIComponent(matchId)}`, { method: 'DELETE', fetchImpl }).then(() => undefined);
+}

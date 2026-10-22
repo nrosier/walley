@@ -77,6 +77,13 @@ describe('SyncDashboard states', () => {
     expect(html).toContain('data-kind="ignored"');
     expect(html).toContain('role="switch"');
   });
+  it('shows one Restore button on each ignored row', () => {
+    expect(render(ready())).not.toContain('Restore (unignore)');
+    const html = render(ready(), { showIgnored: true });
+    expect(html.match(/aria-label="Restore \(unignore\)"/g)).toHaveLength(1);
+    expect(html).toContain('>Restore</button>');
+    expect(render(ready(), { showIgnored: true }, 'nl')).toContain('>Herstellen</button>');
+  });
   it('shows a row error and renders in nl', () => {
     const html = render(ready(), { errorRowId: 'w1', rowError: 'Kapot' });
     expect(html).toContain('Kapot');

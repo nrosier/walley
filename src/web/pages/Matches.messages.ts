@@ -22,6 +22,10 @@ const en = {
     },
     amount: 'Amount',
     none: 'No ignored items.',
+    actions: 'Action',
+    restore: 'Restore',
+    restoreLabel: 'Restore (unignore)',
+    failed: 'Could not restore {name}.',
   },
 };
 
@@ -49,6 +53,10 @@ const nl: typeof en = {
     },
     amount: 'Bedrag',
     none: 'Geen genegeerde items.',
+    actions: 'Actie',
+    restore: 'Herstellen',
+    restoreLabel: 'Herstellen (negeren ongedaan maken)',
+    failed: '{name} kon niet worden hersteld.',
   },
 };
 

@@ -25,6 +25,8 @@ const en = {
     already_matched: 'One of these items is already linked or ignored. Run the sync check again.',
     not_candidate: 'These items are not a suggested pair. Run the sync check again.',
     item_not_found: 'That item no longer exists. Run the sync check again.',
+    match_not_found: 'That ignored item no longer exists. Run the sync check again.',
+    invalid_state: 'That item cannot be restored. Run the sync check again.',
   },
   language: {
     label: 'Language',
@@ -57,6 +59,8 @@ const nl: typeof en = {
     already_matched: 'Een van deze items is al gekoppeld of genegeerd. Voer de synchronisatiecontrole opnieuw uit.',
     not_candidate: 'Deze items zijn geen voorgesteld paar. Voer de synchronisatiecontrole opnieuw uit.',
     item_not_found: 'Dit item bestaat niet meer. Voer de synchronisatiecontrole opnieuw uit.',
+    match_not_found: 'Dit genegeerde item bestaat niet meer. Voer de synchronisatiecontrole opnieuw uit.',
+    invalid_state: 'Dit item kan niet worden hersteld. Voer de synchronisatiecontrole opnieuw uit.',
   },
   language: {
     label: 'Taal',

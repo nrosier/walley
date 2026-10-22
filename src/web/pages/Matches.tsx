@@ -3,10 +3,11 @@ import type { SyncCheckResult, SyncIgnored, SyncLinked } from '../../lib/sync-ch
 import { formatMoney } from '../../lib/format-money';
 import { pairBadge } from '../../lib/match-badge';
 import { useT } from '@/i18n';
-import { useSyncCheck } from '@/lib/sync-check';
+import { nextRowId, performAction, useSyncCheck } from '@/lib/sync-check';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
 import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
 import { matchesMessages } from './Matches.messages';
 
 export interface MatchesViewProps {
@@ -15,6 +16,13 @@ export interface MatchesViewProps {
   /** Drives the "Ignored items" section. */
   showIgnored: boolean;
   onShowIgnoredChange?: (on: boolean) => void;
+  /** Restore an ignored row by its match id. */
+  onRestore?: (matchId: string) => void;
+  /** Match id of the row being restored, and of the row whose restore failed. */
+  busyId?: string | null;
+  errorId?: string | null;
+  /** Resolved text of the last failed restore. */
+  errorMessage?: string | null;
 }
 
 const CELL = 'px-3 py-1.5 text-sm';
@@ -26,8 +34,16 @@ function Value({ children, muted = false }: { children: ReactNode; muted?: boole
   return <span className={muted ? 'text-muted-foreground' : undefined}>{children}</span>;
 }
 
-/** Linked subscription pairs and, when switched on, the ignored items. Read-only. */
-export function MatchesView({ result, showIgnored, onShowIgnoredChange }: MatchesViewProps) {
+/** Linked subscription pairs and, when switched on, the ignored items with a Restore action. */
+export function MatchesView({
+  result,
+  showIgnored,
+  onShowIgnoredChange,
+  onRestore,
+  busyId,
+  errorId,
+  errorMessage,
+}: MatchesViewProps) {
   const { t, locale } = useT(matchesMessages);
   const money = (cents: number | null, currency: string): string =>
     cents === null ? DASH : formatMoney(cents, currency, locale);
@@ -116,7 +132,7 @@ export function MatchesView({ result, showIgnored, onShowIgnoredChange }: Matche
       {body}
       {showIgnored && result !== null ? (
         <section aria-labelledby="matches-ignored-title" className="mt-6">
-          <h2 id="matches-ignored-title" className="mb-2 text-sm font-semibold">
+          <h2 id="matches-ignored-title" tabIndex={-1} data-ignored-heading className="mb-2 text-sm font-semibold outline-none">
             {t('ignored.title')}
           </h2>
           {ignored.length === 0 ? (
@@ -130,11 +146,12 @@ export function MatchesView({ result, showIgnored, onShowIgnoredChange }: Matche
                     <th scope="col" className={HEAD}>{t('ignored.side')}</th>
                     <th scope="col" className={cn(HEAD, 'text-right')}>{t('ignored.amount')}</th>
                     <th scope="col" className={HEAD}>{t('table.status')}</th>
+                    <th scope="col" className={HEAD}>{t('ignored.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ignored.map((row) => (
-                    <tr key={`${row.side}:${row.itemId}`} data-ignored-row className="border-b last:border-b-0">
+                    <tr key={`${row.side}:${row.itemId}`} data-ignored-row data-match-id={row.matchId} tabIndex={-1} className="border-b outline-none last:border-b-0 focus-visible:ring-[3px] focus-visible:ring-ring/50">
                       <td className={cn(CELL, 'font-medium')}>
                         <Value muted={row.name === null}>{row.name ?? DASH}</Value>
                       </td>
@@ -144,6 +161,23 @@ export function MatchesView({ result, showIgnored, onShowIgnoredChange }: Matche
                       </td>
                       <td className={CELL}>
                         <StatusBadge kind="ignored" />
+                      </td>
+                      <td className={CELL}>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          disabled={busyId === row.matchId}
+                          aria-label={t('ignored.restoreLabel')}
+                          onClick={() => onRestore?.(row.matchId)}
+                        >
+                          {t('ignored.restore')}
+                        </Button>
+                        {errorId === row.matchId && errorMessage != null ? (
+                          <p role="alert" className="mt-1 text-xs text-warning">
+                            {errorMessage}
+                          </p>
+                        ) : null}
                       </td>
                     </tr>
                   ))}
@@ -157,9 +191,59 @@ export function MatchesView({ result, showIgnored, onShowIgnoredChange }: Matche
   );
 }
 
+function focusAfter(matchId: string | null) {
+  requestAnimationFrame(() => {
+    const row = matchId === null ? null : document.querySelector<HTMLElement>(`[data-match-id="${CSS.escape(matchId)}"]`);
+    (row ?? document.querySelector<HTMLElement>('[data-ignored-heading]'))?.focus();
+  });
+}
+
 /** Matches page: reads the shared sync result and holds the ignored-switch state. */
 export function Matches() {
+  const { t, errorText } = useT(matchesMessages);
   const sync = useSyncCheck();
   const [showIgnored, setShowIgnored] = useState(false);
-  return <MatchesView result={sync.result} showIgnored={showIgnored} onShowIgnoredChange={setShowIgnored} />;
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ id: string; text: string } | null>(null);
+
+  const restore = (matchId: string) => {
+    const result = sync.result;
+    if (result === null) return;
+    const next = nextRowId(
+      result.ignored.map((r) => r.matchId),
+      matchId,
+    );
+    const name = result.ignored.find((r) => r.matchId === matchId)?.name ?? matchId;
+    setBusyId(matchId);
+    setFailed(null);
+    let latest = result;
+    void performAction(
+      () => latest,
+      (r) => {
+        latest = r;
+        sync.setResult(r);
+      },
+      { kind: 'restore', matchId },
+    ).then((outcome) => {
+      setBusyId(null);
+      if (outcome.ok) {
+        focusAfter(next);
+      } else {
+        setFailed({ id: matchId, text: `${t('ignored.failed', { name })} ${errorText(outcome.code)}` });
+        focusAfter(matchId);
+      }
+    });
+  };
+
+  return (
+    <MatchesView
+      result={sync.result}
+      showIgnored={showIgnored}
+      onShowIgnoredChange={setShowIgnored}
+      onRestore={restore}
+      busyId={busyId}
+      errorId={failed?.id ?? null}
+      errorMessage={failed?.text ?? null}
+    />
+  );
 }
