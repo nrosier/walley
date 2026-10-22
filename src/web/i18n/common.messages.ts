@@ -22,6 +22,9 @@ const en = {
     request_failed: 'The request failed. Check your connection and try again.',
     unauthenticated: 'Your session has ended. Sign in again.',
     out_of_range: 'The value is out of range.',
+    already_matched: 'One of these items is already linked or ignored. Run the sync check again.',
+    not_candidate: 'These items are not a suggested pair. Run the sync check again.',
+    item_not_found: 'That item no longer exists. Run the sync check again.',
   },
   language: {
     label: 'Language',
@@ -51,6 +54,9 @@ const nl: typeof en = {
     request_failed: 'Het verzoek is mislukt. Controleer uw verbinding en probeer het opnieuw.',
     unauthenticated: 'Uw sessie is beëindigd. Log opnieuw in.',
     out_of_range: 'De waarde valt buiten het toegestane bereik.',
+    already_matched: 'Een van deze items is al gekoppeld of genegeerd. Voer de synchronisatiecontrole opnieuw uit.',
+    not_candidate: 'Deze items zijn geen voorgesteld paar. Voer de synchronisatiecontrole opnieuw uit.',
+    item_not_found: 'Dit item bestaat niet meer. Voer de synchronisatiecontrole opnieuw uit.',
   },
   language: {
     label: 'Taal',

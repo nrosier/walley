@@ -2,12 +2,16 @@
 
 | File | What it holds | Touch when |
 | --- | --- | --- |
-| `App.tsx` | Path router via `useRoute`; `/login` and `/verify-email` render without the shell or session check; other routes run the session gate (`GET /api/auth/me`, 401 goes to `/login` keeping the query), then `AppShell` with theme, logout, refresh (page key bump); Sync/Matches placeholders, `SettingsPage` | Adding pages or routes |
+| `App.tsx` | Path router via `useRoute`; `/login` and `/verify-email` render without the shell or session check; other routes run the session gate (`GET /api/auth/me`, 401 goes to `/login` keeping the query), then `AppShell` with theme, logout, refresh (page key bump); `SyncDashboard`, Matches placeholder, `SettingsPage`; Manual Refresh on `/sync` runs the shared sync check | Adding pages or routes |
 | `App.messages.ts` | App-level strings (loading, session error, placeholder pages, verify-email title) | |
 | `main.tsx` | Mounts `I18nProvider` > `App` | |
 | `pages/SettingsPage.tsx` | Settings: General (`LanguageSelect`), then "Your account" with Wallos, Actual Budget and Matching, then Account / Security | Adding a settings section |
 | `pages/LoginPage.tsx` | Loads `GET /api/auth/config`; local mode shows the email/password form (with register toggle when registration is on), OIDC mode only the SSO link; `?error=` codes map to page or server error text | Sign-in UI |
 | `pages/VerifyEmailPage.tsx` | `/verify-email#token=...`: `runVerification` clears the hash, POSTs the token once, shows verifying / success / invalid / disabled / missing / error with a sign-in link | Email verification |
+| `pages/SyncDashboard.tsx`, `pages/SyncDashboard.messages.ts` | Sync Dashboard: `SyncDashboardView` (toolbar on top, Wallos left, Actual right; idle/loading/error/empty states) and `SyncDashboard` (search and ignored-switch state, Link/Ignore through `performAction`, focus to next row). Never checks on mount | Dashboard UI |
+| `components/dashboard/` | `Toolbar` (search, switch, Run Sync Check), `ItemRow` + `ItemColumn` (amount in font-mono, range flag, unmappable reason, Link picker only with candidates, disabled held Create buttons, Ignore), `WallosColumn`, `ActualColumn` | Dashboard rows or columns |
+| `lib/sync-check.ts` | `runSyncCheck`, shared `syncStore`/`useSyncCheck` (single holder of the last result), pure `filterRows`, `buildRows`, `applyLink`, `applyIgnore`, `rollback`, `nextRowId`, and `performAction` (optimistic update with rollback) | Sync result handling |
+| `lib/matches.api.ts` | `linkPair` (`POST /api/matches`), `ignoreItem` (`POST /api/matches/ignore`) with injectable fetch | Match writes |
 | `pages/WallosSettings.tsx` | Wallos URL and API key form (key is write-only, shows a saved flag), save and Test connection | Wallos config |
 | `pages/ActualSettings.tsx`, `pages/ActualSettings.api.ts` | Actual Budget form: server URL, password, sync key (write-only, clear option), Load budgets, budget selector, detected base currency. The `.api.ts` file holds the fetch calls so the component file only exports components | Actual config |
 | `pages/MatchingSettings.tsx` | Amount tolerance percentage form: loads and saves via `GET`/`PUT /api/settings/matching`, input checked before sending | Matching config |

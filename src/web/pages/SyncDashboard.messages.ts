@@ -1,0 +1,87 @@
+const en = {
+  title: 'Sync Dashboard',
+  toolbar: {
+    label: 'Sync controls',
+    search: 'Search by name',
+    searchPlaceholder: 'Search by name',
+    showIgnored: 'Show Ignored Items',
+    run: 'Run Sync Check',
+    running: 'Checking...',
+  },
+  columns: {
+    wallos: 'Wallos subscriptions',
+    actual: 'Actual Budget schedules',
+  },
+  states: {
+    idle: 'Run a sync check to see unlinked items.',
+    loading: 'Checking Wallos and Actual Budget...',
+    empty: 'Nothing to link here.',
+    noMatches: 'No items match your search.',
+    errorTitle: 'The sync check failed.',
+  },
+  row: {
+    range: 'range',
+    rangeHint: 'Amount is the midpoint of a range',
+    noAmount: 'No amount',
+    link: 'Link',
+    linkTo: 'Link {name} to',
+    ignore: 'Ignore',
+    createInActual: 'Create in AB',
+    createInWallos: 'Create in Wallos',
+    held: 'Held: creating items arrives in a later release.',
+    actionFailed: 'Could not update {name}.',
+  },
+  reason: {
+    patterns_unsupported: 'Repeat pattern not supported',
+    no_recurrence: 'No recurrence',
+    invalid_recurrence: 'Invalid recurrence',
+    invalid_amount: 'Invalid amount',
+    mapping_failed: 'Could not map the frequency',
+    currency_conversion_failed: 'Currency conversion failed',
+  },
+};
+
+const nl: typeof en = {
+  title: 'Synchronisatie',
+  toolbar: {
+    label: 'Synchronisatiebediening',
+    search: 'Zoeken op naam',
+    searchPlaceholder: 'Zoeken op naam',
+    showIgnored: 'Genegeerde items tonen',
+    run: 'Synchronisatiecontrole starten',
+    running: 'Controleren...',
+  },
+  columns: {
+    wallos: 'Wallos-abonnementen',
+    actual: 'Actual Budget-schema’s',
+  },
+  states: {
+    idle: 'Start een synchronisatiecontrole om ongekoppelde items te zien.',
+    loading: 'Wallos en Actual Budget worden gecontroleerd...',
+    empty: 'Hier valt niets te koppelen.',
+    noMatches: 'Geen items komen overeen met uw zoekopdracht.',
+    errorTitle: 'De synchronisatiecontrole is mislukt.',
+  },
+  row: {
+    range: 'bereik',
+    rangeHint: 'Het bedrag is het midden van een bereik',
+    noAmount: 'Geen bedrag',
+    link: 'Koppelen',
+    linkTo: '{name} koppelen aan',
+    ignore: 'Negeren',
+    createInActual: 'Aanmaken in AB',
+    createInWallos: 'Aanmaken in Wallos',
+    held: 'In de wacht: aanmaken volgt in een latere versie.',
+    actionFailed: '{name} kon niet worden bijgewerkt.',
+  },
+  reason: {
+    patterns_unsupported: 'Herhalingspatroon niet ondersteund',
+    no_recurrence: 'Geen herhaling',
+    invalid_recurrence: 'Ongeldige herhaling',
+    invalid_amount: 'Ongeldig bedrag',
+    mapping_failed: 'Frequentie kon niet worden omgezet',
+    currency_conversion_failed: 'Valutaomrekening mislukt',
+  },
+};
+
+export const syncDashboardMessages = { en, nl };

@@ -1,0 +1,16 @@
+import { apiRequest } from './api';
+
+export interface MatchCreated {
+  id: string;
+  status: string;
+}
+
+/** POST /api/matches. Throws ApiError with the server code (already_matched, not_candidate, item_not_found, invalid_request). */
+export function linkPair(wallosId: string, actualScheduleId: string, fetchImpl?: typeof fetch): Promise<MatchCreated> {
+  return apiRequest<MatchCreated>('/api/matches', { method: 'POST', body: { wallosId, actualScheduleId }, fetchImpl });
+}
+
+/** POST /api/matches/ignore. Throws ApiError with the server code. */
+export function ignoreItem(side: 'wallos' | 'actual', itemId: string, fetchImpl?: typeof fetch): Promise<MatchCreated> {
+  return apiRequest<MatchCreated>('/api/matches/ignore', { method: 'POST', body: { side, itemId }, fetchImpl });
+}
