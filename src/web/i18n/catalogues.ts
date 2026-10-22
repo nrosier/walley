@@ -6,6 +6,7 @@ import { commonMessages } from './common.messages';
 import { appMessages } from '../App.messages';
 import { appShellMessages } from '../components/AppShell.messages';
 import { healthStatusMessages } from '../components/HealthStatus.messages';
+import { statusBadgeMessages } from '../components/StatusBadge.messages';
 import { accountSettingsMessages } from '../pages/AccountSettings.messages';
 import { actualSettingsMessages } from '../pages/ActualSettings.messages';
 import { matchingSettingsMessages } from '../pages/MatchingSettings.messages';
@@ -20,6 +21,7 @@ export const catalogues: Readonly<Record<string, Catalogue<object>>> = {
   app: appMessages,
   appShell: appShellMessages,
   healthStatus: healthStatusMessages,
+  statusBadge: statusBadgeMessages,
   settingsPage: settingsPageMessages,
   loginPage: loginPageMessages,
   verifyEmailPage: verifyEmailPageMessages,

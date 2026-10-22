@@ -22,4 +22,12 @@ describe('Badge', () => {
     expect(neutral).toContain('bg-neutral-bg');
     expect(neutral).toContain('text-neutral');
   });
+
+  it('renders the orphaned variant with a warning border and neutral fill', () => {
+    const markup = renderToStaticMarkup(<Badge variant="orphaned">Orphaned</Badge>);
+    expect(markup).toContain('data-variant="orphaned"');
+    expect(markup).toContain('bg-neutral-bg');
+    expect(markup).toContain('text-neutral');
+    expect(markup).toContain('border border-warning');
+  });
 });

@@ -10,6 +10,7 @@ const badgeVariants = cva(
         linked: "bg-success-bg text-success",
         mismatch: "bg-warning-bg text-warning",
         neutral: "bg-neutral-bg text-neutral",
+        orphaned: "bg-neutral-bg text-neutral border border-warning",
       },
     },
     defaultVariants: {

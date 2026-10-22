@@ -19,7 +19,8 @@
 | `components/AppShell.messages.ts` | Shell strings | |
 | `components/HealthStatus.tsx`, `components/HealthStatus.messages.ts` | `/api/health` indicator and its en/nl labels | |
 | `components/ui/button.tsx` | Shadcn button | |
-| `components/ui/badge.tsx` | `Badge` pill, variants `linked` (green), `mismatch` (amber), `neutral` (gray); `text-xs` | Status badges |
+| `components/ui/badge.tsx` | `Badge` pill, variants `linked` (green), `mismatch` (amber), `neutral` (gray), `orphaned` (gray fill with amber border); `text-xs` | Status badges |
+| `components/StatusBadge.tsx`, `components/StatusBadge.messages.ts` | `StatusBadge({kind})` for `PairBadgeKind` (`synced`, `mismatch`, `ignored`, `orphaned`): en/nl label, badge variant, Lucide `Unlink` icon (aria-hidden) on orphaned | Pair status pills |
 | `lib/theme.ts` | Pure theme helpers: read/write `walley-theme` in localStorage (dark on any failure), toggle, `applyTheme` | Theme storage |
 | `lib/route.ts` | History API router: `parseRoute(pathname)` (`/` and unknown go to sync), `navigate(path)`, `useRoute()`, `TABS` | Adding tabs |
 | `lib/session.ts` | `checkSession`: `GET /api/auth/me`; 401 navigates to `/login` + query | Session gate |
