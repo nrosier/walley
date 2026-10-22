@@ -18,5 +18,7 @@
 - `password-policy.ts`: `PASSWORD_MIN_CODE_POINTS` (15) and `PASSWORD_MAX_CODE_POINTS` (256), shared by `src/server/auth/passwords.ts` and the account form's `minLength`.
 - `money.ts`: `toActualCents` and `fromActualCents` conversions between decimals and Actual Budget integer cents.
 - `money.test.ts`: tests for `money.ts`.
+- `format-money.ts`: `formatMoney(cents, currency, locale)` display formatter for integer cents via Intl (currency digits from Intl; keeps sign).
+- `format-money.test.ts`: tests for `format-money.ts`.
 - `smoke.test.ts`: test runner smoke test.
 - `tsconfig.json`: TypeScript config for this directory.
