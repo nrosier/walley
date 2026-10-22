@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
 import { CurrencyConversionError } from '../../lib/currency-convert.js';
+import { FrequencyMappingError } from '../../lib/frequency-mapper.js';
 import { ActualSessionError } from '../integrations/actual/session.js';
 import { ActualWriteError, type PayeeChoice } from '../integrations/actual/write.js';
 import {
@@ -76,6 +77,9 @@ function sendFailure(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof WallosRejectedError) return send(502, 'wallos_rejected');
   if (error instanceof WallosHttpError || error instanceof WallosNetworkError) {
     return send(502, 'wallos_unavailable');
+  }
+  if (error instanceof FrequencyMappingError && error.code === 'patterns_unsupported') {
+    return send(400, 'patterns_unsupported');
   }
   if (error instanceof WallosMappingError) return send(400, 'mapping_failed');
   if (error instanceof CurrencyConversionError) return send(400, 'currency_conversion_failed');

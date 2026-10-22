@@ -26,6 +26,17 @@ describe('frequency mapper', () => {
     expect(actualToWallos({ frequency: 'monthly' })).toEqual({ type: 'monthly', every: 1 });
   });
 
+  it('maps empty and missing patterns', () => {
+    expect(actualToWallos({ frequency: 'weekly', patterns: [] })).toEqual({ type: 'weekly', every: 1 });
+    expect(actualToWallos({ frequency: 'weekly' })).toEqual({ type: 'weekly', every: 1 });
+  });
+
+  it('refuses non-empty patterns with patterns_unsupported', () => {
+    const run = () => actualToWallos({ frequency: 'monthly', patterns: [{ value: 1, type: 'day' }] });
+    expect(run).toThrow(FrequencyMappingError);
+    expect(run).toThrow(expect.objectContaining({ code: 'patterns_unsupported' }));
+  });
+
   it('rejects invalid input with a typed error', () => {
     const bad = [
       () => wallosToActual({ type: 'daily' } as unknown as WallosInterval),

@@ -112,7 +112,7 @@ export function buildWallosSubscriptionPayload(
   try {
     interval = actualToWallos(input.recurrence);
   } catch (err) {
-    if (err instanceof FrequencyMappingError) {
+    if (err instanceof FrequencyMappingError && err.code !== 'patterns_unsupported') {
       throw new WallosMappingError('unsupported_cycle', 'cycle', err.message);
     }
     throw err;

@@ -18,7 +18,7 @@ export function readSchedules(api: ActualApi): Promise<APIScheduleEntity[]> {
   return api.getSchedules();
 }
 
-/** Accounts with balance (integer cents, may be null), off-budget and closed flags. */
+/** Accounts with balance_current (integer cents, may be null), off-budget and closed flags. */
 export function readAccounts(api: ActualApi): Promise<APIAccountEntity[]> {
   return api.getAccounts();
 }

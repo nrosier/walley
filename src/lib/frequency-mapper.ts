@@ -1,6 +1,8 @@
 // Bidirectional mapper between Wallos billing intervals and Actual Budget
 // schedule recurrence (the `frequency` and `interval` fields of a schedule's
-// RecurConfig). Start date, patterns and end mode are the caller's concern.
+// RecurConfig). Start date and end mode are the caller's concern. Recurrences with
+// non-empty patterns are refused (Actual to Wallos throws 'patterns_unsupported'),
+// so no caller can silently drop pattern detail.
 // Verified against RecurConfig in @actual-app/core (api 26.10.0), see #32.
 
 export const WALLOS_INTERVAL_TYPES = ['monthly', 'yearly', 'weekly', 'custom_days'] as const;
@@ -17,11 +19,15 @@ export interface ActualRecurrence {
   frequency: ActualFrequency;
   /** Repeat every N units of `frequency`. Actual treats a missing value as 1. */
   interval?: number;
+  /** Only checked for presence: a non-empty array is refused by actualToWallos. */
+  patterns?: unknown[];
 }
 
+export type FrequencyMappingErrorCode = 'invalid_interval' | 'invalid_frequency' | 'patterns_unsupported';
+
 export class FrequencyMappingError extends Error {
-  readonly code: 'invalid_interval' | 'invalid_frequency';
-  constructor(code: 'invalid_interval' | 'invalid_frequency', message: string) {
+  readonly code: FrequencyMappingErrorCode;
+  constructor(code: FrequencyMappingErrorCode, message: string) {
     super(message);
     this.name = 'FrequencyMappingError';
     this.code = code;
@@ -35,7 +41,7 @@ function assertCount(value: unknown, label: string): number {
   return value;
 }
 
-export function wallosToActual(input: WallosInterval): ActualRecurrence {
+export function wallosToActual(input: WallosInterval): Omit<ActualRecurrence, 'patterns'> {
   const type: unknown = input.type;
   switch (type) {
     case 'monthly':
@@ -52,6 +58,10 @@ export function wallosToActual(input: WallosInterval): ActualRecurrence {
 }
 
 export function actualToWallos(input: ActualRecurrence): WallosInterval {
+  const patterns: unknown = input.patterns;
+  if (Array.isArray(patterns) && patterns.length > 0) {
+    throw new FrequencyMappingError('patterns_unsupported', 'Recurrence patterns cannot be mapped to Wallos');
+  }
   const frequency: unknown = input.frequency;
   const count = input.interval === undefined ? 1 : assertCount(input.interval, 'interval');
   switch (frequency) {

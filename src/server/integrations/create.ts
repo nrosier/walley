@@ -139,9 +139,11 @@ export async function createWallosSubscriptionFromActualSchedule(
     actualToWallos({
       frequency: recurrence.frequency,
       ...(recurrence.interval === undefined ? {} : { interval: recurrence.interval }),
+      ...(recurrence.patterns === undefined ? {} : { patterns: recurrence.patterns }),
     });
   } catch (err) {
-    if (err instanceof FrequencyMappingError) {
+    // Patterns are refused, not mapped: let the typed error reach the route.
+    if (err instanceof FrequencyMappingError && err.code !== 'patterns_unsupported') {
       throw new WallosMappingError('unsupported_cycle', 'cycle', err.message);
     }
     throw err;
@@ -164,6 +166,7 @@ export async function createWallosSubscriptionFromActualSchedule(
       recurrence: {
         frequency: recurrence.frequency,
         ...(recurrence.interval === undefined ? {} : { interval: recurrence.interval }),
+        ...(recurrence.patterns === undefined ? {} : { patterns: recurrence.patterns }),
       },
       startDate: recurrence.start,
       nextPaymentDate: schedule.next_date ?? recurrence.start,

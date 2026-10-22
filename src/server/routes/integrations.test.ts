@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CurrencyConversionError } from '../../lib/currency-convert.js';
+import { FrequencyMappingError } from '../../lib/frequency-mapper.js';
 import { buildApp } from '../app.js';
 import { closeDatabase, type AppDatabase } from '../db/client.js';
 import { createUserRepo } from '../db/repo.js';
@@ -209,6 +210,7 @@ describe('error mapping', () => {
     ['wallos rejected', new WallosRejectedError(SECRET_MESSAGE), 502, 'wallos_rejected'],
     ['wallos http', new WallosHttpError(500), 502, 'wallos_unavailable'],
     ['mapping', new WallosMappingError('invalid_price', 'price', SECRET_MESSAGE), 400, 'mapping_failed'],
+    ['patterns', new FrequencyMappingError('patterns_unsupported', SECRET_MESSAGE), 400, 'patterns_unsupported'],
     ['conversion', new CurrencyConversionError('missing_rate', SECRET_MESSAGE), 400, 'currency_conversion_failed'],
     ['unknown', new Error(SECRET_MESSAGE), 500, 'internal_error'],
   ];
