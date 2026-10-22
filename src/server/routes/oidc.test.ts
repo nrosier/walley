@@ -415,7 +415,11 @@ describe('GET /api/auth/oidc/callback success paths', () => {
 
   it('a verified email links the user and leaves password_hash and key_salt unchanged', async () => {
     const t = setup();
-    const kate = createUser(t.db, { email: 'kate@x.com', passwordHash: 'hash-kate' });
+    const kate = createUser(t.db, {
+      email: 'kate@x.com',
+      passwordHash: 'hash-kate',
+      verifiedAt: new Date(),
+    });
     const before = userRow(t.db, kate.id);
     const { flowCookie } = await login(t);
     const res = await callback(t, { flowCookie });
@@ -549,7 +553,8 @@ describe('sessions and isolation', () => {
     });
     expect(me.json()).toMatchObject({ email: 'bob@x.com', authMethod: 'oidc' });
     expect(sessions(t.db)).toEqual([{ userId: bob.id, method: 'oidc' }]);
-    expect(userRow(t.db, alice.id).ph).toBe('ha');
+    // Alice was unverified, so linking her nulled the password hash.
+    expect(userRow(t.db, alice.id).ph).toBeNull();
     const rows = t.db.$client
       .prepare('select user_id as userId, subject from user_identities order by subject')
       .all();

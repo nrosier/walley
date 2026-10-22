@@ -5,6 +5,7 @@ import { createOidcProvider, type OidcRuntime } from './auth/oidc.js';
 import { ConfigError, loadConfig } from './config.js';
 import { deriveFlowKey } from './crypto/keys.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './db/client.js';
+import { createMailer, createSmtpTransport } from './mail/index.js';
 import { registerShutdown } from './shutdown.js';
 
 async function main(): Promise<void> {
@@ -59,6 +60,15 @@ async function main(): Promise<void> {
     }
   }
 
+  // Only local registration sends mail; config guarantees both values then.
+  const mailer =
+    config.authMode === 'local' &&
+    config.allowRegistration &&
+    config.smtpUrl !== null &&
+    config.mailFrom !== null
+      ? createMailer({ transport: createSmtpTransport(config.smtpUrl), from: config.mailFrom })
+      : undefined;
+
   let app;
   try {
     app = buildApp({
@@ -72,6 +82,7 @@ async function main(): Promise<void> {
         allowRegistration: config.allowRegistration,
         publicOrigin: config.publicOrigin,
         ...(oidc === undefined ? {} : { oidc }),
+        ...(mailer === undefined ? {} : { mailer }),
       },
     });
   } catch (error: unknown) {

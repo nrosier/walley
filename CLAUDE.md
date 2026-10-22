@@ -18,6 +18,7 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 - **Integrations:**
   - `@actual-app/api` (runs **strictly** on the Node.js backend, isolated per user sync execution).
   - Wallos REST API (`/api/subscriptions`).
+  - SMTP via `nodemailer` (local registration only: verification and already-registered mail, sent from `MAIL_FROM` through `SMTP_URL`; the URL can hold credentials and is never logged).
 
 ---
 
@@ -50,14 +51,14 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 - Multi-user authentication support.
 - Walley runs in exactly one auth mode, chosen at startup from environment variables:
   - **OIDC mode:** all four of `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `OIDC_CALLBACK_URL` are set. OIDC is the only way to sign in. Local password login, local registration and password change are disabled, and their endpoints return `403` with error code `local_auth_disabled`.
-  - **Local mode:** none of the four OIDC variables is set. Local password auth (Argon2id hashing). Local registration is allowed only when `ALLOW_REGISTRATION=true` (default `false`). Otherwise it returns `403` with error code `registration_disabled`.
+  - **Local mode:** none of the four OIDC variables is set. Local password auth (Argon2id hashing). Local registration is allowed only when `ALLOW_REGISTRATION=true` (default `false`) and mail is configured (`SMTP_URL` and `MAIL_FROM` set). Otherwise it returns `403` with error code `registration_disabled`. The register form does not sign the user in: every outcome returns `202` with `{"status":"verification_sent"}` and no cookie, and the user must follow the emailed link to `POST /api/auth/verify-email` (`204` on success, `400` `invalid_token` otherwise; tokens expire after 24 hours). Login returns `401` `invalid_credentials` until the email is verified.
   - Setting some but not all of the four OIDC variables is a configuration error. Startup fails with a message that names the missing variables and prints no values. An empty value counts as unset.
 - OIDC maps `(issuer, subject)` to an internal user through the `user_identities` table. On each OIDC login:
   1. A known `(issuer, subject)` signs in the mapped user.
   2. Otherwise, if the ID token has `email_verified: true` and its email matches an existing user (case-insensitive) who has no identity at this issuer, Walley links the identity to that user and signs them in. This is how local accounts move to OIDC.
   3. Otherwise, if `ALLOW_REGISTRATION=true`, Walley creates a new user with no password and links the identity.
   4. Otherwise sign-in is refused, and the login page says that no Walley account is linked to the identity.
-- `ALLOW_REGISTRATION` means "new accounts may be created": through the register form in local mode, and through a first OIDC login in OIDC mode.
+- `ALLOW_REGISTRATION` means "new accounts may be created": through the register form in local mode (which also needs mail configured), and through a first OIDC login in OIDC mode.
 - Linking keeps the user's `id` and `key_salt`, so their encrypted credentials stay readable. The password hash is kept but is not used while OIDC mode is on.
 - Secure, HTTP-only cookie-based session management (`user_id` bound). Each session records how it was created (`local` or `oidc`). A session whose method does not match the current mode is treated as no session.
 - The login page reads the mode from the public `GET /api/auth/config` endpoint. It shows either the email and password form or a single "Sign in with SSO" button, never both.
@@ -71,7 +72,8 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 ## Data Integration & Mapping Rules
 
 ### 1. Multi-Tenant Database Schema (`walley.db`)
-- `users`: `id`, `email` (unique, stored lowercased), `password_hash` (nullable; null for users created through OIDC), `key_salt`, `created_at`
+- `users`: `id`, `email` (unique, stored lowercased), `password_hash` (nullable; null for users created through OIDC), `email_verified_at` (nullable; null until the local email link is followed or an OIDC link verifies the email), `key_salt`, `created_at`
+- `email_verifications`: `id` (primary key, 64 characters; the SHA-256 of the verification token), `user_id` (FK, cascade on delete, indexed), `expires_at` (24 hours after issue)
 - `user_identities`: `id`, `user_id` (FK), `issuer`, `subject`, `created_at`; unique `(issuer, subject)` and unique `(user_id, issuer)`
 - `sessions`: `id` (primary key, 64 characters; the SHA-256 of the session token), `user_id` (FK, cascade on delete, indexed), `auth_method` (`local` | `oidc`), `csrf_hash` (64 characters; the SHA-256 of the CSRF token), `created_at`, `last_seen_at`, `expires_at`
 - `user_configs`: `user_id` (FK), `wallos_url`, `wallos_api_key_enc`, `actual_url`, `actual_password_enc`, `actual_sync_key_enc`, `actual_budget_id`, `tolerance_percent`

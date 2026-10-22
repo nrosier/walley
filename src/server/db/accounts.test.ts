@@ -34,6 +34,33 @@ describe('createUser', () => {
     expect(saltA?.equals(saltB as Buffer)).toBe(false);
   });
 
+  it('writes a local registration unverified and an OIDC user verified', () => {
+    const local = createUser(db, { email: 'l@example.com', passwordHash: 'h' });
+    const sso = createUser(db, {
+      email: 's@example.com',
+      passwordHash: null,
+      identity: { issuer: 'https://idp', subject: 's1' },
+    });
+    const at = (id: string) =>
+      (db.$client.prepare('SELECT email_verified_at AS v FROM users WHERE id = ?').get(id) as {
+        v: number | null;
+      }).v;
+    expect(at(local.id)).toBeNull();
+    expect(at(sso?.id ?? '')).toBeGreaterThan(0);
+  });
+
+  it('accepts an explicit verifiedAt', () => {
+    const user = createUser(db, {
+      email: 'v@example.com',
+      passwordHash: 'h',
+      verifiedAt: new Date(7_000),
+    });
+    const row = db.$client
+      .prepare('SELECT email_verified_at AS v FROM users WHERE id = ?')
+      .get(user.id) as { v: number };
+    expect(row.v).toBe(7_000);
+  });
+
   it('accepts a null passwordHash', () => {
     const user = createUser(db, { email: 'sso@example.com', passwordHash: null });
     const stored = db.$client

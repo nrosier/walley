@@ -4,6 +4,7 @@ import { buildApp } from '../app.js';
 import { CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE, createSession } from '../auth/sessions.js';
 import { createUser } from '../db/accounts.js';
 import { openDatabase, type AppDatabase } from '../db/client.js';
+import { createCapturingMailer, type Mailer } from '../mail/index.js';
 
 /** A clock tests can move. `now()` is passed to the app as `auth.now`. */
 export interface TestClock {
@@ -46,19 +47,29 @@ export function makeAuthApp(
     secureCookies?: boolean;
     allowRegistration?: boolean;
     clock?: TestClock;
+    mailer?: Mailer;
+    /** Receives the app's request log. Omitted: logging is off. */
+    logStream?: NodeJS.WritableStream;
   } = {},
 ): AuthApp {
   const db = openDatabase(':memory:');
   const clock = opts.clock ?? makeClock();
   const publicOrigin = 'http://localhost:3000';
+  const allowRegistration = opts.allowRegistration ?? false;
+  // Local registration needs a mailer; tests that do not care get a capturing one.
+  const mailer =
+    opts.mailer ??
+    ((opts.mode ?? 'local') === 'local' && allowRegistration ? createCapturingMailer() : undefined);
   const app = buildApp({
     db,
+    ...(opts.logStream === undefined ? {} : { logger: { stream: opts.logStream } }),
     auth: {
       mode: opts.mode ?? 'local',
       secureCookies: opts.secureCookies ?? false,
-      allowRegistration: opts.allowRegistration ?? false,
+      allowRegistration,
       publicOrigin,
       now: () => clock.now(),
+      ...(mailer === undefined ? {} : { mailer }),
     },
   });
   return { app, db, clock, publicOrigin };
@@ -71,6 +82,13 @@ export function makeUser(db: AppDatabase, email?: string): string {
   counter += 1;
   return createUser(db, { email: email ?? `user${String(counter)}@example.test`, passwordHash: null })
     .id;
+}
+
+/** Marks the user with this email as verified, as the verification link would. */
+export function verifyEmail(db: AppDatabase, email: string, at = Date.now()): void {
+  db.$client
+    .prepare('update users set email_verified_at = ? where email = ?')
+    .run(at, email.trim().toLowerCase());
 }
 
 /** Creates a session for the user at the clock's current time. */

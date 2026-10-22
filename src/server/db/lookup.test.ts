@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createUser } from './accounts.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './client.js';
 import {
+  findEmailVerificationUserId,
   findLinkCandidate,
   findLoginByEmail,
   findSessionByIdHash,
@@ -29,11 +30,21 @@ describe('lookup', () => {
       expect(findLoginByEmail(db, '  Alice@Example.COM \n')).toEqual({
         userId: aliceId,
         passwordHash: 'hash-a',
+        emailVerified: false,
       });
     });
 
     it('returns a null password hash for an OIDC-created user', () => {
-      expect(findLoginByEmail(db, 'bob@example.com')).toEqual({ userId: bobId, passwordHash: null });
+      expect(findLoginByEmail(db, 'bob@example.com')).toEqual({
+        userId: bobId,
+        passwordHash: null,
+        emailVerified: false,
+      });
+    });
+
+    it('reports emailVerified true once the email is verified', () => {
+      createUserRepo(db, aliceId).markEmailVerified(new Date());
+      expect(findLoginByEmail(db, 'alice@example.com')?.emailVerified).toBe(true);
     });
 
     it('returns undefined for an unknown email', () => {
@@ -69,24 +80,46 @@ describe('lookup', () => {
 
   describe('findLinkCandidate', () => {
     it('finds Alice case-insensitively until she has an identity at the issuer', () => {
-      expect(findLinkCandidate(db, 'Alice@Example.com', 'https://idp')).toBe(aliceId);
-      expect(findLinkCandidate(db, ' alice@example.com ', 'https://idp')).toBe(aliceId);
+      expect(findLinkCandidate(db, 'Alice@Example.com', 'https://idp')).toEqual({
+        id: aliceId,
+        emailVerified: false,
+      });
+      expect(findLinkCandidate(db, ' alice@example.com ', 'https://idp')?.id).toBe(aliceId);
       createUserRepo(db, aliceId).linkIdentity('https://idp', 's1');
       expect(findLinkCandidate(db, 'Alice@Example.com', 'https://idp')).toBeUndefined();
     });
 
     it('still finds her at a different issuer', () => {
       createUserRepo(db, aliceId).linkIdentity('https://idp', 's1');
-      expect(findLinkCandidate(db, 'alice@example.com', 'https://other')).toBe(aliceId);
+      expect(findLinkCandidate(db, 'alice@example.com', 'https://other')?.id).toBe(aliceId);
     });
 
     it('is not affected by another user having an identity at the issuer', () => {
       createUserRepo(db, bobId).linkIdentity('https://idp', 's2');
-      expect(findLinkCandidate(db, 'alice@example.com', 'https://idp')).toBe(aliceId);
+      expect(findLinkCandidate(db, 'alice@example.com', 'https://idp')?.id).toBe(aliceId);
+    });
+
+    it('exposes the verified state', () => {
+      createUserRepo(db, aliceId).markEmailVerified(new Date());
+      expect(findLinkCandidate(db, 'alice@example.com', 'https://idp')?.emailVerified).toBe(true);
     });
 
     it('returns undefined for an unknown email', () => {
       expect(findLinkCandidate(db, 'nobody@example.com', 'https://idp')).toBeUndefined();
+    });
+  });
+
+  describe('findEmailVerificationUserId', () => {
+    it('returns the owner of a live token only', () => {
+      const now = new Date(10_000);
+      createUserRepo(db, aliceId).createEmailVerification({
+        idHash: 'e'.repeat(64),
+        now,
+        expiresAt: new Date(20_000),
+      });
+      expect(findEmailVerificationUserId(db, 'e'.repeat(64), now)).toBe(aliceId);
+      expect(findEmailVerificationUserId(db, 'e'.repeat(64), new Date(20_000))).toBeUndefined();
+      expect(findEmailVerificationUserId(db, 'f'.repeat(64), now)).toBeUndefined();
     });
   });
 
@@ -96,6 +129,7 @@ describe('lookup', () => {
     findSessionByIdHash(db, 'a'.repeat(64));
     findUserIdByIdentity(db, 'https://idp', 's1');
     findLinkCandidate(db, 'alice@example.com', 'https://idp');
+    findEmailVerificationUserId(db, 'e'.repeat(64), new Date());
     const after = db.$client.prepare('select total_changes() as n').get() as { n: number };
     expect(after.n).toBe(before.n);
   });

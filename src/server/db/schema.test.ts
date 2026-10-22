@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AUTH_METHODS } from '../../lib/auth-mode.js';
 import { MATCH_STATUSES, isMatchStatus, type MatchStatus } from '../../lib/match-status.js';
 import * as schema from './schema.js';
-import { matches, sessions, userConfigs, userIdentities, users } from './schema.js';
+import { emailVerifications, matches, sessions, userConfigs, userIdentities, users } from './schema.js';
 
 const migrationsFolder = fileURLToPath(new URL('./migrations/', import.meta.url));
 
@@ -45,11 +45,12 @@ afterEach(() => {
 });
 
 describe('migration', () => {
-  it('creates users, user_identities, user_configs, matches and sessions', () => {
+  it('creates users, user_identities, user_configs, matches, sessions and email_verifications', () => {
     const rows = sqlite
       .prepare("select name from sqlite_master where type = 'table' and name not like '%migrations' order by name")
       .all() as { name: string }[];
     expect(rows.map((r) => r.name)).toEqual([
+      'email_verifications',
       'matches',
       'sessions',
       'user_configs',
@@ -142,6 +143,12 @@ describe('users', () => {
     expect(() =>
       db.insert(users).values({ id: 'u3', email: 'u3@example.com', passwordHash: null, keySalt: randomBytes(32) }).run(),
     ).not.toThrow();
+  });
+
+  it('leaves email_verified_at null by default', () => {
+    addUser('u3', 'u3@example.com');
+    const row = db.select().from(users).where(eq(users.id, 'u3')).get();
+    expect(row?.emailVerifiedAt).toBeNull();
   });
 
   it('rejects a duplicate email', () => {
@@ -247,6 +254,40 @@ describe('sessions', () => {
     addSession('b'.repeat(64), 'u2');
     db.delete(users).where(eq(users.id, 'u1')).run();
     expect(db.select().from(sessions).all().map((s) => s.userId)).toEqual(['u2']);
+  });
+});
+
+describe('email_verifications', () => {
+  const insertToken = (id: string, userId = 'u1') =>
+    db.insert(emailVerifications).values({ id, userId, expiresAt: new Date(5_000) }).run();
+
+  it('has the expected columns, with id as the primary key', () => {
+    const cols = sqlite.prepare("pragma table_info('email_verifications')").all() as {
+      name: string;
+      pk: number;
+    }[];
+    expect(cols.map((c) => c.name)).toEqual(['id', 'user_id', 'expires_at', 'created_at']);
+    expect(cols.filter((c) => c.pk === 1).map((c) => c.name)).toEqual(['id']);
+  });
+
+  it('indexes user_id', () => {
+    const idx = sqlite.prepare("select name from pragma_index_list('email_verifications') where origin = 'c'").all() as {
+      name: string;
+    }[];
+    expect(idx.map((i) => i.name)).toEqual(['email_verifications_user_id_idx']);
+  });
+
+  it('rejects an id that is not 64 characters', () => {
+    expect(() => { insertToken('short'); }).toThrow(/CHECK/);
+    expect(() => { insertToken('a'.repeat(64)); }).not.toThrow();
+  });
+
+  it('rejects a token for an unknown user, and deleting a user deletes its tokens', () => {
+    expect(() => { insertToken('a'.repeat(64), 'nobody'); }).toThrow(/FOREIGN KEY/);
+    insertToken('b'.repeat(64));
+    insertToken('c'.repeat(64), 'u2');
+    db.delete(users).where(eq(users.id, 'u1')).run();
+    expect(db.select().from(emailVerifications).all().map((r) => r.userId)).toEqual(['u2']);
   });
 });
 

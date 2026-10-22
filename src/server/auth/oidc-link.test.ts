@@ -3,6 +3,7 @@ import { createUser } from "../db/accounts.js";
 import { openDatabase } from "../db/client.js";
 import * as accountsModule from "../db/accounts.js";
 import * as repoModule from "../db/repo.js";
+import { createUserRepo } from "../db/repo.js";
 import { resolveOidcLogin } from "./oidc-link.js";
 
 const ISS = "https://idp.example.test";
@@ -21,6 +22,7 @@ interface UserRow {
   email: string;
   passwordHash: string | null;
   keySalt: Buffer;
+  verifiedAt: number | null;
 }
 interface IdentityRow {
   userId: string;
@@ -30,13 +32,13 @@ interface IdentityRow {
 const userRow = (db: Db, id: string): UserRow | undefined =>
   db.$client
     .prepare(
-      "select id, email, password_hash as passwordHash, key_salt as keySalt from users where id = ?",
+      "select id, email, password_hash as passwordHash, key_salt as keySalt, email_verified_at as verifiedAt from users where id = ?",
     )
     .get(id) as UserRow | undefined;
 const allUsers = (db: Db): UserRow[] =>
   db.$client
     .prepare(
-      "select id, email, password_hash as passwordHash, key_salt as keySalt from users",
+      "select id, email, password_hash as passwordHash, key_salt as keySalt, email_verified_at as verifiedAt from users",
     )
     .all() as UserRow[];
 const identities = (db: Db): IdentityRow[] =>
@@ -75,8 +77,9 @@ describe("resolveOidcLogin", () => {
     expect(identities(db)).toHaveLength(1);
   });
 
-  it("b: verified email links an existing user and leaves the row unchanged", () => {
+  it("b: verified email links an existing verified user and leaves the row unchanged", () => {
     const { db, kate } = setup();
+    createUserRepo(db, kate.id).markEmailVerified(new Date(5_000));
     const before = userRow(db, kate.id);
     expect(
       resolveOidcLogin(db, claims({ email: " Kate@X.com " }), {
@@ -96,9 +99,44 @@ describe("resolveOidcLogin", () => {
     });
     const after = userRow(db, kate.id);
     expect(after?.passwordHash).toBe("hash-kate");
+    expect(after?.verifiedAt).toBe(5_000);
     expect(after?.keySalt.equals(before?.keySalt ?? Buffer.alloc(0))).toBe(
       true,
     );
+  });
+
+  it("b2: linking an unverified local account nulls its hash, verifies it and drops its tokens", () => {
+    const { db, kate } = setup();
+    const repo = createUserRepo(db, kate.id);
+    repo.createEmailVerification({
+      idHash: "a".repeat(64),
+      now: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const before = userRow(db, kate.id);
+    expect(before?.verifiedAt).toBeNull();
+    expect(
+      resolveOidcLogin(db, claims(), { allowRegistration: false }),
+    ).toEqual({ kind: "signed_in", userId: kate.id, via: "linked" });
+    const after = userRow(db, kate.id);
+    expect(after?.passwordHash).toBeNull();
+    expect(after?.verifiedAt).toBeGreaterThan(0);
+    expect(after?.keySalt.equals(before?.keySalt ?? Buffer.alloc(0))).toBe(true);
+    const tokens = db.$client
+      .prepare("select count(*) as n from email_verifications")
+      .get() as { n: number };
+    expect(tokens.n).toBe(0);
+  });
+
+  it("b3: a failed link leaves an unverified account untouched", () => {
+    const { db, kate } = setup();
+    createUserRepo(db, kate.id).linkIdentity(ISS, "other-sub");
+    // Kate already has an identity at this issuer, so she is not a candidate: refused.
+    expect(
+      resolveOidcLogin(db, claims({ subject: "sub-2" }), { allowRegistration: false }),
+    ).toEqual({ kind: "refused" });
+    expect(userRow(db, kate.id)?.passwordHash).toBe("hash-kate");
+    expect(userRow(db, kate.id)?.verifiedAt).toBeNull();
   });
 
   it.each([false, undefined, "true", 1])(
@@ -146,6 +184,7 @@ describe("resolveOidcLogin", () => {
     expect(result.via).toBe("created");
     const row = userRow(db, result.userId);
     expect(row?.passwordHash).toBeNull();
+    expect(row?.verifiedAt).toBeGreaterThan(0);
     expect(row?.keySalt).toHaveLength(32);
     expect(row?.email).toBe("new@x.com");
     expect(

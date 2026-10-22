@@ -6,7 +6,8 @@ import { CSRF_COOKIE, SESSION_COOKIE, hashToken } from '../auth/sessions.js';
 import { createUser } from '../db/accounts.js';
 import { closeDatabase, type AppDatabase } from '../db/client.js';
 import { findSessionByIdHash } from '../db/lookup.js';
-import { makeAuthApp, signIn, type AuthApp } from '../test/auth-helpers.js';
+import type { CapturingMailer } from '../mail/index.js';
+import { makeAuthApp, signIn, verifyEmail, type AuthApp } from '../test/auth-helpers.js';
 
 // Every Argon2 derivation (hash or verify) goes through node:crypto's argon2. The wrapper below
 // counts the calls and records each message, and can be told to fail once.
@@ -59,7 +60,7 @@ afterEach(async () => {
   }
 });
 
-function setup(opts: { mode?: AuthMode; allowRegistration?: boolean } = {}): AuthApp {
+function setup(opts: { mode?: AuthMode; allowRegistration?: boolean; mailer?: CapturingMailer } = {}): AuthApp {
   const t = makeAuthApp(opts);
   created.push(t);
   return t;
@@ -95,6 +96,19 @@ function login(t: AuthApp, email: string, password = PASSWORD, cookie?: string) 
   return post(t, '/api/auth/login', { email, password }, cookie);
 }
 
+/** Registers through the API (202), then verifies the email as the link would. */
+async function registerVerified(t: AuthApp, email: string, password = PASSWORD): Promise<void> {
+  expect((await register(t, email, password)).statusCode).toBe(202);
+  verifyEmail(t.db, email);
+}
+
+function verifiedAt(db: AppDatabase, email: string): number | null | undefined {
+  const row = db.$client
+    .prepare('select email_verified_at as v from users where email = ?')
+    .get(email) as { v: number | null } | undefined;
+  return row?.v;
+}
+
 function storedHash(db: AppDatabase, email: string): string | null | undefined {
   const row = db.$client
     .prepare('select password_hash as h from users where email = ?')
@@ -103,33 +117,25 @@ function storedHash(db: AppDatabase, email: string): string | null | undefined {
 }
 
 describe('POST /api/auth/register', () => {
-  it('creates the user, signs them in and returns 201 with both cookies', async () => {
+  it('creates an unverified user and returns 202 verification_sent with no cookies', async () => {
     const t = setup({ allowRegistration: true });
     const res = await register(t, '  New.User@Example.TEST ');
-    expect(res.statusCode).toBe(201);
-    expect(res.json()).toEqual({ email: 'new.user@example.test', authMethod: 'local' });
-    const session = cookieValue(res, SESSION_COOKIE);
-    expect(session).toBeTruthy();
-    expect(cookieValue(res, CSRF_COOKIE)).toBeTruthy();
-    expect(res.cookies.find((c) => c.name === SESSION_COOKIE)?.httpOnly).toBe(true);
-    expect(findSessionByIdHash(t.db, hashToken(session as string))).toBeDefined();
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toEqual({ status: 'verification_sent' });
+    expect(res.cookies).toHaveLength(0);
+    expect(res.headers['set-cookie']).toBeUndefined();
     expect(storedHash(t.db, 'new.user@example.test')?.startsWith('$argon2id$')).toBe(true);
-
-    const me = await t.app.inject({
-      method: 'GET',
-      url: '/api/auth/me',
-      headers: { cookie: `${SESSION_COOKIE}=${session as string}` },
-    });
-    expect(me.json()).toEqual({ email: 'new.user@example.test', authMethod: 'local' });
+    expect(verifiedAt(t.db, 'new.user@example.test')).toBeNull();
   });
 
-  it('gives 409 email_taken for a duplicate in any casing', async () => {
+  it('answers a duplicate in any casing with the identical 202', async () => {
     const t = setup({ allowRegistration: true });
-    expect((await register(t, 'dup@example.test')).statusCode).toBe(201);
+    const first = await register(t, 'dup@example.test');
+    expect(first.statusCode).toBe(202);
     for (const email of ['dup@example.test', 'DUP@Example.Test', ' dup@example.test ']) {
       const res = await register(t, email);
-      expect(res.statusCode, email).toBe(409);
-      expect(res.json()).toEqual({ error: 'email_taken' });
+      expect(res.statusCode, email).toBe(202);
+      expect(res.body).toBe(first.body);
       expect(res.cookies).toHaveLength(0);
     }
   });
@@ -214,14 +220,14 @@ describe('POST /api/auth/register', () => {
     it('counts code points, not UTF-16 units: 15 emoji pass, 257 fail', async () => {
       const t = setup({ allowRegistration: true });
       const ok = await register(t, 'emoji@example.test', '\u{1F600}'.repeat(15));
-      expect(ok.statusCode).toBe(201);
+      expect(ok.statusCode).toBe(202);
       const bad = await register(t, 'emoji2@example.test', '\u{1F600}'.repeat(257));
       expect(bad.statusCode).toBe(400);
     });
   });
 
   describe('unique violation mapping', () => {
-    it('maps a unique violation on users.email to 409 email_taken', async () => {
+    it('maps a unique violation on users.email to the same 202', async () => {
       const t = setup({ allowRegistration: true });
       const real = vi.mocked(createUser).getMockImplementation() as typeof createUser;
       // Another request wins the race after the pre-check: the insert hits the real constraint.
@@ -230,8 +236,8 @@ describe('POST /api/auth/register', () => {
         return real(db, input);
       });
       const res = await register(t, 'race@example.test');
-      expect(res.statusCode).toBe(409);
-      expect(res.json()).toEqual({ error: 'email_taken' });
+      expect(res.statusCode).toBe(202);
+      expect(res.json()).toEqual({ status: 'verification_sent' });
       expect(res.cookies).toHaveLength(0);
     });
 
@@ -245,7 +251,7 @@ describe('POST /api/auth/register', () => {
       });
       const res = await register(t, 'check@example.test');
       expect(res.statusCode).toBe(500);
-      expect(res.statusCode).not.toBe(409);
+      expect(res.statusCode).not.toBe(202);
       expect(res.cookies).toHaveLength(0);
     });
 
@@ -261,7 +267,7 @@ describe('POST /api/auth/register', () => {
     });
   });
 
-  it('replaces the session the request already carries', async () => {
+  it('leaves the session the request already carries in the database', async () => {
     const t = setup({ allowRegistration: true });
     const old = signIn(t, createUser(t.db, { email: 'old@example.test', passwordHash: null }).id);
     const oldHash = hashToken(old.token);
@@ -272,18 +278,16 @@ describe('POST /api/auth/register', () => {
       { email: 'fresh@example.test', password: PASSWORD },
       old.cookie,
     );
-    expect(res.statusCode).toBe(201);
-    expect(findSessionByIdHash(t.db, oldHash)).toBeUndefined();
-    const fresh = cookieValue(res, SESSION_COOKIE);
-    expect(fresh).toBeTruthy();
-    expect(fresh).not.toBe(old.token);
+    expect(res.statusCode).toBe(202);
+    expect(res.cookies).toHaveLength(0);
+    expect(findSessionByIdHash(t.db, oldHash)).toBeDefined();
   });
 });
 
 describe('POST /api/auth/login', () => {
   async function withUser(email = 'user@example.test') {
     const t = setup({ allowRegistration: true });
-    expect((await register(t, email)).statusCode).toBe(201);
+    await registerVerified(t, email);
     return t;
   }
 
@@ -298,7 +302,11 @@ describe('POST /api/auth/login', () => {
 
   it('works when registration is disabled', async () => {
     const t = setup({ allowRegistration: false });
-    createUser(t.db, { email: 'closed@example.test', passwordHash: await hashPassword(PASSWORD) });
+    createUser(t.db, {
+      email: 'closed@example.test',
+      passwordHash: await hashPassword(PASSWORD),
+      verifiedAt: new Date(),
+    });
     const res = await login(t, 'closed@example.test');
     expect(res.statusCode).toBe(200);
   });
@@ -313,7 +321,7 @@ describe('POST /api/auth/login', () => {
   it('accepts a password in a different Unicode normalisation form', async () => {
     const t = setup({ allowRegistration: true });
     const composed = 'café au lait, s’il vous plaît';
-    expect((await register(t, 'u@example.test', composed)).statusCode).toBe(201);
+    await registerVerified(t, 'u@example.test', composed);
     const res = await login(t, 'u@example.test', composed.normalize('NFD'));
     expect(res.statusCode).toBe(200);
   });
@@ -442,8 +450,8 @@ describe('POST /api/auth/login', () => {
 describe('two-user isolation', () => {
   it('a session from logging in as A reads A, never B', async () => {
     const t = setup({ allowRegistration: true });
-    expect((await register(t, 'a@example.test')).statusCode).toBe(201);
-    expect((await register(t, 'b@example.test', OTHER_PASSWORD)).statusCode).toBe(201);
+    await registerVerified(t, 'a@example.test');
+    await registerVerified(t, 'b@example.test', OTHER_PASSWORD);
     const res = await login(t, 'a@example.test');
     const token = cookieValue(res, SESSION_COOKIE) as string;
     const me = await t.app.inject({
@@ -488,7 +496,7 @@ describe('dummy hash warm-up at registration', () => {
     const knownHash = await hashPassword(PASSWORD);
     argon.failures = failures;
     const t = await freshApp('local');
-    createUser(t.db, { email: 'known@example.test', passwordHash: knownHash });
+    createUser(t.db, { email: 'known@example.test', passwordHash: knownHash, verifiedAt: new Date() });
     createUser(t.db, { email: 'nohash@example.test', passwordHash: null });
     // Let the failed warm-up settle, so its rejection handler has run.
     await new Promise((resolve) => setTimeout(resolve, 20));

@@ -7,14 +7,16 @@
  * `userId` or `id` key in an input is ignored. The ESLint boundary keeps drizzle out of
  * the rest of src/server, so this factory is the only way to reach user-owned rows.
  * The single unscoped write is `createUser` in accounts.ts. The only unscoped reads are the
- * four pre-sign-in lookups in lookup.ts.
+ * five pre-sign-in lookups in lookup.ts, including the one token-keyed read
+ * (`findEmailVerificationUserId`), whose result is then bound here as the user id.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, lte } from 'drizzle-orm';
+import { and, eq, gt, isNull, lte } from 'drizzle-orm';
 import type { AuthMethod } from '../../lib/auth-mode.js';
 import type { MatchStatus } from '../../lib/match-status.js';
 import type { AppDatabase } from './client.js';
 import {
+  emailVerifications,
   matches,
   sessions,
   userConfigs,
@@ -54,10 +56,33 @@ export interface SessionInput {
   expiresAt: Date;
 }
 
+export interface EmailVerificationInput {
+  /** Hex SHA-256 of the verification token. The token itself is never stored. */
+  idHash: string;
+  now: Date;
+  expiresAt: Date;
+}
+
 export interface UserRepo {
   readonly userId: string;
   getKeySalt(): Buffer | undefined;
   getEmail(): string | undefined;
+  /** Inserts a verification token row for this user and prunes this user's expired ones. */
+  createEmailVerification(input: EmailVerificationInput): void;
+  /**
+   * Consumes a verification token owned by this user: deletes it when it matches and has not
+   * expired, and sets `email_verified_at` to `now` if unset, in one transaction. Returns false
+   * when no live token of this user matches. The token is looked up beforehand by
+   * `findEmailVerificationUserId` in lookup.ts, the only token-keyed read.
+   */
+  consumeEmailVerification(idHash: string, now: Date): boolean;
+  /**
+   * Marks an unverified user verified, in one transaction: sets `email_verified_at` to `now`,
+   * nulls the password hash when `clearPasswordHash` is true, and deletes this user's
+   * verification tokens. Returns false for a user who is already verified; nothing is written.
+   * Used by the OIDC link, where the identity provider has proved the email.
+   */
+  markEmailVerified(now: Date, opts?: { clearPasswordHash?: boolean }): boolean;
   /** Creates a session for this user and deletes this user's expired sessions. */
   createSession(input: SessionInput): void;
   /** Sets last_seen_at. Returns false when the id is not this user's; that row is not touched. */
@@ -143,6 +168,65 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
         .where(eq(users.id, userId))
         .get();
       return row?.email;
+    },
+
+    createEmailVerification(input) {
+      db.transaction((tx) => {
+        tx.delete(emailVerifications)
+          .where(
+            and(
+              eq(emailVerifications.userId, userId),
+              lte(emailVerifications.expiresAt, input.now),
+            ),
+          )
+          .run();
+        tx.insert(emailVerifications)
+          .values({
+            id: input.idHash,
+            userId,
+            expiresAt: input.expiresAt,
+            createdAt: input.now,
+          })
+          .run();
+      });
+    },
+
+    consumeEmailVerification(idHash, now) {
+      return db.transaction((tx) => {
+        const deleted = tx
+          .delete(emailVerifications)
+          .where(
+            and(
+              eq(emailVerifications.id, idHash),
+              eq(emailVerifications.userId, userId),
+              gt(emailVerifications.expiresAt, now),
+            ),
+          )
+          .run();
+        if (deleted.changes === 0) return false;
+        tx.update(users)
+          .set({ emailVerifiedAt: now })
+          .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
+          .run();
+        return true;
+      });
+    },
+
+    markEmailVerified(now, opts) {
+      return db.transaction((tx) => {
+        const updated = tx
+          .update(users)
+          .set(
+            opts?.clearPasswordHash === true
+              ? { emailVerifiedAt: now, passwordHash: null }
+              : { emailVerifiedAt: now },
+          )
+          .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
+          .run();
+        if (updated.changes === 0) return false;
+        tx.delete(emailVerifications).where(eq(emailVerifications.userId, userId)).run();
+        return true;
+      });
     },
 
     createSession(input) {

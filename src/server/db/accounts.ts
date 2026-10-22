@@ -4,6 +4,8 @@
  * `createUser` is the only unscoped write in the data layer: creating a user creates
  * the scope, so it cannot be bound to an existing user id. A user and its identity link
  * are written together in one transaction; the link itself goes through `createUserRepo`.
+ * A user created with an identity (OIDC) is written verified, because the identity provider
+ * proved the email; a local registration is written unverified unless `verifiedAt` is given.
  * Nothing else may be exported from this module. All other user data goes through
  * `createUserRepo`.
  */
@@ -22,11 +24,12 @@ export function createUser(
     email: string;
     passwordHash: null;
     identity: { issuer: string; subject: string };
+    verifiedAt?: Date | null;
   },
 ): { id: string; email: string } | null;
 export function createUser(
   db: AppDatabase,
-  input: { email: string; passwordHash: string | null },
+  input: { email: string; passwordHash: string | null; verifiedAt?: Date | null },
 ): { id: string; email: string };
 export function createUser(
   db: AppDatabase,
@@ -34,17 +37,21 @@ export function createUser(
     email: string;
     passwordHash: string | null;
     identity?: { issuer: string; subject: string };
+    verifiedAt?: Date | null;
   },
 ): { id: string; email: string } | null {
   const id = randomUUID();
   const email = input.email.trim().toLowerCase();
   const { identity } = input;
+  const emailVerifiedAt =
+    input.verifiedAt !== undefined ? input.verifiedAt : identity === undefined ? null : new Date();
   if (identity === undefined) {
     db.insert(users)
       .values({
         id,
         email,
         passwordHash: input.passwordHash,
+        emailVerifiedAt,
         keySalt: newKeySalt(),
       })
       .run();
@@ -58,6 +65,7 @@ export function createUser(
           id,
           email,
           passwordHash: input.passwordHash,
+          emailVerifiedAt,
           keySalt: newKeySalt(),
         })
         .onConflictDoNothing()

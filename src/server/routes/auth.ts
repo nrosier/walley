@@ -1,8 +1,10 @@
+import { randomBytes } from 'node:crypto';
 import type { FastifyError, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthMode } from '../../lib/auth-mode.js';
 import {
   deleteSession,
   createSession,
+  hashToken,
   setSessionCookies,
 } from '../auth/sessions.js';
 import {
@@ -26,8 +28,14 @@ import {
 } from '../auth/passwords.js';
 import { createUser } from '../db/accounts.js';
 import type { AppDatabase } from '../db/client.js';
-import { findLoginByEmail } from '../db/lookup.js';
+import { findEmailVerificationUserId, findLoginByEmail } from '../db/lookup.js';
 import { createUserRepo } from '../db/repo.js';
+import {
+  VERIFICATION_TOKEN_TTL_MS,
+  alreadyRegisteredEmail,
+  verificationEmail,
+  type Mailer,
+} from '../mail/index.js';
 
 export interface AuthRoutesOptions {
   readonly db: AppDatabase;
@@ -36,9 +44,19 @@ export interface AuthRoutesOptions {
   readonly secureCookies: boolean;
   /** Clock in ms since the epoch, the same one the session hook uses. */
   readonly now: () => number;
+  /** Sends verification mail. Fire and forget: a failure never changes a response. */
+  readonly mailer: Mailer;
+  /** The origin browsers use to reach Walley; verification links start with it. */
+  readonly publicOrigin: string;
 }
 
 const MAX_EMAIL_LENGTH = 254;
+
+/**
+ * Registration only: no whitespace or control characters, one '@', and a dot in the domain.
+ * The local part also excludes ',', ';', '"', '<' and '>', which nodemailer's address parser splits or unquotes.
+ */
+const REGISTER_EMAIL_SHAPE = /^[^\s@,;"<>\p{Cc}]+@[^\s@.\p{Cc}]+(?:\.[^\s@.\p{Cc}]+)+$/u;
 
 interface Credentials {
   readonly email: string;
@@ -70,7 +88,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opts) => {
-  const { db, mode, allowRegistration, secureCookies, now } = opts;
+  const { db, mode, allowRegistration, secureCookies, now, mailer, publicOrigin } = opts;
 
   if (mode === 'local') {
     // Pay for the dummy hash now, not on the first unknown-email login.
@@ -164,8 +182,8 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       if (email.length > MAX_EMAIL_LENGTH) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      // Also before the limiter key exists: a value without '@' never becomes an email key.
-      if (email === '' || !email.includes('@')) {
+      // Also before the limiter key exists: only a plain local@domain.tld shape becomes an email key.
+      if (!REGISTER_EMAIL_SHAPE.test(email)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
       if (limited(reply, `email:${email}`)) {
@@ -178,21 +196,62 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       if (!isAcceptablePasswordLength(password)) {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (findLoginByEmail(db, email) !== undefined) {
-        return reply.code(409).send({ error: 'email_taken' });
-      }
+      // Always hash, whatever the email's state, so the timing does not reveal it.
       const passwordHash = await hashPassword(password);
-      let user: { id: string; email: string };
+      const existing = findLoginByEmail(db, email);
+      const sendAlreadyRegistered = (): void => {
+        const content = alreadyRegisteredEmail(publicOrigin);
+        mailer.send({ to: email, subject: content.subject, text: content.text });
+      };
+      // Stores only the hash of a fresh token and mails the link. Older tokens stay valid.
+      const issueVerification = (userId: string): void => {
+        const token = randomBytes(32).toString('hex');
+        const issuedAt = now();
+        createUserRepo(db, userId).createEmailVerification({
+          idHash: hashToken(token),
+          now: new Date(issuedAt),
+          expiresAt: new Date(issuedAt + VERIFICATION_TOKEN_TTL_MS),
+        });
+        const content = verificationEmail(publicOrigin, token);
+        mailer.send({ to: email, subject: content.subject, text: content.text });
+      };
       try {
-        user = createUser(db, { email, passwordHash });
-      } catch (error) {
-        if (isUniqueViolation(error)) {
-          return reply.code(409).send({ error: 'email_taken' });
+        if (existing === undefined) {
+          const user = createUser(db, { email, passwordHash });
+          issueVerification(user.id);
+        } else if (!existing.emailVerified && existing.passwordHash !== null) {
+          // Keeps the existing password: a repeat only sends a new link.
+          issueVerification(existing.userId);
+        } else {
+          sendAlreadyRegistered();
         }
-        throw error;
+      } catch (error) {
+        // A concurrent registration of the same email gets the same answer.
+        if (!isUniqueViolation(error)) {
+          throw error;
+        }
       }
-      startLocalSession(request, reply, user.id);
-      return reply.code(201).send({ email: user.email, authMethod: 'local' });
+      return reply.code(202).send({ status: 'verification_sent' });
+    });
+
+    local.post('/auth/verify-email', { config: { public: true } }, async (request, reply) => {
+      const token =
+        typeof request.body === 'object' && request.body !== null
+          ? (request.body as Record<string, unknown>)['token']
+          : undefined;
+      if (typeof token !== 'string') {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+      if (limited(reply, `ip:${ipRateKey(request.ip)}`)) {
+        return reply;
+      }
+      const idHash = hashToken(token);
+      const when = new Date(now());
+      const userId = findEmailVerificationUserId(db, idHash, when);
+      if (userId === undefined || !createUserRepo(db, userId).consumeEmailVerification(idHash, when)) {
+        return reply.code(400).send({ error: 'invalid_token' });
+      }
+      return reply.code(204).send();
     });
 
     local.post('/auth/login', { config: { public: true } }, async (request, reply) => {
@@ -225,7 +284,8 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
         ok = await verifyAgainstDummy('');
       } else {
         const password = normalisePassword(credentials.password);
-        if (user?.passwordHash == null) {
+        if (user?.passwordHash == null || !user.emailVerified) {
+          // Unverified counts as a wrong password: same dummy work, same 401.
           ok = await verifyAgainstDummy(password);
         } else if (isAcceptablePasswordLength(password)) {
           ok = await verifyPassword(password, user.passwordHash);
@@ -234,7 +294,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
           ok = await verifyAgainstDummy('');
         }
       }
-      if (user === undefined || user.passwordHash === null || !ok) {
+      if (user === undefined || user.passwordHash === null || !user.emailVerified || !ok) {
         return reply.code(401).send({ error: 'invalid_credentials' });
       }
       limiter.clear(`email:${email}`);

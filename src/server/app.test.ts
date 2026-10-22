@@ -35,4 +35,33 @@ describe('buildApp', () => {
       closeDatabase(db);
     }
   });
+
+  it('refuses local registration without a mailer, before listening', () => {
+    const db = openDatabase(':memory:');
+    try {
+      expect(() =>
+        buildApp({
+          db,
+          auth: { mode: 'local', secureCookies: false, allowRegistration: true, publicOrigin: 'http://localhost:3000' },
+        }),
+      ).toThrow('Local registration needs a mailer. Startup is aborted.');
+    } finally {
+      closeDatabase(db);
+    }
+  });
+
+  it('builds without a mailer when registration is off or the mode is OIDC', () => {
+    const db = openDatabase(':memory:');
+    const base = { secureCookies: false, publicOrigin: 'http://localhost:3000' };
+    try {
+      expect(() =>
+        buildApp({ db, auth: { ...base, mode: 'local', allowRegistration: false } }).close(),
+      ).not.toThrow();
+      expect(() =>
+        buildApp({ db, auth: { ...base, mode: 'oidc', allowRegistration: true } }).close(),
+      ).not.toThrow();
+    } finally {
+      closeDatabase(db);
+    }
+  });
 });

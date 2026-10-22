@@ -14,6 +14,7 @@ import {
 import { createCsrfHook } from './auth/csrf.js';
 import type { OidcRuntime } from './auth/oidc.js';
 import type { AppDatabase } from './db/client.js';
+import type { Mailer } from './mail/index.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { registerOidcRoutes } from './routes/oidc.js';
@@ -29,6 +30,8 @@ export interface AuthOptions {
   readonly now?: () => number;
   /** The OIDC provider runtime. Used in OIDC mode only; in local mode the OIDC routes answer 404. */
   readonly oidc?: OidcRuntime;
+  /** Sends verification mail. Required when local registration is on; buildApp refuses to start without it. */
+  readonly mailer?: Mailer;
 }
 
 export interface BuildAppOptions {
@@ -71,6 +74,9 @@ function serializeRequest(request: { method: string; url: string }): {
     path: queryStart === -1 ? request.url : request.url.slice(0, queryStart),
   };
 }
+
+/** Placeholder for apps where registration is off or OIDC is on: no route can reach a send. */
+const NO_MAILER: Mailer = { send: () => undefined };
 
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 const NO_CACHE = 'no-cache';
@@ -153,6 +159,8 @@ function registerAuth(app: FastifyInstance, db: AppDatabase, auth: AuthOptions):
       allowRegistration: auth.allowRegistration,
       secureCookies: auth.secureCookies,
       now: clock,
+      mailer: auth.mailer ?? NO_MAILER,
+      publicOrigin: auth.publicOrigin,
     });
     registerOidcRoutes(app, {
       db,
@@ -193,6 +201,10 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
     const db = opts?.db;
     if (db === undefined) {
       throw new Error('auth requires db');
+    }
+    if (auth.mode === 'local' && auth.allowRegistration && auth.mailer === undefined) {
+      // Fixed text: never print config values.
+      throw new Error('Local registration needs a mailer. Startup is aborted.');
     }
     registerAuth(app, db, auth);
   }

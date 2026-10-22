@@ -1,8 +1,18 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { closeDatabase, openDatabase, type AppDatabase } from './client.js';
+import { MIGRATIONS_FOLDER, closeDatabase, openDatabase, type AppDatabase } from './client.js';
 
 interface NameRow {
   name: string;
@@ -50,6 +60,7 @@ describe('openDatabase', () => {
     expect(existsSync(path)).toBe(true);
     expect(tableNames(db)).toEqual([
       '__drizzle_migrations',
+      'email_verifications',
       'matches',
       'sessions',
       'user_configs',
@@ -58,17 +69,50 @@ describe('openDatabase', () => {
     ]);
   });
 
+  it('upgrades a database at 0001 and marks its existing users verified', () => {
+    // Build a migrations folder holding only 0000 and 0001, as an older release shipped it.
+    const old = join(dir, 'old-migrations');
+    cpSync(MIGRATIONS_FOLDER, old, { recursive: true });
+    const journalPath = join(old, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: unknown[] };
+    journal.entries = journal.entries.slice(0, 2);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const path = join(dir, 'walley.db');
+    const raw = new Database(path);
+    migrate(drizzle(raw), { migrationsFolder: old });
+    raw
+      .prepare('INSERT INTO users (id, email, key_salt, created_at) VALUES (?, ?, ?, ?)')
+      .run('u1', 'a@example.com', Buffer.alloc(32, 1), 1234);
+    raw.close();
+
+    const db = track(openDatabase(path));
+    expect(journalCount(db)).toBe(4);
+    const row = db.$client
+      .prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u1'")
+      .get() as { v: number | null };
+    expect(row.v).toBe(1234);
+    // A user registered after the upgrade starts unverified.
+    db.$client
+      .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
+      .run('u2', 'b@example.com', Buffer.alloc(32, 2));
+    const fresh = db.$client
+      .prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u2'")
+      .get() as { v: number | null };
+    expect(fresh.v).toBeNull();
+  });
+
   it('is idempotent and keeps data across a second open', () => {
     const path = join(dir, 'walley.db');
     const first = openDatabase(path);
     first.$client
       .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
       .run('u1', 'a@example.com', Buffer.alloc(32, 1));
-    expect(journalCount(first)).toBe(2);
+    expect(journalCount(first)).toBe(4);
     closeDatabase(first);
 
     const second = track(openDatabase(path));
-    expect(journalCount(second)).toBe(2);
+    expect(journalCount(second)).toBe(4);
     const users = second.$client.prepare('SELECT id FROM users').all() as { id: string }[];
     expect(users).toEqual([{ id: 'u1' }]);
   });

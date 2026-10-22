@@ -22,6 +22,14 @@ interface BaseConfig {
   readonly host: string;
   /** Addresses or CIDR ranges of the reverse proxies whose X-Forwarded-For Walley trusts. False trusts none. */
   readonly trustProxy: string[] | false;
+  /**
+   * SMTP URL (smtp: or smtps:) used to send verification mail. May embed credentials, so it is
+   * hidden from enumeration and must never be logged. Null when mail is not needed (OIDC mode, or
+   * registration off), in which case SMTP_URL is ignored.
+   */
+  readonly smtpUrl: string | null;
+  /** From address for outgoing mail. Null when mail is not needed (same rule as smtpUrl). */
+  readonly mailFrom: string | null;
 }
 
 export type AppConfig = BaseConfig &
@@ -235,6 +243,18 @@ function isTrustedProxyEntry(entry: string): boolean {
   return true;
 }
 
+const SMTP_SCHEMES: readonly string[] = ['smtp:', 'smtps:'];
+const MAIL_FROM_SHAPE = /^[^\s@<>,;:"]+@[^\s@<>,;:"]+\.[^\s@<>,;:"]+$/;
+
+/** True when the value parses as a URL with an smtp: or smtps: scheme. Never reports the value. */
+function isSmtpUrl(value: string): boolean {
+  try {
+    return SMTP_SCHEMES.includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
 /** Marks a property as non-enumerable so JSON.stringify and util.inspect skip it. */
 function hide(target: object, key: string): void {
   Object.defineProperty(target, key, { enumerable: false });
@@ -372,6 +392,38 @@ export function loadConfig(env: Env): AppConfig {
     oidc = { ...candidate, callbackUrl: storedCallbackUrl };
   }
 
+  // Mail is needed only for local registration (verification mail). In OIDC mode, or with
+  // registration off, SMTP_URL and MAIL_FROM are not read.
+  let smtpUrl: string | null = null;
+  let mailFrom: string | null = null;
+  if (oidc === null && allowRegistration) {
+    const rawSmtpUrl = present(env, 'SMTP_URL');
+    const rawMailFrom = present(env, 'MAIL_FROM');
+    const missingMail = [
+      ...(rawSmtpUrl === undefined ? ['SMTP_URL'] : []),
+      ...(rawMailFrom === undefined ? ['MAIL_FROM'] : []),
+    ];
+    if (missingMail.length > 0) {
+      problems.push(
+        `SMTP_URL and MAIL_FROM are required when ALLOW_REGISTRATION=true in local mode. Missing: ${missingMail.join(', ')}.`,
+      );
+    }
+    if (rawSmtpUrl !== undefined) {
+      if (isSmtpUrl(rawSmtpUrl.trim())) {
+        smtpUrl = rawSmtpUrl.trim();
+      } else {
+        problems.push('SMTP_URL must use the smtp: or smtps: scheme');
+      }
+    }
+    if (rawMailFrom !== undefined) {
+      if (MAIL_FROM_SHAPE.test(rawMailFrom.trim())) {
+        mailFrom = rawMailFrom.trim();
+      } else {
+        problems.push('MAIL_FROM must be an email address');
+      }
+    }
+  }
+
   if (
     problems.length > 0 ||
     appSecret === undefined ||
@@ -391,8 +443,11 @@ export function loadConfig(env: Env): AppConfig {
     port,
     host,
     trustProxy,
+    smtpUrl,
+    mailFrom,
   };
   hide(base, 'appSecret');
+  hide(base, 'smtpUrl');
 
   if (oidc === null) {
     return Object.assign(base, { authMode: 'local' as const, oidc: null });

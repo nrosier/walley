@@ -70,3 +70,10 @@ Built on as placeholders. Ask the owner at 08:00 and revisit any code that depen
 ## Owner answer, iat check (confirmed)
 
 - Refuse an ID token whose iat is later than now plus 60 seconds of clock skew. Being implemented as IAT_IN_FUTURE in src/server/auth/oidc.ts.
+
+## Decided for #99 (email verification, local registration)
+
+- Local registration sends a verification link by email. Tokens expire 24 hours after issue (`VERIFICATION_TOKEN_TTL_MS`), owner decision.
+- No automatic sign-in after registering. The user must follow the link, then log in.
+- `POST /api/auth/register` returns `202 {"status":"verification_sent"}` for every outcome, with no cookie. No `email_taken` response exists any more, so the register form does not reveal whether an address has an account.
+- Login for an unverified user returns the same `401 invalid_credentials` as a wrong password.

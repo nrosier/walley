@@ -47,12 +47,19 @@ export function resolveOidcLogin(
 
   const candidate = findLinkCandidate(db, email, claims.issuer);
   if (candidate !== undefined) {
-    if (
-      !createUserRepo(db, candidate).linkIdentity(claims.issuer, claims.subject)
-    ) {
-      return REFUSED;
-    }
-    return { kind: "signed_in", userId: candidate, via: "linked" };
+    const repo = createUserRepo(db, candidate.id);
+    // db.transaction nests as a savepoint, so a failed link rolls the account change back.
+    const linked = db.transaction(() => {
+      if (!repo.linkIdentity(claims.issuer, claims.subject)) return false;
+      // OIDC proved email_verified: true. An unverified local account loses its password
+      // hash, so whoever registered it unproven cannot sign in with it later.
+      if (!candidate.emailVerified) {
+        repo.markEmailVerified(new Date(), { clearPasswordHash: true });
+      }
+      return true;
+    });
+    if (!linked) return REFUSED;
+    return { kind: "signed_in", userId: candidate.id, via: "linked" };
   }
 
   if (!opts.allowRegistration) return REFUSED;

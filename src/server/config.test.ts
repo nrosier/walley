@@ -353,7 +353,10 @@ describe('HOST and ALLOW_REGISTRATION', () => {
   });
 
   it('parses ALLOW_REGISTRATION case-insensitively', () => {
-    expect(loadConfig({ ...base, ALLOW_REGISTRATION: ' TRUE ' }).allowRegistration).toBe(true);
+    const mail = { SMTP_URL: 'smtp://smtp.example.com:587', MAIL_FROM: 'walley@example.com' };
+    expect(loadConfig({ ...base, ...mail, ALLOW_REGISTRATION: ' TRUE ' }).allowRegistration).toBe(
+      true,
+    );
     expect(loadConfig({ ...base, ALLOW_REGISTRATION: 'false' }).allowRegistration).toBe(false);
     expect(loadConfig({ ...base, ALLOW_REGISTRATION: '' }).allowRegistration).toBe(false);
   });
@@ -530,4 +533,94 @@ describe('TRUST_PROXY', () => {
       }
     },
   );
+});
+
+describe('SMTP_URL and MAIL_FROM', () => {
+  const SMTP = 'smtps://mailuser:mailpass-secret@smtp.example.com:465';
+  const FROM = 'Walley@example.com';
+  const registering = { ...base, ALLOW_REGISTRATION: 'true' };
+
+  it('fails in local mode with registration when both are missing, naming only the variables', () => {
+    const problems = problemsOf(registering);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('SMTP_URL, MAIL_FROM');
+  });
+
+  it('names only the one that is missing and counts empty as unset', () => {
+    const problems = problemsOf({
+      ...registering,
+      SMTP_URL: SMTP,
+      MAIL_FROM: '  ',
+    });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/Missing: MAIL_FROM\.$/);
+    expect(problems[0]).not.toContain('mailpass-secret');
+  });
+
+  it('rejects a non-smtp scheme without echoing the value', () => {
+    const bad = 'http://mailuser:mailpass-secret@smtp.example.com';
+    const problems = problemsOf({
+      ...registering,
+      SMTP_URL: bad,
+      MAIL_FROM: FROM,
+    });
+    expect(problems).toEqual(['SMTP_URL must use the smtp: or smtps: scheme']);
+    const error = new ConfigError(problems);
+    expect(error.message).not.toContain('mailpass-secret');
+    expect(error.message).not.toContain('smtp.example.com');
+  });
+
+  it('rejects an unparseable SMTP_URL without echoing it', () => {
+    const problems = problemsOf({
+      ...registering,
+      SMTP_URL: 'not a url mailpass-secret',
+      MAIL_FROM: FROM,
+    });
+    expect(problems).toEqual(['SMTP_URL must use the smtp: or smtps: scheme']);
+  });
+
+  it('rejects a bad MAIL_FROM without echoing it', () => {
+    const problems = problemsOf({
+      ...registering,
+      SMTP_URL: SMTP,
+      MAIL_FROM: 'not-an-address',
+    });
+    expect(problems).toEqual(['MAIL_FROM must be an email address']);
+    expect(problems[0]).not.toContain('not-an-address');
+  });
+
+  it('accepts a valid pair and hides smtpUrl from enumeration', () => {
+    const config = loadConfig({
+      ...registering,
+      SMTP_URL: SMTP,
+      MAIL_FROM: FROM,
+    });
+    expect(config.smtpUrl).toBe(SMTP);
+    expect(config.mailFrom).toBe(FROM);
+    expect(JSON.stringify(config)).not.toContain('mailpass-secret');
+    expect(inspect(config, { showHidden: false })).not.toContain('mailpass-secret');
+  });
+
+  it('is optional and ignored in OIDC mode, even when invalid', () => {
+    const config = loadConfig({
+      ...base,
+      ...oidcAll,
+      ALLOW_REGISTRATION: 'true',
+      SMTP_URL: 'http://bad',
+      MAIL_FROM: 'bad',
+    });
+    expect(config.smtpUrl).toBeNull();
+    expect(config.mailFrom).toBeNull();
+  });
+
+  it('is optional and ignored when registration is off', () => {
+    expect(loadConfig(base).smtpUrl).toBeNull();
+    const config = loadConfig({
+      ...base,
+      SMTP_URL: 'http://bad',
+      MAIL_FROM: 'bad',
+    });
+    expect(config.smtpUrl).toBeNull();
+    expect(config.mailFrom).toBeNull();
+  });
 });

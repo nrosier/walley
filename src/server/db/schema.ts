@@ -25,6 +25,8 @@ export const users = sqliteTable(
     passwordHash: text('password_hash'),
     keySalt: blob('key_salt', { mode: 'buffer' }).notNull(),
     createdAt: createdAt(),
+    /** Null until the email is verified. Set by the verification link or by an OIDC link. */
+    emailVerifiedAt: integer('email_verified_at', { mode: 'timestamp_ms' }),
   },
   (t) => [
     check('users_email_lowercase_check', sql`${t.email} = lower(${t.email})`),
@@ -71,6 +73,27 @@ export const sessions = sqliteTable(
     check('sessions_id_length_check', sql`length(${t.id}) = 64`),
     check('sessions_auth_method_check', sql`${t.authMethod} IN ('local','oidc')`),
     check('sessions_csrf_hash_length_check', sql`length(${t.csrfHash}) = 64`),
+  ],
+);
+
+/**
+ * Pending local-registration email verifications. `id` is the hex SHA-256 of the
+ * verification token, never the token itself. A row is consumed on a successful click
+ * and deleted when expired.
+ */
+export const emailVerifications = sqliteTable(
+  'email_verifications',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('email_verifications_user_id_idx').on(t.userId),
+    check('email_verifications_id_length_check', sql`length(${t.id}) = 64`),
   ],
 );
 
@@ -126,6 +149,7 @@ export const matches = sqliteTable(
 export type UserRow = typeof users.$inferSelect;
 export type UserIdentityRow = typeof userIdentities.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
+export type EmailVerificationRow = typeof emailVerifications.$inferSelect;
 export type UserConfigRow = typeof userConfigs.$inferSelect;
 export type MatchRow = typeof matches.$inferSelect;
 export type NewMatchRow = typeof matches.$inferInsert;

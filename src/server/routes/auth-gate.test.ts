@@ -5,6 +5,7 @@ import type { AuthMode } from '../../lib/auth-mode.js';
 import { buildApp } from '../app.js';
 import { hashToken } from '../auth/sessions.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../db/client.js';
+import { createCapturingMailer } from '../mail/index.js';
 import { findSessionByIdHash } from '../db/lookup.js';
 import { injectAs, makeClock, makeUser, signIn } from '../test/auth-helpers.js';
 
@@ -38,6 +39,7 @@ function setup(mode: AuthMode, allowRegistration: boolean, db?: AppDatabase) {
       allowRegistration,
       publicOrigin: 'http://localhost:3000',
       now: () => clock.now(),
+      mailer: createCapturingMailer(),
     },
   });
   apps.push(app);
@@ -59,6 +61,7 @@ describe('default-deny', () => {
           allowRegistration,
           publicOrigin: 'http://localhost:3000',
           now: () => clock.now(),
+          mailer: createCapturingMailer(),
         },
       });
       apps.push(app);

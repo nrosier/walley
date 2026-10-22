@@ -4,6 +4,7 @@ import { buildApp } from '../app.js';
 import { hashPassword, verifyAgainstDummy } from '../auth/passwords.js';
 import { createUser } from '../db/accounts.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../db/client.js';
+import { createCapturingMailer } from '../mail/index.js';
 import { makeClock, type TestClock } from '../test/auth-helpers.js';
 
 // Counts every Argon2 derivation, as auth-local.test.ts does.
@@ -50,6 +51,7 @@ function setup(opts: { trustProxy?: string[]; allowRegistration?: boolean } = {}
       allowRegistration: opts.allowRegistration ?? true,
       publicOrigin: ORIGIN,
       now: () => clock.now(),
+      mailer: createCapturingMailer(),
     },
   });
   const t = { app, db, clock };
@@ -74,8 +76,9 @@ function attempt(
 
 const login = (t: Ctx, email: string, password = WRONG) => attempt(t, 'login', { email, password });
 
+/** A verified user, so a correct password can sign in. */
 async function withUser(t: Ctx, email: string): Promise<void> {
-  createUser(t.db, { email, passwordHash: await hashPassword(PASSWORD) });
+  createUser(t.db, { email, passwordHash: await hashPassword(PASSWORD), verifiedAt: new Date() });
 }
 
 function expectLimited(res: LightMyRequestResponse): void {
@@ -118,8 +121,9 @@ describe('rate limit, per email', () => {
   it('shares one counter between register and login', async () => {
     const t = setup();
     const email = 'shared@example.test';
-    expect((await attempt(t, 'register', { email, password: PASSWORD })).statusCode).toBe(201);
-    expect((await attempt(t, 'register', { email, password: PASSWORD })).statusCode).toBe(409);
+    // A register counts toward the email counter whatever its outcome: 202 for a new address, 202 again for a repeat.
+    expect((await attempt(t, 'register', { email, password: PASSWORD })).statusCode).toBe(202);
+    expect((await attempt(t, 'register', { email, password: PASSWORD })).statusCode).toBe(202);
     for (let i = 0; i < 3; i += 1) {
       expect((await login(t, email)).statusCode).toBe(401);
     }

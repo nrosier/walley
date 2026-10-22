@@ -57,7 +57,9 @@ Copy `.env.example` to `.env` and set the values below. Walley refuses to start 
 | `PUBLIC_ORIGIN` | Yes | none | Required. Public origin of Walley, for example `https://walley.example.com`. Use https, or http only for `localhost`, `127.0.0.1` or `[::1]`. No path, query, fragment, credentials or trailing dot. |
 | `PORT` | No | `3000` | Port to listen on, an integer from 1 to 65535 |
 | `HOST` | No | `127.0.0.1` | Address to bind. Docker deployments set `0.0.0.0` in compose. |
-| `ALLOW_REGISTRATION` | No | `false` | Set to `true` to allow new accounts. In local mode this opens the register form. In OIDC mode it lets a first single sign-on create an account. |
+| `ALLOW_REGISTRATION` | No | `false` | Set to `true` to allow new accounts. In local mode this opens the register form, and requires `SMTP_URL` and `MAIL_FROM`. In OIDC mode it lets a first single sign-on create an account. |
+| `SMTP_URL` | Local mode with registration only | none | SMTP connection URL for verification mail, for example `smtps://user:password@smtp.example.com:465`. Use `smtp:` or `smtps:`. The URL can hold credentials: keep it out of logs and version control. |
+| `MAIL_FROM` | Local mode with registration only | none | From address on verification mail, for example `Walley <walley@example.com>` or `walley@example.com`. |
 | `NODE_ENV` | No | unset | Set to `production` to serve the built web app from `dist/web`. Any other value, or none, serves the API only. Use it for built or Docker runs. |
 | `TRUST_PROXY` | No | none | Comma-separated IP addresses or CIDR ranges of the reverse proxies in front of Walley. Leave unset when Walley is reached directly. List only the addresses of those proxies, never a client network. The proxy must append the real client address to `X-Forwarded-For`, or overwrite it. Walley trusts the entry added by the nearest untrusted hop. Any client inside a trusted range can forge its address and get past the per-IP rate limit. Ranges need an IPv4 prefix of at least /8 or an IPv6 prefix of at least /32, no zone IDs (`%`), and no host bits (write `10.0.0.0/8`, not `10.0.0.1/8`). |
 | `OIDC_ISSUER` | All four or none | none | OIDC issuer URL. It must use `https`; `http` is allowed only for `localhost`, `127.0.0.1` or `[::1]`. Setting all four OIDC variables turns on OIDC mode and turns off password login. |
@@ -75,7 +77,7 @@ For Docker, copy `compose.example.yml` to `compose.yml`, then fill in `.env`, in
 
 Walley uses one of two sign-in modes, depending on the OIDC variables.
 
-- **Local mode** (no OIDC variables set): people sign in with an email and password. New accounts can register only when `ALLOW_REGISTRATION` is `true`.
+- **Local mode** (no OIDC variables set): people sign in with an email and password. New accounts can register only when `ALLOW_REGISTRATION` is `true` and mail is configured (`SMTP_URL` and `MAIL_FROM`). Registering does not sign you in: Walley answers with the same message whatever the outcome, and you must open the verification link in the email before you can sign in.
 - **OIDC mode** (all four OIDC variables set): single sign-on is the only way in. Password login, registration and password change are turned off. A first sign-on creates a new account only when `ALLOW_REGISTRATION` is `true`.
 
 Registration is off by default. Turn it on only for an instance you trust, or to create the first account and then turn it off again.

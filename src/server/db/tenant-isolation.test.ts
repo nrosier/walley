@@ -60,6 +60,26 @@ describe('tenant isolation', () => {
     expect(a.getConfig()?.wallosUrl).toBe('https://a.test');
   });
 
+  describe('email verification', () => {
+    const now = new Date(1_000_000);
+    const expiresAt = new Date(now.getTime() + 86_400_000);
+    const count = (id: string) =>
+      (db.$client
+        .prepare('SELECT count(*) AS n FROM email_verifications WHERE user_id = ?')
+        .get(id) as { n: number }).n;
+
+    it('A cannot consume B tokens, or verify B', () => {
+      b.createEmailVerification({ idHash: 'd'.repeat(64), now, expiresAt });
+      expect(a.consumeEmailVerification('d'.repeat(64), now)).toBe(false);
+      expect(count(b.userId)).toBe(1);
+      expect(a.markEmailVerified(now)).toBe(true);
+      const bRow = db.$client
+        .prepare('SELECT email_verified_at AS v FROM users WHERE id = ?')
+        .get(b.userId) as { v: number | null };
+      expect(bRow.v).toBeNull();
+    });
+  });
+
   describe('sessions', () => {
     const idHash = 'b'.repeat(64);
     const now = new Date(1_000_000);

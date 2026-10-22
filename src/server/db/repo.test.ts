@@ -151,6 +151,62 @@ describe('createUserRepo', () => {
     });
   });
 
+  describe('email verification', () => {
+    const t0 = new Date(1_000_000);
+    const live = new Date(t0.getTime() + 86_400_000);
+    const tok = (c: string) => c.repeat(64);
+    const verifiedAt = (id: string) =>
+      (db.$client.prepare('SELECT email_verified_at AS v FROM users WHERE id = ?').get(id) as {
+        v: number | null;
+      }).v;
+    const tokenCount = (id: string) =>
+      (db.$client
+        .prepare('SELECT count(*) AS n FROM email_verifications WHERE user_id = ?')
+        .get(id) as { n: number }).n;
+
+    it('consume is single-use and marks the user verified', () => {
+      const repo = createUserRepo(db, userId);
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live });
+      expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(true);
+      expect(verifiedAt(userId)).toBe(t0.getTime());
+      expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(false);
+      expect(tokenCount(userId)).toBe(0);
+    });
+
+    it('rejects an expired token and leaves the user unverified', () => {
+      const repo = createUserRepo(db, userId);
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live });
+      expect(repo.consumeEmailVerification(tok('a'), live)).toBe(false);
+      expect(verifiedAt(userId)).toBeNull();
+      expect(tokenCount(userId)).toBe(1);
+    });
+
+    it('rejects a token that belongs to another user', () => {
+      createUserRepo(db, userId).createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live });
+      expect(createUserRepo(db, otherId).consumeEmailVerification(tok('a'), t0)).toBe(false);
+      expect(verifiedAt(otherId)).toBeNull();
+      expect(tokenCount(userId)).toBe(1);
+    });
+
+    it('createEmailVerification prunes only this user expired tokens', () => {
+      const mine = createUserRepo(db, userId);
+      const theirs = createUserRepo(db, otherId);
+      mine.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: new Date(t0.getTime() + 1_000) });
+      theirs.createEmailVerification({ idHash: tok('b'), now: t0, expiresAt: new Date(t0.getTime() + 1_000) });
+      const later = new Date(t0.getTime() + 5_000);
+      mine.createEmailVerification({ idHash: tok('c'), now: later, expiresAt: live });
+      expect(tokenCount(userId)).toBe(1);
+      expect(tokenCount(otherId)).toBe(1);
+    });
+
+    it('markEmailVerified is a no-op for an already verified user', () => {
+      const repo = createUserRepo(db, userId);
+      expect(repo.markEmailVerified(t0, { clearPasswordHash: true })).toBe(true);
+      expect(repo.markEmailVerified(new Date(t0.getTime() + 1), { clearPasswordHash: true })).toBe(false);
+      expect(verifiedAt(userId)).toBe(t0.getTime());
+    });
+  });
+
   describe('linkIdentity', () => {
     it('links once, then returns false for a duplicate (issuer, subject)', () => {
       expect(createUserRepo(db, userId).linkIdentity('https://idp', 's1')).toBe(true);
