@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
@@ -302,5 +303,14 @@ describe('user_configs', () => {
   it('rejects tolerance_percent above 100 and below 0', () => {
     expect(() => db.insert(userConfigs).values({ userId: 'u1', tolerancePercent: 100.5 }).run()).toThrow(/CHECK/);
     expect(() => db.insert(userConfigs).values({ userId: 'u2', tolerancePercent: -1 }).run()).toThrow(/CHECK/);
+  });
+});
+
+describe('match status list', () => {
+  it('equals the values in the matches_status_check constraint', () => {
+    const sql = readFileSync(fileURLToPath(new URL('./schema.ts', import.meta.url)), 'utf8');
+    const m = /matches_status_check',\s*sql`[^`]*IN \(([^)]*)\)/u.exec(sql);
+    const values = (m?.[1] ?? '').split(',').map((v) => v.trim().replaceAll("'", ''));
+    expect([...values].sort()).toEqual([...MATCH_STATUSES].sort());
   });
 });
