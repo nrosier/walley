@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
+import { createOidcProvider, type OidcRuntime } from './auth/oidc.js';
 import { ConfigError, loadConfig } from './config.js';
+import { deriveFlowKey } from './crypto/keys.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './db/client.js';
 import { registerShutdown } from './shutdown.js';
 
@@ -39,6 +41,21 @@ async function main(): Promise<void> {
   }
 
   const webRoot = config.serveWeb ? fileURLToPath(new URL('../web/', import.meta.url)) : undefined;
+  // Creating the provider does no network I/O: discovery runs on the first login request.
+  let oidc: OidcRuntime | undefined;
+  if (config.authMode === 'oidc') {
+    try {
+      oidc = {
+        provider: createOidcProvider(config.oidc),
+        flowKey: deriveFlowKey(config.appSecret),
+        callbackUrl: config.oidc.callbackUrl,
+      };
+    } catch {
+      // Fixed text: never print config values.
+      console.error('Failed to set up OIDC. The OIDC routes are not registered.');
+    }
+  }
+
   let app;
   try {
     app = buildApp({
@@ -51,6 +68,7 @@ async function main(): Promise<void> {
         secureCookies: config.secureCookies,
         allowRegistration: config.allowRegistration,
         publicOrigin: config.publicOrigin,
+        ...(oidc === undefined ? {} : { oidc }),
       },
     });
   } catch (error: unknown) {

@@ -12,9 +12,11 @@ import {
   type SessionContext,
 } from './auth/sessions.js';
 import { createCsrfHook } from './auth/csrf.js';
+import type { OidcRuntime } from './auth/oidc.js';
 import type { AppDatabase } from './db/client.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
+import { registerOidcRoutes } from './routes/oidc.js';
 
 export interface AuthOptions {
   readonly mode: AuthMode;
@@ -25,6 +27,8 @@ export interface AuthOptions {
   readonly publicOrigin: string;
   /** Clock in ms since the epoch. Tests inject one; the default is Date.now. */
   readonly now?: () => number;
+  /** The OIDC provider runtime. Used in OIDC mode only; in local mode the OIDC routes answer 404. */
+  readonly oidc?: OidcRuntime;
 }
 
 export interface BuildAppOptions {
@@ -149,6 +153,13 @@ function registerAuth(app: FastifyInstance, db: AppDatabase, auth: AuthOptions):
       allowRegistration: auth.allowRegistration,
       secureCookies: auth.secureCookies,
       now: clock,
+    });
+    registerOidcRoutes(app, {
+      db,
+      secureCookies: auth.secureCookies,
+      allowRegistration: auth.allowRegistration,
+      now: clock,
+      oidc: auth.mode === 'oidc' ? (auth.oidc ?? null) : null,
     });
     app.post('/api/auth/logout', (request, reply) => {
       if (request.auth === null) {
