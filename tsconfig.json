@@ -9,5 +9,5 @@
     "noEmit": true,
     "paths": { "@/*": ["./src/web/*"] }
   },
-  "include": ["src", "*.config.ts"]
+  "include": ["src", "scripts", "*.config.ts"]
 }

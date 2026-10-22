@@ -12,3 +12,4 @@ coverage
 data/
 .claude/worktrees/
 compose.yml
+probe.env
