@@ -8,6 +8,7 @@ import {
   buildRows,
   nextRowId,
   performAction,
+  syncStore,
   useSyncCheck,
   type RowAction,
   type Side,
@@ -127,15 +128,7 @@ export function SyncDashboard() {
       const next = nextRowId(ids, id);
       setBusyId(id);
       setFailed(null);
-      let latest = result;
-      void performAction(
-        () => latest,
-        (r) => {
-          latest = r;
-          sync.setResult(r);
-        },
-        action,
-      ).then((outcome) => {
+      void performAction(() => syncStore.getState().result, syncStore.setResult, action).then((outcome) => {
         setBusyId(null);
         if (outcome.ok) {
           focusAfter(side, next);

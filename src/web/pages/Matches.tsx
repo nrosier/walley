@@ -3,7 +3,7 @@ import type { SyncCheckResult, SyncIgnored, SyncLinked } from '../../lib/sync-ch
 import { formatMoney } from '../../lib/format-money';
 import { pairBadge } from '../../lib/match-badge';
 import { useT } from '@/i18n';
-import { nextRowId, performAction, useSyncCheck } from '@/lib/sync-check';
+import { nextRowId, performAction, syncStore, useSyncCheck } from '@/lib/sync-check';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
 import { Badge } from '../components/ui/badge';
@@ -216,15 +216,7 @@ export function Matches() {
     const name = result.ignored.find((r) => r.matchId === matchId)?.name ?? matchId;
     setBusyId(matchId);
     setFailed(null);
-    let latest = result;
-    void performAction(
-      () => latest,
-      (r) => {
-        latest = r;
-        sync.setResult(r);
-      },
-      { kind: 'restore', matchId },
-    ).then((outcome) => {
+    void performAction(() => syncStore.getState().result, syncStore.setResult, { kind: 'restore', matchId }).then((outcome) => {
       setBusyId(null);
       if (outcome.ok) {
         focusAfter(next);

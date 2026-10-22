@@ -117,6 +117,32 @@ describe('performAction', () => {
     expect(out).toEqual({ ok: false, code: 'already_matched' });
     expect(h.get()).toEqual(sample());
   });
+  it('a failed action does not undo or overwrite a later overlapping action', async () => {
+    const h = harness();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const failing = vi.fn(async () => {
+      await gate;
+      return json(500, { error: 'boom' });
+    });
+    const first = performAction(h.get, h.set, { kind: 'ignore', side: 'actual', itemId: 'a2' }, failing);
+    const second = await performAction(
+      h.get,
+      h.set,
+      { kind: 'link', wallosId: 'w1', actualScheduleId: 'a1' },
+      async () => json(201, { id: 'm', status: 'LINKED' }),
+    );
+    expect(second.ok).toBe(true);
+    release();
+    expect((await first).ok).toBe(false);
+    const after = h.get();
+    expect(after?.linked).toHaveLength(1);
+    expect(after?.unlinkedWallos.map((i) => i.id)).toEqual(['w2']);
+    expect(after?.unlinkedActual.map((i) => i.id)).toEqual(['a2']);
+    expect(after?.ignored.some((r) => r.itemId === 'a2')).toBe(false);
+  });
   it('ignore success posts side and itemId', async () => {
     const h = harness();
     const f = vi.fn(async () => json(201, { id: 'm', status: 'IGNORED_WALLOS' }));

@@ -201,6 +201,66 @@ export function rollback(_current: SyncCheckResult, snapshot: SyncCheckResult): 
   return snapshot;
 }
 
+const candidateKey = (c: SyncCandidate) => `${c.wallosId}|${c.actualScheduleId}`;
+
+/** Current rows plus the snapshot rows `want` selects, in snapshot order, then rows only the current list has. */
+function mergeBack<T>(
+  current: readonly T[],
+  snapshot: readonly T[],
+  key: (row: T) => string,
+  want: (row: T) => boolean,
+): T[] {
+  const have = new Set(current.map(key));
+  const snapKeys = new Set(snapshot.map(key));
+  return [
+    ...snapshot.filter((r) => have.has(key(r)) || want(r)),
+    ...current.filter((r) => !snapKeys.has(key(r))),
+  ];
+}
+
+/**
+ * Undo one action on the current result, touching only the rows that action changed.
+ * Changes made by other actions in the meantime stay in place. `snapshot` supplies the
+ * original rows.
+ */
+export function rollbackAction(current: SyncCheckResult, snapshot: SyncCheckResult, action: RowAction): SyncCheckResult {
+  const itemKey = (i: SyncItem) => i.id;
+  if (action.kind === 'link') {
+    const { wallosId, actualScheduleId } = action;
+    return {
+      ...current,
+      unlinkedWallos: mergeBack(current.unlinkedWallos, snapshot.unlinkedWallos, itemKey, (i) => i.id === wallosId),
+      unlinkedActual: mergeBack(current.unlinkedActual, snapshot.unlinkedActual, itemKey, (i) => i.id === actualScheduleId),
+      candidates: mergeBack(
+        current.candidates,
+        snapshot.candidates,
+        candidateKey,
+        (c) => c.wallosId === wallosId || c.actualScheduleId === actualScheduleId,
+      ),
+      linked: current.linked.filter((l) => !(l.wallosId === wallosId && l.actualScheduleId === actualScheduleId)),
+    };
+  }
+  if (action.kind === 'ignore') {
+    const { side, itemId } = action;
+    const ignored = current.ignored.filter((r) => !(r.side === side && r.itemId === itemId));
+    const candidates = mergeBack(
+      current.candidates,
+      snapshot.candidates,
+      candidateKey,
+      (c) => (side === 'wallos' ? c.wallosId : c.actualScheduleId) === itemId,
+    );
+    return side === 'wallos'
+      ? { ...current, ignored, candidates, unlinkedWallos: mergeBack(current.unlinkedWallos, snapshot.unlinkedWallos, itemKey, (i) => i.id === itemId) }
+      : { ...current, ignored, candidates, unlinkedActual: mergeBack(current.unlinkedActual, snapshot.unlinkedActual, itemKey, (i) => i.id === itemId) };
+  }
+  const row = snapshot.ignored.find((r) => r.matchId === action.matchId);
+  if (row === undefined) return current;
+  const ignored = mergeBack(current.ignored, snapshot.ignored, (r) => r.matchId, (r) => r.matchId === row.matchId);
+  return row.side === 'wallos'
+    ? { ...current, ignored, unlinkedWallos: current.unlinkedWallos.filter((i) => i.id !== row.itemId) }
+    : { ...current, ignored, unlinkedActual: current.unlinkedActual.filter((i) => i.id !== row.itemId) };
+}
+
 /** The row to focus after an action removes `id`: the next one, else the previous one, else null. */
 export function nextRowId(ids: readonly string[], id: string): string | null {
   const at = ids.indexOf(id);
@@ -216,8 +276,9 @@ export type RowAction =
 export type ActionOutcome = { readonly ok: true } | { readonly ok: false; readonly code: string };
 
 /**
- * Applies the action to the list at once, then sends it. A failure restores the snapshot and
- * returns the server code. `get` and `set` read and write the shared result.
+ * Applies the action to the list at once, then sends it. A failure undoes only the rows this
+ * action touched and returns the server code. `get` and `set` must read and write the shared
+ * store, so overlapping actions see each other's changes.
  */
 export async function performAction(
   get: () => SyncCheckResult | null,
@@ -250,7 +311,7 @@ export async function performAction(
     }
     return { ok: true };
   } catch (error: unknown) {
-    set(rollback(get() ?? snapshot, snapshot));
+    set(rollbackAction(get() ?? snapshot, snapshot, action));
     return { ok: false, code: error instanceof ApiError ? error.code : 'request_failed' };
   }
 }
