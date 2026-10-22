@@ -83,3 +83,15 @@ Built on as placeholders. Ask the owner at 08:00 and revisit any code that depen
 - Actual schedules whose amount is a range (`amountOp: isbetween`, `amount: {num1, num2}`) are matched using the midpoint of the range, in integer cents.
 - A range schedule is flagged as a range wherever it is shown, so the user can see the match is approximate.
 - Source: live read-only check of the budget on 2026-10-22 found 2 of 18 schedules were ranges.
+
+## Owner answers for M5 matching (confirmed 2026-10-22)
+
+- Name matching: token overlap after normalising (lowercase, strip accents and punctuation) and removing legal suffixes such as inc, ltd, bv, llc.
+- A candidate must pass both name and amount.
+- Tolerance percentage is measured against the larger of the two amounts.
+- A linked pair whose item disappears from one side is flagged as orphaned; nothing is unlinked automatically.
+- Range midpoint rounds half away from zero.
+- A change to either range bound is drift.
+- Mismatch means drift since the last sync (hash model).
+- Status set: LINKED, IGNORED_WALLOS, IGNORED_ACTUAL, MISMATCH_DETECTED. CLAUDE.md's schema line must be updated to match (owner edit).
+- #40 overwrite actions (writes to Wallos and Actual) are held until live-write approval is given.
