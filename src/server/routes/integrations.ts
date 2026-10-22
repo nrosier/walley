@@ -56,7 +56,7 @@ const INVALID = { error: 'invalid_request' };
  * Maps a failure to a fixed code and status. Never reads error.message: messages and mapping
  * fields can name subscriptions or amounts. Only the class and its typed code decide the answer.
  */
-function sendFailure(reply: FastifyReply, error: unknown): FastifyReply {
+export function sendFailure(reply: FastifyReply, error: unknown): FastifyReply {
   const send = (status: number, code: string): FastifyReply => reply.code(status).send({ error: code });
   if (error instanceof CreateFlowError) {
     return send(error.code.endsWith('_not_found') ? 404 : 400, error.code);
