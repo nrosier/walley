@@ -11,7 +11,7 @@
  * (`findEmailVerificationUserId`), whose result is then bound here as the user id.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt, isNull, lte } from 'drizzle-orm';
+import { and, eq, gt, isNull, lte, ne } from 'drizzle-orm';
 import type { AuthMethod } from '../../lib/auth-mode.js';
 import { parseRate } from '../../lib/currency-convert.js';
 import type { MatchStatus } from '../../lib/match-status.js';
@@ -98,6 +98,14 @@ export interface UserRepo {
   touchSession(idHash: string, now: Date): boolean;
   /** Returns false when the id is not this user's; that row is not touched. */
   deleteSession(idHash: string): boolean;
+  /** Deletes this user's sessions except the one with this id. Returns how many were removed. */
+  deleteOtherSessions(keepIdHash: string): number;
+  /** Returns this user's password hash, or null when none is set (or the user is unknown). Never send it to a client. */
+  getPasswordHash(): string | null;
+  /** Replaces this user's password hash. Returns false when the user does not exist. */
+  setPasswordHash(passwordHash: string): boolean;
+  /** Lists this user's linked identities (issuer and subject only), oldest first. */
+  listIdentities(): { issuer: string; subject: string }[];
   /** Links an identity to this user. Returns false on a unique conflict. */
   linkIdentity(issuer: string, subject: string): boolean;
   getConfig(): UserConfigRow | undefined;
@@ -287,6 +295,37 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
 
     deleteSession(idHash) {
       return db.delete(sessions).where(ownSession(idHash)).run().changes > 0;
+    },
+
+    deleteOtherSessions(keepIdHash) {
+      return db
+        .delete(sessions)
+        .where(and(eq(sessions.userId, userId), ne(sessions.id, keepIdHash)))
+        .run().changes;
+    },
+
+    getPasswordHash() {
+      const row = db
+        .select({ passwordHash: users.passwordHash })
+        .from(users)
+        .where(eq(users.id, userId))
+        .get();
+      return row?.passwordHash ?? null;
+    },
+
+    setPasswordHash(passwordHash) {
+      return (
+        db.update(users).set({ passwordHash }).where(eq(users.id, userId)).run().changes > 0
+      );
+    },
+
+    listIdentities() {
+      return db
+        .select({ issuer: userIdentities.issuer, subject: userIdentities.subject })
+        .from(userIdentities)
+        .where(eq(userIdentities.userId, userId))
+        .orderBy(userIdentities.createdAt, userIdentities.id)
+        .all();
     },
 
     linkIdentity(issuer, subject) {
