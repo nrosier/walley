@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useT } from '@/i18n';
+import { healthStatusMessages } from './HealthStatus.messages';
 
 type Health = 'checking' | 'ok' | 'unreachable';
 
-const LABELS: Record<Health, string> = {
-  checking: 'API: checking',
-  ok: 'API: ok',
-  unreachable: 'API: unreachable',
-};
-
 export function HealthStatus() {
+  const { t } = useT(healthStatusMessages);
   const [health, setHealth] = useState<Health>('checking');
 
   useEffect(() => {
@@ -34,5 +31,5 @@ export function HealthStatus() {
     };
   }, []);
 
-  return <span className="text-xs">{LABELS[health]}</span>;
+  return <span className="text-xs">{t(health)}</span>;
 }

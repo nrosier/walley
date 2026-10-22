@@ -1,9 +1,22 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { ACCOUNT_NOT_LINKED_MESSAGE, LoginForm, OIDC_FAILED_MESSAGE } from './LoginPage';
+import { I18nProvider, type Locale } from '@/i18n';
+import { LoginForm } from './LoginPage';
 
-const render = (mode: 'local' | 'oidc', registration: boolean, errorCode: string | null = null) =>
-  renderToStaticMarkup(<LoginForm config={{ mode, registration }} errorCode={errorCode} />);
+const NOT_LINKED_EN =
+  'Your sign-in worked, but no Walley account is linked to it. Ask the person who runs this Walley instance for access.';
+
+const render = (
+  mode: 'local' | 'oidc',
+  registration: boolean,
+  errorCode: string | null = null,
+  locale: Locale = 'en',
+) =>
+  renderToStaticMarkup(
+    <I18nProvider initialLocale={locale}>
+      <LoginForm config={{ mode, registration }} errorCode={errorCode} />
+    </I18nProvider>,
+  );
 
 describe('LoginPage local mode', () => {
   it('renders email and password fields and no SSO button', () => {
@@ -15,18 +28,16 @@ describe('LoginPage local mode', () => {
   });
 
   it('hides the register link when registration is off', () => {
-    const html = render('local', false);
-    expect(html).not.toContain('Create an account');
+    expect(render('local', false)).not.toContain('Create an account');
   });
 
   it('shows the register link when registration is on', () => {
-    const html = render('local', true);
-    expect(html).toContain('Create an account');
+    expect(render('local', true)).toContain('Create an account');
   });
 });
 
 describe('LoginPage oidc mode', () => {
-  it('renders only the SSO button with no password field', () => {
+  it('renders only the SSO link with no password field', () => {
     const html = render('oidc', false);
     expect(html).toContain('Sign in with SSO');
     expect(html).toContain('href="/api/auth/oidc/login"');
@@ -35,25 +46,36 @@ describe('LoginPage oidc mode', () => {
   });
 
   it('never shows a register link, even when registration is on', () => {
-    const html = render('oidc', true);
-    expect(html).not.toContain('Create an account');
+    expect(render('oidc', true)).not.toContain('Create an account');
   });
 });
 
 describe('LoginPage error messages', () => {
-  it('renders the account_not_linked message exactly', () => {
+  it('renders the account_not_linked message exactly (en)', () => {
     const html = render('oidc', false, 'account_not_linked');
-    expect(html).toContain('No Walley account is linked to this identity.');
-    expect(html).toContain(ACCOUNT_NOT_LINKED_MESSAGE);
+    expect(html).toContain(NOT_LINKED_EN);
+    expect(html).toContain('text-warning');
   });
 
-  it('renders the oidc_failed message in local mode too', () => {
-    const html = render('local', false, 'oidc_failed');
-    expect(html).toContain(OIDC_FAILED_MESSAGE);
+  it('renders account_not_linked in Dutch', () => {
+    const html = render('oidc', false, 'account_not_linked', 'nl');
+    expect(html).toContain('Uw aanmelding is gelukt, maar er is geen Walley-account aan gekoppeld.');
+    expect(html).not.toContain(NOT_LINKED_EN);
+    expect(render('local', false, null, 'nl')).toContain('Inloggen bij Walley');
   });
 
-  it('shows no error message for unknown or missing codes', () => {
-    expect(render('oidc', false, 'something_else')).not.toContain('role="alert"');
-    expect(render('oidc', false, null)).not.toContain('role="alert"');
+  it('renders oidc_failed in local mode too', () => {
+    expect(render('local', false, 'oidc_failed')).toContain('Sign-in failed.');
+  });
+
+  it('gives rate_limited its own message', () => {
+    expect(render('oidc', false, 'rate_limited')).toContain('Too many attempts. Wait a moment and try again.');
+    expect(render('oidc', false, 'rate_limited', 'nl')).toContain('Te veel pogingen.');
+  });
+
+  it('shows nothing for unknown, inherited-property or missing codes', () => {
+    for (const code of ['something_else', 'constructor', '__proto__', '', null]) {
+      expect(render('oidc', false, code)).not.toContain('role="alert"');
+    }
   });
 });

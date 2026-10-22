@@ -1,5 +1,8 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
 import { apiRequest, ApiError } from '@/lib/api';
+import { useT } from '@/i18n';
+import { PASSWORD_MIN_CODE_POINTS } from '../../lib/password-policy';
+import { accountSettingsMessages } from './AccountSettings.messages';
 
 export interface AccountInfo {
   email: string;
@@ -8,12 +11,29 @@ export interface AccountInfo {
   identities: { issuer: string; subject: string }[];
 }
 
-export const PASSWORD_MISMATCH_MESSAGE = 'The new passwords do not match.';
-export const WRONG_PASSWORD_MESSAGE = 'The current password is incorrect.';
-export const PASSWORD_INVALID_MESSAGE = 'The new password must be 15 to 256 characters.';
-export const PASSWORD_FAILED_MESSAGE = 'The password could not be changed. Try again later.';
-export const PASSWORD_CHANGED_MESSAGE = 'Password changed. Your other sessions were signed out.';
-export const OIDC_PASSWORD_NOTE = 'Your password is managed by your identity provider.';
+export type PasswordChangeResult = { ok: true } | { ok: false; code: string };
+
+/**
+ * Calls PUT /api/account/password. Returns the server error code on failure so the caller can
+ * translate it. Passwords are sent in the request body only and are never logged.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- exported for tests with a fake fetch
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PasswordChangeResult> {
+  try {
+    await apiRequest('/api/account/password', {
+      method: 'PUT',
+      body: { currentPassword, newPassword },
+      fetchImpl,
+    });
+    return { ok: true };
+  } catch (err: unknown) {
+    return { ok: false, code: err instanceof ApiError ? err.code : 'request_failed' };
+  }
+}
 
 const inputClass =
   'w-full rounded-md border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
@@ -21,6 +41,7 @@ const buttonClass =
   'rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50';
 
 function PasswordForm() {
+  const { t, errorText } = useT(accountSettingsMessages);
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -33,24 +54,20 @@ function PasswordForm() {
     setError(null);
     setNotice(null);
     if (next !== confirm) {
-      setError(PASSWORD_MISMATCH_MESSAGE);
+      setError(t('password.mismatch'));
       return;
     }
     setBusy(true);
-    apiRequest('/api/account/password', {
-      method: 'PUT',
-      body: { currentPassword: current, newPassword: next },
-    })
-      .then(() => {
-        setCurrent('');
-        setNext('');
-        setConfirm('');
-        setNotice(PASSWORD_CHANGED_MESSAGE);
-      })
-      .catch((err: unknown) => {
-        if (err instanceof ApiError && err.status === 401) setError(WRONG_PASSWORD_MESSAGE);
-        else if (err instanceof ApiError && err.status === 400) setError(PASSWORD_INVALID_MESSAGE);
-        else setError(PASSWORD_FAILED_MESSAGE);
+    void changePassword(current, next)
+      .then((result) => {
+        if (result.ok) {
+          setCurrent('');
+          setNext('');
+          setConfirm('');
+          setNotice(t('password.changed'));
+        } else {
+          setError(errorText(result.code));
+        }
       })
       .finally(() => {
         setBusy(false);
@@ -60,39 +77,43 @@ function PasswordForm() {
   return (
     <form className="max-w-sm space-y-3" onSubmit={onSubmit}>
       <label className="block text-sm">
-        <span className="mb-1 block text-muted-foreground">Current password</span>
+        <span className="mb-1 block text-muted-foreground">{t('password.current')}</span>
         <input type="password" name="currentPassword" autoComplete="current-password" required value={current} onChange={(e) => { setCurrent(e.target.value); }} className={inputClass} />
       </label>
+      {/* minLength matches the server limit in src/lib/password-policy.ts (also used by src/server/auth/passwords.ts). */}
       <label className="block text-sm">
-        <span className="mb-1 block text-muted-foreground">New password</span>
-        <input type="password" name="newPassword" autoComplete="new-password" required minLength={15} value={next} onChange={(e) => { setNext(e.target.value); }} className={inputClass} />
+        <span className="mb-1 block text-muted-foreground">{t('password.next')}</span>
+        <input type="password" name="newPassword" autoComplete="new-password" required minLength={PASSWORD_MIN_CODE_POINTS} value={next} onChange={(e) => { setNext(e.target.value); }} className={inputClass} />
       </label>
       <label className="block text-sm">
-        <span className="mb-1 block text-muted-foreground">Confirm new password</span>
+        <span className="mb-1 block text-muted-foreground">{t('password.confirm')}</span>
         <input type="password" name="confirmPassword" autoComplete="new-password" required value={confirm} onChange={(e) => { setConfirm(e.target.value); }} className={inputClass} />
       </label>
-      {error !== null ? <p role="alert" className="text-sm text-amber-500">{error}</p> : null}
-      {notice !== null ? <p role="status" className="text-sm text-muted-foreground">{notice}</p> : null}
-      <button type="submit" disabled={busy} className={buttonClass}>Change password</button>
+      <div aria-live="polite" role="status">
+        {error !== null ? <p className="text-sm text-warning">{error}</p> : null}
+        {notice !== null ? <p className="text-sm text-success">{notice}</p> : null}
+      </div>
+      <button type="submit" disabled={busy} className={buttonClass}>{t('password.submit')}</button>
     </form>
   );
 }
 
 /** Renders the account section for a known account. Local mode: change-password form. OIDC mode: note and identities. */
 export function AccountSettingsView({ account }: { account: AccountInfo }) {
+  const { t } = useT(accountSettingsMessages);
   return (
     <section aria-labelledby="account-heading" className="space-y-3">
-      <h2 id="account-heading" className="text-base font-semibold">Account / Security</h2>
-      <p className="text-sm text-muted-foreground">Signed in as {account.email}</p>
-      {account.mode === 'local' ? <PasswordForm /> : <p className="text-sm">{OIDC_PASSWORD_NOTE}</p>}
+      <h2 id="account-heading" className="text-base font-semibold">{t('heading')}</h2>
+      <p className="text-sm text-muted-foreground">{t('signedInAs', { email: account.email })}</p>
+      {account.mode === 'local' ? <PasswordForm /> : <p className="text-sm">{t('oidcNote')}</p>}
       {account.identities.length > 0 ? (
         <div>
-          <h3 className="mb-1 text-sm font-medium">Linked identities</h3>
+          <h3 className="mb-1 text-sm font-medium">{t('identities.heading')}</h3>
           <ul className="space-y-1 text-xs">
             {account.identities.map((identity) => (
               <li key={`${identity.issuer}\n${identity.subject}`} className="font-mono">
-                <span className="text-muted-foreground">Issuer:</span> {identity.issuer}{' '}
-                <span className="text-muted-foreground">Subject:</span> {identity.subject}
+                <span className="text-muted-foreground">{t('identities.issuer')}</span> {identity.issuer}{' '}
+                <span className="text-muted-foreground">{t('identities.subject')}</span> {identity.subject}
               </li>
             ))}
           </ul>
@@ -106,6 +127,7 @@ type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; ac
 
 /** Loads GET /api/account and renders the matching view. */
 export function AccountSettings() {
+  const { t } = useT(accountSettingsMessages);
   const [state, setState] = useState<State>({ status: 'loading' });
   useEffect(() => {
     const controller = new AbortController();
@@ -120,7 +142,7 @@ export function AccountSettings() {
       controller.abort();
     };
   }, []);
-  if (state.status === 'loading') return <p className="text-sm text-muted-foreground">Loading account...</p>;
-  if (state.status === 'error') return <p role="alert" className="text-sm text-amber-500">Could not load the account. Reload the page to try again.</p>;
+  if (state.status === 'loading') return <p className="text-sm text-muted-foreground">{t('loading')}</p>;
+  if (state.status === 'error') return <p role="alert" className="text-sm text-warning">{t('loadError')}</p>;
   return <AccountSettingsView account={state.account} />;
 }
