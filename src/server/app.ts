@@ -16,7 +16,9 @@ import type { OidcRuntime } from './auth/oidc.js';
 import type { AppDatabase } from './db/client.js';
 import type { Mailer } from './mail/index.js';
 import { authRoutes } from './routes/auth.js';
+import type { CreateDeps } from './integrations/create.js';
 import { healthRoutes } from './routes/health.js';
+import { integrationRoutes } from './routes/integrations.js';
 import { registerOidcRoutes } from './routes/oidc.js';
 
 export interface AuthOptions {
@@ -43,6 +45,8 @@ export interface BuildAppOptions {
   readonly db?: AppDatabase;
   /** Turns on cookie sessions. Requires `db`. */
   readonly auth?: AuthOptions;
+  /** Wallos and Actual clients for the create routes. Needs `auth`; without it no integration route exists. */
+  readonly integrations?: CreateDeps;
   /** Addresses or CIDR ranges of the reverse proxies whose X-Forwarded-For is trusted. Default false. */
   readonly trustProxy?: string[] | false;
 }
@@ -135,7 +139,12 @@ function denyHook(request: FastifyRequest, reply: FastifyReply, done: () => void
   void reply.code(401).send({ error: 'unauthenticated' });
 }
 
-function registerAuth(app: FastifyInstance, db: AppDatabase, auth: AuthOptions): void {
+function registerAuth(
+  app: FastifyInstance,
+  db: AppDatabase,
+  auth: AuthOptions,
+  integrations: CreateDeps | undefined,
+): void {
   const clock = auth.now ?? Date.now;
   void app.register(fastifyCookie);
   // buildApp is synchronous, so the cookie plugin has not loaded yet. A plain addHook here
@@ -169,6 +178,9 @@ function registerAuth(app: FastifyInstance, db: AppDatabase, auth: AuthOptions):
       now: clock,
       oidc: auth.mode === 'oidc' ? (auth.oidc ?? null) : null,
     });
+    if (integrations !== undefined) {
+      void app.register(integrationRoutes, { prefix: '/api', deps: integrations });
+    }
     app.post('/api/auth/logout', (request, reply) => {
       if (request.auth === null) {
         return reply.code(401).send({ error: 'unauthenticated' });
@@ -206,7 +218,7 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
       // Fixed text: never print config values.
       throw new Error('Local registration needs a mailer. Startup is aborted.');
     }
-    registerAuth(app, db, auth);
+    registerAuth(app, db, auth, opts?.integrations);
   }
   // Queued behind the session hook, which registerAuth adds inside its own `after`.
   app.after(() => {

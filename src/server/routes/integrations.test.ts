@@ -1,0 +1,231 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CurrencyConversionError } from '../../lib/currency-convert.js';
+import { buildApp } from '../app.js';
+import { closeDatabase, type AppDatabase } from '../db/client.js';
+import { createUserRepo } from '../db/repo.js';
+import { ActualSessionError } from '../integrations/actual/session.js';
+import { ActualWriteError } from '../integrations/actual/write.js';
+import type { CreateDeps } from '../integrations/create.js';
+import { CreateFlowError } from '../integrations/create.js';
+import {
+  WallosAuthError,
+  WallosHttpError,
+  WallosRejectedError,
+  type WallosClient,
+} from '../integrations/wallos/client.js';
+import { WallosMappingError } from '../integrations/wallos/map.js';
+import { createCapturingMailer } from '../mail/index.js';
+import { injectAs, makeAuthApp, makeUser, signIn, TEST_ORIGIN } from '../test/auth-helpers.js';
+
+const SECRETISH = /api[_-]?key|password|secret|https?:\/\/|netflix|spotify|12\.50/i;
+
+const open: { close(): Promise<unknown>; db?: AppDatabase }[] = [];
+afterEach(async () => {
+  for (const a of open.splice(0)) {
+    await a.close();
+    if (a.db) closeDatabase(a.db);
+  }
+});
+
+/** Two users, each with their own Wallos subscriptions and Actual schedules behind the mocks. */
+function setup(overrides: Partial<CreateDeps> = {}) {
+  const t = makeAuthApp({ mailer: createCapturingMailer() });
+  const owned: Record<string, { subs: number[]; schedules: string[] }> = {};
+  const createSchedule = vi.fn(async () => ({
+    scheduleId: 's1',
+    payeeId: 'p1',
+    payeeCreated: true,
+    categoryApplied: false,
+  }));
+  const createSubscription = vi.fn(async () => '55');
+  const wallos = {
+    listSubscriptions: async (id: string) =>
+      (owned[id]?.subs ?? []).map((n) => ({
+        id: n,
+        name: 'Netflix',
+        price: '12.50',
+        currency_id: 1,
+        cycle: 3,
+        frequency: 1,
+        next_payment: '2026-11-03',
+        inactive: 0,
+      })),
+    listCurrencies: async () => [{ id: 1, code: 'EUR', rate: '1' }],
+    createSubscription,
+  } as unknown as WallosClient;
+  const deps: CreateDeps = {
+    wallos,
+    repoFor: (id) => createUserRepo(t.db, id),
+    withActual: (id, use) =>
+      use({
+        getPreferences: async () => ({ defaultCurrencyCode: 'EUR' }),
+        getSchedules: async () =>
+          (owned[id]?.schedules ?? []).map((s) => ({
+            id: s,
+            name: 'Spotify',
+            amount: -1250,
+            amountOp: 'is',
+            date: { frequency: 'monthly', start: '2026-01-01' },
+          })),
+      } as never),
+    createSchedule,
+    ...overrides,
+  };
+  // buildApp is called again with the integrations; reuse the same db and clock.
+  const app = buildApp({
+    db: t.db,
+    integrations: deps,
+    auth: {
+      mode: 'local',
+      secureCookies: false,
+      allowRegistration: false,
+      publicOrigin: t.publicOrigin,
+      now: () => t.clock.now(),
+    },
+  });
+  open.push({ close: () => app.close(), db: t.db });
+  void t.app.close();
+  const a = makeUser(t.db);
+  const b = makeUser(t.db);
+  owned[a] = { subs: [7], schedules: ['sch-a'] };
+  owned[b] = { subs: [8], schedules: ['sch-b'] };
+  const ctx = { db: t.db, clock: t.clock };
+  return { app, a, b, sa: signIn(ctx, a), sb: signIn(ctx, b), createSchedule, createSubscription };
+}
+
+const SCHED_URL = '/api/integrations/actual-schedules';
+const SUB_URL = '/api/integrations/wallos-subscriptions';
+const SCHED_BODY = { wallosSubscriptionId: '7', accountId: 'acc', payee: { kind: 'new', name: 'N' } };
+
+describe('auth gate and CSRF', () => {
+  it.each([SCHED_URL, SUB_URL])('%s answers 401 without a session', async (url) => {
+    const { app } = setup();
+    const res = await app.inject({ method: 'POST', url, payload: {}, headers: { origin: TEST_ORIGIN } });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'unauthenticated' });
+  });
+
+  it.each([SCHED_URL, SUB_URL])('%s rejects a session POST without the CSRF header', async (url) => {
+    const { app, sa, createSchedule, createSubscription } = setup();
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      payload: SCHED_BODY,
+      headers: { origin: TEST_ORIGIN, cookie: sa.cookie },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(createSchedule).not.toHaveBeenCalled();
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
+  it('rejects a foreign Origin', async () => {
+    const { app, sa, createSchedule } = setup();
+    const res = await injectAs(app, sa, {
+      method: 'POST',
+      url: SCHED_URL,
+      payload: SCHED_BODY,
+      headers: { origin: 'http://evil.example' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(createSchedule).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/integrations/actual-schedules', () => {
+  it('201 with ids and flags only', async () => {
+    const { app, sa } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: SCHED_URL, payload: SCHED_BODY });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toEqual({
+      scheduleId: 's1',
+      payeeId: 'p1',
+      payeeCreated: true,
+      categoryApplied: false,
+    });
+  });
+
+  it.each([
+    {},
+    { ...SCHED_BODY, wallosSubscriptionId: 7 },
+    { ...SCHED_BODY, accountId: '' },
+    { ...SCHED_BODY, payee: { kind: 'new', name: ' ' } },
+    { ...SCHED_BODY, payee: { kind: 'other' } },
+    { ...SCHED_BODY, categoryId: 5 },
+  ])('400 invalid_request for a bad body %#', async (payload) => {
+    const { app, sa, createSchedule } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: SCHED_URL, payload });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+    expect(createSchedule).not.toHaveBeenCalled();
+  });
+
+  it("user A cannot use user B's subscription id", async () => {
+    const { app, sa, createSchedule } = setup();
+    const res = await injectAs(app, sa, {
+      method: 'POST',
+      url: SCHED_URL,
+      payload: { ...SCHED_BODY, wallosSubscriptionId: '8' },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'wallos_subscription_not_found' });
+    expect(createSchedule).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/integrations/wallos-subscriptions', () => {
+  it('201 with the new id only', async () => {
+    const { app, sa } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a' } });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toEqual({ wallosSubscriptionId: '55' });
+  });
+
+  it('400 invalid_request for a bad body', async () => {
+    const { app, sa } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 3 } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+  });
+
+  it("user A cannot create from user B's schedule", async () => {
+    const { app, sa, createSubscription } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-b' } });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'schedule_not_found' });
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+});
+
+describe('error mapping', () => {
+  const SECRET_MESSAGE = 'api_key=abc https://wallos.example password Netflix 12.50';
+  const cases: [string, Error, number, string][] = [
+    ['range', new CreateFlowError('range_amount_unsupported'), 400, 'range_amount_unsupported'],
+    ['base', new CreateFlowError('base_currency_missing'), 400, 'base_currency_missing'],
+    ['write invalid', new ActualWriteError(SECRET_MESSAGE), 400, 'invalid_request'],
+    ['write sync', new ActualWriteError(SECRET_MESSAGE, 'sync_failed'), 502, 'actual_sync_failed'],
+    ['session none', new ActualSessionError('not_configured'), 400, 'actual_not_configured'],
+    ['session open', new ActualSessionError('open_failed'), 502, 'actual_unavailable'],
+    ['wallos auth', new WallosAuthError(), 502, 'wallos_auth_failed'],
+    ['wallos rejected', new WallosRejectedError(SECRET_MESSAGE), 502, 'wallos_rejected'],
+    ['wallos http', new WallosHttpError(500), 502, 'wallos_unavailable'],
+    ['mapping', new WallosMappingError('invalid_price', 'price', SECRET_MESSAGE), 400, 'mapping_failed'],
+    ['conversion', new CurrencyConversionError('missing_rate', SECRET_MESSAGE), 400, 'currency_conversion_failed'],
+    ['unknown', new Error(SECRET_MESSAGE), 500, 'internal_error'],
+  ];
+
+  it.each(cases)('%s maps to a fixed code with no secret text', async (_n, error, status, code) => {
+    const { app, sa } = setup({
+      createSchedule: () => Promise.reject(error),
+      withActual: () => Promise.reject(error),
+    });
+    for (const [url, payload] of [
+      [SCHED_URL, SCHED_BODY],
+      [SUB_URL, { scheduleId: 'sch-a' }],
+    ] as const) {
+      const res = await injectAs(app, sa, { method: 'POST', url, payload });
+      expect(res.statusCode).toBe(status);
+      expect(res.json()).toEqual({ error: code });
+      expect(res.body).not.toMatch(SECRETISH);
+    }
+  });
+});

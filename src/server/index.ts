@@ -5,6 +5,9 @@ import { createOidcProvider, type OidcRuntime } from './auth/oidc.js';
 import { ConfigError, loadConfig } from './config.js';
 import { deriveFlowKey } from './crypto/keys.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './db/client.js';
+import { createUserRepo } from './db/repo.js';
+import { realCreateDeps } from './integrations/create.js';
+import { createWallosClient } from './integrations/wallos/client.js';
 import { createMailer, createSmtpTransport } from './mail/index.js';
 import { registerShutdown } from './shutdown.js';
 
@@ -76,6 +79,11 @@ async function main(): Promise<void> {
       webRoot,
       db,
       trustProxy: config.trustProxy,
+      integrations: realCreateDeps(
+        createWallosClient((id) => createUserRepo(db, id), config.appSecret),
+        (id) => createUserRepo(db, id),
+        { db, appSecret: config.appSecret, dataDir: config.dataDir },
+      ),
       auth: {
         mode: config.authMode,
         secureCookies: config.secureCookies,
