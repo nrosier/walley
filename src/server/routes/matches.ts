@@ -95,7 +95,7 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
       repo.deleteMatch(id);
       return await reply.code(200).send({ status: 'UNLINKED' });
     } catch (error: unknown) {
-      return await Promise.resolve(sendFailure(reply, error));
+      return sendFailure(reply, error);
     }
   });
 
@@ -113,7 +113,7 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
     try {
       const repo = opts.deps.repoFor(userId);
       // Checked before any remote read, so an already matched item costs no Wallos or Actual call.
-      if (repo.listMatches().some((m) => m.wallosId === wallosId || m.actualScheduleId === actualScheduleId)) {
+      if (repo.findMatchByItem('wallos', wallosId) !== undefined || repo.findMatchByItem('actual', actualScheduleId) !== undefined) {
         return await reply.code(409).send(ALREADY_MATCHED);
       }
       const current = await readCurrentSides(opts.deps, userId);
@@ -144,7 +144,7 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
       }
       return await reply.code(201).send({ id: row.id, status: 'LINKED' });
     } catch (error: unknown) {
-      return await Promise.resolve(sendFailure(reply, error));
+      return sendFailure(reply, error);
     }
   });
 
@@ -160,10 +160,7 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
     const itemId = body['itemId'];
     try {
       const repo = opts.deps.repoFor(request.auth.userId);
-      const taken = repo
-        .listMatches()
-        .some((m) => (side === 'wallos' ? m.wallosId === itemId : m.actualScheduleId === itemId));
-      if (taken) return await reply.code(409).send(ALREADY_MATCHED);
+      if (repo.findMatchByItem(side, itemId) !== undefined) return await reply.code(409).send(ALREADY_MATCHED);
       const status = side === 'wallos' ? 'IGNORED_WALLOS' : 'IGNORED_ACTUAL';
       let row;
       try {

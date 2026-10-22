@@ -196,6 +196,25 @@ describe('POST /api/matches', () => {
     }
   });
 
+  it('two users can link the same pair; each row stays in its own scope', async () => {
+    const { app, sa, sb, repoA, repoB } = setup();
+    const rb = await injectAs(app, sb, link('7', 'sch-a'));
+    expect(rb.statusCode).toBe(201);
+    const idB = rb.json<{ id: string }>().id;
+    const rowB = repoB.getMatch(idB);
+    expect(rowB).toBeDefined();
+
+    const ra = await injectAs(app, sa, link('7', 'sch-a'));
+    expect(ra.statusCode).toBe(201);
+    const idA = ra.json<{ id: string }>().id;
+    expect(idA).not.toBe(idB);
+
+    expect(repoB.getMatch(idB)).toEqual(rowB);
+    expect(repoB.listMatches()).toEqual([rowB]);
+    expect(repoB.getMatch(idA)).toBeUndefined();
+    expect(repoA.listMatches().map((m) => m.id)).toEqual([idA]);
+  });
+
   it('401 without a session and 403 csrf_failed without the token', async () => {
     const { app, sa } = setup();
     const none = await app.inject({ ...link('7', 'sch-a'), headers: { origin: TEST_ORIGIN } });

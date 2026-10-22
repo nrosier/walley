@@ -111,6 +111,8 @@ export interface UserRepo {
   getConfig(): UserConfigRow | undefined;
   upsertConfig(input: UserConfigInput): UserConfigRow;
   listMatches(): MatchRow[];
+  /** Returns this user's match whose Wallos id (side `wallos`) or Actual schedule id (side `actual`) is `itemId`, or undefined. */
+  findMatchByItem(side: 'wallos' | 'actual', itemId: string): MatchRow | undefined;
   getMatch(id: string): MatchRow | undefined;
   insertMatch(input: MatchInput): MatchRow;
   /** Returns false when the id is not this user's; that row is not touched. */
@@ -178,6 +180,18 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
 
   const getMatch = (id: string): MatchRow | undefined =>
     db.select().from(matches).where(ownMatch(id)).get();
+
+  const findMatchByItem = (side: 'wallos' | 'actual', itemId: string): MatchRow | undefined =>
+    db
+      .select()
+      .from(matches)
+      .where(
+        and(
+          eq(matches.userId, userId),
+          side === 'wallos' ? eq(matches.wallosId, itemId) : eq(matches.actualScheduleId, itemId),
+        ),
+      )
+      .get();
 
   const ownOverride = (wallosSubscriptionId: string) =>
     and(
@@ -360,6 +374,8 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
     listMatches() {
       return db.select().from(matches).where(eq(matches.userId, userId)).all();
     },
+
+    findMatchByItem,
 
     getMatch,
 
