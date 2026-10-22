@@ -88,7 +88,7 @@ export interface SyncCheckResult {
   readonly orphaned: SyncOrphaned[];
 }
 
-interface Side extends SyncItem {
+export interface Side extends SyncItem {
   readonly fields: MatchFieldsInput | null;
 }
 
@@ -153,11 +153,30 @@ function mapActual(
   };
 }
 
-export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise<SyncCheckResult> {
-  const repo = deps.repoFor(userId);
-  const tolerance = repo.getConfig()?.tolerancePercent ?? DEFAULT_TOLERANCE_PERCENT;
-  const rows = repo.listMatches();
-  const overrides = new Map(repo.listSubscriptionOverrides().map((o) => [o.wallosSubscriptionId, o.rate]));
+export interface CurrentSides {
+  readonly wallosSides: Map<string, Side>;
+  readonly actualSides: Map<string, Side>;
+}
+
+/** Keeps only the sides that can be hashed (no pattern schedules, no unmappable Wallos items). */
+export function fieldInputsOf(sides: ReadonlyMap<string, Side>): Map<string, MatchFieldsInput> {
+  const out = new Map<string, MatchFieldsInput>();
+  for (const [id, s] of sides) if (s.fields !== null) out.set(id, s.fields);
+  return out;
+}
+
+/**
+ * Read-only: lists Wallos subscriptions and currencies and reads Actual schedules and the base
+ * currency, then maps every item to its current comparable fields. Shared by the Sync Check and
+ * by ignore_diff so both hash exactly the same values.
+ */
+export async function readCurrentSides(
+  deps: Pick<SyncCheckDeps, 'wallos' | 'repoFor' | 'withActual'>,
+  userId: string,
+): Promise<CurrentSides> {
+  const overrides = new Map(
+    deps.repoFor(userId).listSubscriptionOverrides().map((o) => [o.wallosSubscriptionId, o.rate]),
+  );
 
   const [subscriptions, currencies] = await Promise.all([
     deps.wallos.listSubscriptions(userId),
@@ -210,6 +229,14 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
   for (const schedule of actual.schedules) {
     actualSides.set(schedule.id, mapActual(schedule, baseCode));
   }
+  return { wallosSides, actualSides };
+}
+
+export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise<SyncCheckResult> {
+  const repo = deps.repoFor(userId);
+  const tolerance = repo.getConfig()?.tolerancePercent ?? DEFAULT_TOLERANCE_PERCENT;
+  const rows = repo.listMatches();
+  const { wallosSides, actualSides } = await readCurrentSides(deps, userId);
 
   // #35: saved pairs are classified on every run; nothing about them needs user action.
   const classified = classifySavedPairs(
@@ -219,12 +246,7 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
   );
 
   // #38: only hashable sides are compared; the rest keep status and stored hashes.
-  const fieldsOf = (sides: Map<string, Side>): Map<string, MatchFieldsInput> => {
-    const out = new Map<string, MatchFieldsInput>();
-    for (const [id, s] of sides) if (s.fields !== null) out.set(id, s.fields);
-    return out;
-  };
-  const drift = detectMismatches(rows, fieldsOf(wallosSides), fieldsOf(actualSides));
+  const drift = detectMismatches(rows, fieldInputsOf(wallosSides), fieldInputsOf(actualSides));
   const rowByPair = new Map(rows.map((r) => [`${r.wallosId ?? ''}\u0000${r.actualScheduleId ?? ''}`, r]));
   const mismatches: SyncMismatch[] = [];
   for (const r of drift.results) {

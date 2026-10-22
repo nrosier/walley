@@ -20,6 +20,7 @@ import type { CreateDeps } from './integrations/create.js';
 import { healthRoutes } from './routes/health.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { registerOidcRoutes } from './routes/oidc.js';
+import { matchesRoutes } from './routes/matches.js';
 import { syncRoutes } from './routes/sync.js';
 
 export interface AuthOptions {
@@ -181,6 +182,10 @@ function registerAuth(
     });
     if (integrations !== undefined) {
       void app.register(integrationRoutes, { prefix: '/api', deps: integrations });
+      void app.register(matchesRoutes, {
+        prefix: '/api',
+        deps: { wallos: integrations.wallos, repoFor: integrations.repoFor, withActual: integrations.withActual },
+      });
       void app.register(syncRoutes, {
         prefix: '/api',
         deps: {
