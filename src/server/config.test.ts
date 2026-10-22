@@ -5,7 +5,11 @@ import { ConfigError, loadConfig } from './config.js';
 const SECRET = 'test-secret-value-that-is-long-enough-123456';
 const CLIENT_SECRET = 'fake-oidc-client-secret-value-987654';
 
-const base = { APP_SECRET: SECRET, DATABASE_PATH: './data/test.db' };
+const base = {
+  APP_SECRET: SECRET,
+  DATABASE_PATH: './data/test.db',
+  PUBLIC_ORIGIN: 'https://walley.example.com',
+};
 const oidcAll = {
   OIDC_ISSUER: 'https://idp.example.com',
   OIDC_CLIENT_ID: 'fake-client-id',
@@ -35,6 +39,92 @@ describe('loadConfig defaults', () => {
     expect(config.allowRegistration).toBe(false);
     expect(config.databasePath).toBe('./data/test.db');
     expect(config.appSecret).toBe(SECRET);
+    expect(config.publicOrigin).toBe('https://walley.example.com');
+  });
+});
+
+describe('PUBLIC_ORIGIN', () => {
+  const REQUIRED = 'PUBLIC_ORIGIN is required';
+  const INVALID =
+    'PUBLIC_ORIGIN must be an absolute http or https origin with no path, query, fragment or credentials';
+  const withoutOrigin = { APP_SECRET: base.APP_SECRET, DATABASE_PATH: base.DATABASE_PATH };
+
+  it('accepts an https origin', () => {
+    expect(loadConfig({ ...base, PUBLIC_ORIGIN: 'https://walley.example.com' }).publicOrigin).toBe(
+      'https://walley.example.com',
+    );
+  });
+
+  it('drops a lone trailing slash', () => {
+    expect(loadConfig({ ...base, PUBLIC_ORIGIN: 'http://127.0.0.1:3000/' }).publicOrigin).toBe(
+      'http://127.0.0.1:3000',
+    );
+  });
+
+  it('is required in local mode', () => {
+    expect(problemsOf(withoutOrigin)).toEqual([REQUIRED]);
+  });
+
+  it('is required in oidc mode', () => {
+    expect(problemsOf({ ...withoutOrigin, ...oidcAll })).toEqual([REQUIRED]);
+  });
+
+  it('counts empty and whitespace-only values as unset', () => {
+    expect(problemsOf({ ...base, PUBLIC_ORIGIN: '' })).toEqual([REQUIRED]);
+    expect(problemsOf({ ...base, PUBLIC_ORIGIN: '   ' })).toEqual([REQUIRED]);
+  });
+
+  it.each([
+    'https://walley.example.com/app',
+    'ftp://x',
+    'not a url',
+    'https://walley.example.com?x=1',
+    'https://walley.example.com/?x=1',
+    'https://walley.example.com#frag',
+    'https://walley.example.com/#',
+    'https://user@walley.example.com',
+    'https://user:pass@walley.example.com',
+  ])('rejects PUBLIC_ORIGIN %j', (value) => {
+    expect(problemsOf({ ...base, PUBLIC_ORIGIN: value })).toEqual([INVALID]);
+  });
+
+  it.each(['http://127.0.0.1:3000', 'http://localhost:3000', 'http://[::1]:3000'])(
+    'accepts loopback http %j',
+    (value) => {
+      expect(loadConfig({ ...base, PUBLIC_ORIGIN: value }).publicOrigin).toBe(value);
+    },
+  );
+
+  it.each(['http://walley.example.com', 'http://127.0.0.1.evil.com'])(
+    'rejects non-loopback http %j',
+    (value) => {
+      const problems = problemsOf({ ...base, PUBLIC_ORIGIN: value });
+      expect(problems).toEqual([
+        'PUBLIC_ORIGIN must use https (http is allowed only for localhost, 127.0.0.1 or [::1])',
+      ]);
+      expect(problems.join('\n')).not.toContain(value);
+    },
+  );
+
+  it.each(['https://walley.example.com.', 'http://localhost.'])(
+    'rejects a trailing dot in %j',
+    (value) => {
+      const problems = problemsOf({ ...base, PUBLIC_ORIGIN: value });
+      expect(problems).toEqual(['PUBLIC_ORIGIN host must not end with a dot']);
+      expect(problems.join('\n')).not.toContain(value);
+    },
+  );
+
+  it('does not print the bad value', () => {
+    const bad = 'https://secret-user:secret-pass@walley.example.com/secret-path';
+    const text = problemsOf({ ...base, PUBLIC_ORIGIN: bad }).join('\n');
+    expect(text).not.toContain(bad);
+    expect(text).not.toContain('secret-pass');
+    expect(text).not.toContain('secret-path');
+  });
+
+  it('does not also report a callback origin error when it is invalid', () => {
+    expect(problemsOf({ ...base, ...oidcAll, PUBLIC_ORIGIN: 'ftp://x' })).toEqual([INVALID]);
   });
 });
 
@@ -99,6 +189,143 @@ describe('OIDC', () => {
   });
 });
 
+describe('OIDC_ISSUER scheme', () => {
+  const MESSAGE =
+    'OIDC_ISSUER must use https (http is allowed only for localhost, 127.0.0.1 or [::1])';
+
+  it.each([
+    'https://idp.example.com',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://[::1]:8080',
+  ])('accepts %j', (value) => {
+    expect(loadConfig({ ...base, ...oidcAll, OIDC_ISSUER: value }).oidc?.issuer).toBe(value);
+  });
+
+  it.each(['http://idp.example.com', 'http://localhost.evil.com'])('rejects %j', (value) => {
+    expect(problemsOf({ ...base, ...oidcAll, OIDC_ISSUER: value })).toEqual([MESSAGE]);
+  });
+});
+
+describe('OIDC_ISSUER credentials, query and fragment', () => {
+  it.each([
+    'https://idp.example.com\u3002evil.com',
+    'https://idp.example\u200b.com',
+    'https://b\u00fccher.example',
+    'https://idp.example.com\u{1F600}.evil.com',
+  ])('rejects non-ASCII issuer %j', (value) => {
+    const problems = problemsOf({ ...base, ...oidcAll, OIDC_ISSUER: value });
+    expect(problems).toEqual([
+      'OIDC_ISSUER must use ASCII only (write an internationalised host in punycode)',
+    ]);
+    expect(problems.join('\n')).not.toContain(value);
+  });
+
+  it('accepts a punycode host and stores the raw string', () => {
+    const value = 'https://xn--bcher-kva.example';
+    expect(loadConfig({ ...base, ...oidcAll, OIDC_ISSUER: value }).oidc?.issuer).toBe(value);
+  });
+
+  it('accepts an at sign in the path with a trailing slash', () => {
+    const value = 'https://idp.example.com/tenant@x/';
+    expect(loadConfig({ ...base, ...oidcAll, OIDC_ISSUER: value }).oidc?.issuer).toBe(value);
+  });
+
+  it.each([
+    'https:@idp.example.com',
+    'https:/@idp.example.com',
+    'https:\\@idp.example.com',
+    'https:/\t/@idp.example.com',
+  ])('rejects an issuer without a clean scheme separator %j', (value) => {
+    const problems = problemsOf({ ...base, ...oidcAll, OIDC_ISSUER: value });
+    expect(problems).toEqual(['OIDC_ISSUER must be an absolute URL']);
+    expect(problems.join('\n')).not.toContain(value);
+  });
+
+  it('accepts an at sign in the path and stores the raw string', () => {
+    const value = 'https://idp.example.com/tenant@x';
+    expect(loadConfig({ ...base, ...oidcAll, OIDC_ISSUER: value }).oidc?.issuer).toBe(value);
+  });
+
+  it.each([
+    'https://svc:pw@idp.example.com',
+    'https://idp.example.com?x=1',
+    'https://idp.example.com#f',
+    'https://idp.example.com?',
+    'https://idp.example.com#',
+    'https://@idp.example.com',
+  ])('rejects %j', (value) => {
+    const problems = problemsOf({ ...base, ...oidcAll, OIDC_ISSUER: value });
+    expect(problems).toEqual(['OIDC_ISSUER must not contain credentials, a query or a fragment']);
+    expect(problems.join('\n')).not.toContain(value);
+  });
+});
+
+describe('OIDC_CALLBACK_URL checks', () => {
+  const CALLBACK = 'https://walley.example.com/api/auth/oidc/callback';
+
+  it.each([
+    'https://u:p@walley.example.com/api/auth/oidc/callback',
+    `${CALLBACK}?x=1`,
+    `${CALLBACK}#f`,
+    `${CALLBACK}?`,
+    `${CALLBACK}#`,
+    'https://@walley.example.com/api/auth/oidc/callback',
+  ])('rejects credentials, a query or a fragment in %j', (value) => {
+    const problems = problemsOf({ ...base, ...oidcAll, OIDC_CALLBACK_URL: value });
+    expect(problems).toEqual([
+      'OIDC_CALLBACK_URL must not contain credentials, a query or a fragment',
+    ]);
+    expect(problems.join('\n')).not.toContain(value);
+  });
+
+  it('stores the normalised href', () => {
+    const config = loadConfig({
+      ...base,
+      ...oidcAll,
+      OIDC_CALLBACK_URL: 'HTTPS://WALLEY.EXAMPLE.COM:443/api/auth/oidc/callback',
+    });
+    expect(config.oidc?.callbackUrl).toBe(CALLBACK);
+  });
+
+  it('rejects a path other than /api/auth/oidc/callback', () => {
+    expect(
+      problemsOf({
+        ...base,
+        ...oidcAll,
+        OIDC_CALLBACK_URL: 'https://walley.example.com/auth/callback',
+      }),
+    ).toEqual(['OIDC_CALLBACK_URL path must be /api/auth/oidc/callback']);
+  });
+
+  it('rejects a trailing slash', () => {
+    expect(
+      problemsOf({
+        ...base,
+        ...oidcAll,
+        OIDC_CALLBACK_URL: 'https://walley.example.com/api/auth/oidc/callback/',
+      }),
+    ).toEqual(['OIDC_CALLBACK_URL path must be /api/auth/oidc/callback']);
+  });
+
+  it('rejects an origin that differs from PUBLIC_ORIGIN', () => {
+    expect(
+      problemsOf({
+        ...base,
+        ...oidcAll,
+        OIDC_CALLBACK_URL: 'https://other.example.com/api/auth/oidc/callback',
+      }),
+    ).toEqual(['OIDC_CALLBACK_URL origin must match PUBLIC_ORIGIN']);
+  });
+
+  it('accepts a matching origin when PUBLIC_ORIGIN has a trailing slash', () => {
+    expect(
+      loadConfig({ ...base, ...oidcAll, PUBLIC_ORIGIN: 'https://walley.example.com/' }).oidc
+        ?.callbackUrl,
+    ).toBe(oidcAll.OIDC_CALLBACK_URL);
+  });
+});
+
 describe('PORT', () => {
   for (const value of ['abc', '0', '65536', '3.5', '-1', ' 80']) {
     it(`rejects PORT=${JSON.stringify(value)}`, () => {
@@ -151,7 +378,7 @@ describe('required variables', () => {
     expect(loadConfig({ ...base, APP_SECRET: padded }).appSecret).toBe(padded);
   });
 
-  it('reports both APP_SECRET and DATABASE_PATH when missing', () => {
+  it('reports APP_SECRET, DATABASE_PATH and PUBLIC_ORIGIN when missing', () => {
     try {
       loadConfig({});
       expect.unreachable();
@@ -159,15 +386,16 @@ describe('required variables', () => {
       expect(error).toBeInstanceOf(ConfigError);
       const message = (error as ConfigError).message;
       expect(message).toBe(
-        'Invalid configuration:\n  - APP_SECRET is required\n  - DATABASE_PATH is required\nSee .env.example.',
+        'Invalid configuration:\n  - APP_SECRET is required\n  - DATABASE_PATH is required\n  - PUBLIC_ORIGIN is required\nSee .env.example.',
       );
     }
   });
 
   it('counts empty and whitespace-only values as missing', () => {
-    expect(problemsOf({ APP_SECRET: '', DATABASE_PATH: '   ' })).toEqual([
+    expect(problemsOf({ APP_SECRET: '', DATABASE_PATH: '   ', PUBLIC_ORIGIN: ' ' })).toEqual([
       'APP_SECRET is required',
       'DATABASE_PATH is required',
+      'PUBLIC_ORIGIN is required',
     ]);
   });
 });
@@ -218,6 +446,79 @@ describe('loadConfig secureCookies', () => {
     'is false for NODE_ENV %j',
     (value) => {
       expect(loadConfig({ ...base, NODE_ENV: value }).secureCookies).toBe(false);
+    },
+  );
+});
+
+describe('TRUST_PROXY', () => {
+  const MESSAGE = 'TRUST_PROXY must be a comma-separated list of IP addresses or CIDR ranges';
+
+  it.each([undefined, '', '   '])('is false when %j', (value) => {
+    expect(loadConfig({ ...base, TRUST_PROXY: value }).trustProxy).toBe(false);
+  });
+
+  it('accepts a single address', () => {
+    expect(loadConfig({ ...base, TRUST_PROXY: '127.0.0.1' }).trustProxy).toEqual(['127.0.0.1']);
+  });
+
+  it('accepts a trimmed list of CIDR ranges and addresses', () => {
+    expect(loadConfig({ ...base, TRUST_PROXY: '10.0.0.0/8, ::1' }).trustProxy).toEqual([
+      '10.0.0.0/8',
+      '::1',
+    ]);
+  });
+
+  it.each(['0.0.0.0/0', '::/0'])('rejects the prefix-0 range %j without echoing it', (value) => {
+    const problems = problemsOf({ ...base, TRUST_PROXY: value });
+    expect(problems).toEqual([MESSAGE]);
+    expect(problems[0]).not.toContain(value);
+  });
+
+  it.each(['10.0.0.0/7', '0.0.0.0/1', '::/31', '::ffff:0:0/96', 'fe80::1%eth0', '10.0.0.1/8', '2001:db8::1/32', '::/32'])(
+    'rejects the unsafe entry %j without echoing it',
+    (value) => {
+      const problems = problemsOf({ ...base, TRUST_PROXY: value });
+      expect(problems).toEqual([MESSAGE]);
+      expect(problems[0]).not.toContain(value);
+    },
+  );
+
+  it.each(['10.0.0.0/8', '10.0.0.0/32', '192.168.0.0/16', '2001:db8::/32', '::1', '127.0.0.1'])(
+    'accepts %j',
+    (value) => {
+      expect(loadConfig({ ...base, TRUST_PROXY: value }).trustProxy).toEqual([value]);
+    },
+  );
+
+  it('rejects an IPv4-mapped range written with a /104 prefix without echoing it', () => {
+    const value = '::ffff:10.0.0.0/104';
+    const problems = problemsOf({ ...base, TRUST_PROXY: value });
+    expect(problems).toEqual([MESSAGE]);
+    expect(problems[0]).not.toContain(value);
+  });
+
+  it('keeps a leading-zero prefix unchanged', () => {
+    expect(loadConfig({ ...base, TRUST_PROXY: '10.0.0.0/08' }).trustProxy).toEqual(['10.0.0.0/08']);
+  });
+
+  it('drops an empty entry after a trailing comma', () => {
+    expect(loadConfig({ ...base, TRUST_PROXY: '10.0.0.0/8,' }).trustProxy).toEqual(['10.0.0.0/8']);
+  });
+
+  it('trims a trailing space', () => {
+    expect(loadConfig({ ...base, TRUST_PROXY: '10.0.0.0/8 ' }).trustProxy).toEqual(['10.0.0.0/8']);
+  });
+
+  it.each(['10.0.0.0/33', 'not-an-ip', '10.0.0.1, bad-entry-value', '::1/129', ' , '])(
+    'rejects %j without echoing it',
+    (value) => {
+      const problems = problemsOf({ ...base, TRUST_PROXY: value });
+      expect(problems).toEqual([MESSAGE]);
+      for (const entry of value.split(',').map((part) => part.trim())) {
+        if (entry !== '' && entry !== '10.0.0.1') {
+          expect(problems[0]).not.toContain(entry);
+        }
+      }
     },
   );
 });

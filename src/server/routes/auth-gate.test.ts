@@ -32,7 +32,13 @@ function setup(mode: AuthMode, allowRegistration: boolean, db?: AppDatabase) {
   const clock = makeClock();
   const app = buildApp({
     db: database,
-    auth: { mode, secureCookies: false, allowRegistration, now: () => clock.now() },
+    auth: {
+      mode,
+      secureCookies: false,
+      allowRegistration,
+      publicOrigin: 'http://localhost:3000',
+      now: () => clock.now(),
+    },
   });
   apps.push(app);
   return { app, db: database, clock };
@@ -47,7 +53,13 @@ describe('default-deny', () => {
       const clock = makeClock();
       const app = buildApp({
         db: database,
-        auth: { mode, secureCookies: false, allowRegistration, now: () => clock.now() },
+        auth: {
+          mode,
+          secureCookies: false,
+          allowRegistration,
+          publicOrigin: 'http://localhost:3000',
+          now: () => clock.now(),
+        },
       });
       apps.push(app);
       const routes: { method: string; url: string }[] = [];
@@ -82,6 +94,22 @@ describe('default-deny', () => {
       expect(res.statusCode, url).toBe(200);
     }
   });
+
+  it.each(MODES.flatMap((mode) => REGISTRATION.map((reg) => [mode, reg] as const)))(
+    'POST /api/auth/login and /api/auth/register never return 401 without a cookie (%s, %s)',
+    async (mode, allowRegistration) => {
+      const { app } = setup(mode, allowRegistration);
+      for (const url of ['/api/auth/login', '/api/auth/register']) {
+        const res = await app.inject({
+          method: 'POST',
+          url,
+          payload: {},
+          headers: { origin: 'http://localhost:3000' },
+        });
+        expect(res.statusCode, url).not.toBe(401);
+      }
+    },
+  );
 
   it.each(MODES.flatMap((mode) => REGISTRATION.map((reg) => [mode, reg] as const)))(
     'GET /api/auth/config body has exactly the keys mode and registration (%s, %s)',
