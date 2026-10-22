@@ -7,6 +7,7 @@ import { syncStore } from '@/lib/sync-check';
 import { checkSession, type SessionUser } from '@/lib/session';
 import { applyTheme, readTheme, toggleTheme, writeTheme, type Theme } from '@/lib/theme';
 import { LoginPage } from '@/pages/LoginPage';
+import { Matches } from '@/pages/Matches';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { SyncDashboard } from '@/pages/SyncDashboard';
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage';
@@ -15,20 +16,10 @@ import { appMessages } from './App.messages';
 type ShellRoute = Exclude<Route, 'login' | 'verify-email'>;
 type Session = { status: 'checking' } | { status: 'error' } | { status: 'ready'; user: SessionUser };
 
-function Placeholder({ route }: { route: 'matches' }) {
-  const { t } = useT(appMessages);
-  return (
-    <section>
-      <h1 className="text-lg font-semibold">{t(`${route}.title`)}</h1>
-      <p className="text-sm text-muted-foreground">{t(`${route}.body`)}</p>
-    </section>
-  );
-}
-
 function Page({ route }: { route: ShellRoute }) {
   if (route === 'settings') return <SettingsPage />;
   if (route === 'sync') return <SyncDashboard />;
-  return <Placeholder route={route} />;
+  return <Matches />;
 }
 
 /** Calls POST /api/auth/logout. Resolves true on success and false when the request failed. */

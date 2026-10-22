@@ -2,9 +2,11 @@
 
 | File | What it holds | Touch when |
 | --- | --- | --- |
-| `App.tsx` | Path router via `useRoute`; `/login` and `/verify-email` render without the shell or session check; other routes run the session gate (`GET /api/auth/me`, 401 goes to `/login` keeping the query), then `AppShell` with theme, logout, refresh (page key bump); `SyncDashboard`, Matches placeholder, `SettingsPage`; Manual Refresh on `/sync` runs the shared sync check | Adding pages or routes |
-| `App.messages.ts` | App-level strings (loading, session error, placeholder pages, verify-email title) | |
+| `App.tsx` | Path router via `useRoute`; `/login` and `/verify-email` render without the shell or session check; other routes run the session gate (`GET /api/auth/me`, 401 goes to `/login` keeping the query), then `AppShell` with theme, logout, refresh (page key bump); `SyncDashboard`, `Matches`, `SettingsPage`; Manual Refresh on `/sync` runs the shared sync check | Adding pages or routes |
+| `App.messages.ts` | App-level strings (loading, session error, verify-email title) | |
 | `main.tsx` | Mounts `I18nProvider` > `App` | |
+| `pages/Matches.tsx` | Matches: `Matches` (reads `useSyncCheck` result, holds the ignored-switch state) and `MatchesView({result, showIgnored, onShowIgnoredChange})`, a read-only table of `linked[]` (names, `font-mono` amounts, range flag, `StatusBadge` from `pairBadge`, em dash for missing sides) plus an optional "Ignored items" section from `ignored[]`. No write actions | Matches table |
+| `pages/Matches.messages.ts` | Matches page en/nl strings | |
 | `pages/SettingsPage.tsx` | Settings: General (`LanguageSelect`), then "Your account" with Wallos, Actual Budget and Matching, then Account / Security | Adding a settings section |
 | `pages/LoginPage.tsx` | Loads `GET /api/auth/config`; local mode shows the email/password form (with register toggle when registration is on), OIDC mode only the SSO link; `?error=` codes map to page or server error text | Sign-in UI |
 | `pages/VerifyEmailPage.tsx` | `/verify-email#token=...`: `runVerification` clears the hash, POSTs the token once, shows verifying / success / invalid / disabled / missing / error with a sign-in link | Email verification |

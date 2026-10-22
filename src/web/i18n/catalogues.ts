@@ -9,6 +9,7 @@ import { healthStatusMessages } from '../components/HealthStatus.messages';
 import { statusBadgeMessages } from '../components/StatusBadge.messages';
 import { accountSettingsMessages } from '../pages/AccountSettings.messages';
 import { actualSettingsMessages } from '../pages/ActualSettings.messages';
+import { matchesMessages } from '../pages/Matches.messages';
 import { matchingSettingsMessages } from '../pages/MatchingSettings.messages';
 import { settingsPageMessages } from '../pages/SettingsPage.messages';
 import { loginPageMessages } from '../pages/LoginPage.messages';
@@ -31,4 +32,5 @@ export const catalogues: Readonly<Record<string, Catalogue<object>>> = {
   accountSettings: accountSettingsMessages,
   matchingSettings: matchingSettingsMessages,
   syncDashboard: syncDashboardMessages,
+  matches: matchesMessages,
 };
