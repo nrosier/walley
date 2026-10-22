@@ -13,16 +13,19 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, gt, isNull, lte } from 'drizzle-orm';
 import type { AuthMethod } from '../../lib/auth-mode.js';
+import { parseRate } from '../../lib/currency-convert.js';
 import type { MatchStatus } from '../../lib/match-status.js';
 import type { AppDatabase } from './client.js';
 import {
   emailVerifications,
   matches,
   sessions,
+  subscriptionOverrides,
   userConfigs,
   userIdentities,
   users,
   type MatchRow,
+  type SubscriptionOverrideRow,
   type UserConfigRow,
 } from './schema.js';
 
@@ -45,6 +48,12 @@ export interface MatchInput {
 }
 
 export type MatchPatch = Partial<MatchInput>;
+
+export interface SubscriptionOverrideInput {
+  /** Decimal string on the Wallos scale, for example "1.0850". Must parse as a positive rate. */
+  rate: string;
+  now: Date;
+}
 
 export interface SessionInput {
   /** Hex SHA-256 of the session token. The token itself is never stored. */
@@ -100,6 +109,19 @@ export interface UserRepo {
   updateMatch(id: string, patch: MatchPatch): boolean;
   /** Returns false when the id is not this user's; that row is not touched. */
   deleteMatch(id: string): boolean;
+  /** Returns this user's override for a Wallos subscription, or undefined. */
+  getSubscriptionOverride(wallosSubscriptionId: string): SubscriptionOverrideRow | undefined;
+  listSubscriptionOverrides(): SubscriptionOverrideRow[];
+  /**
+   * Creates or replaces this user's override for a Wallos subscription. Throws a
+   * CurrencyConversionError (code invalid_rate) when `rate` is not a positive decimal string.
+   */
+  upsertSubscriptionOverride(
+    wallosSubscriptionId: string,
+    input: SubscriptionOverrideInput,
+  ): SubscriptionOverrideRow;
+  /** Returns false when this user has no override for that subscription; nothing is removed. */
+  deleteSubscriptionOverride(wallosSubscriptionId: string): boolean;
 }
 
 type ConfigValues = Partial<Omit<UserConfigRow, 'userId'>>;
@@ -148,6 +170,15 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
 
   const getMatch = (id: string): MatchRow | undefined =>
     db.select().from(matches).where(ownMatch(id)).get();
+
+  const ownOverride = (wallosSubscriptionId: string) =>
+    and(
+      eq(subscriptionOverrides.userId, userId),
+      eq(subscriptionOverrides.wallosSubscriptionId, wallosSubscriptionId),
+    );
+
+  const getSubscriptionOverride = (wallosSubscriptionId: string): SubscriptionOverrideRow | undefined =>
+    db.select().from(subscriptionOverrides).where(ownOverride(wallosSubscriptionId)).get();
 
   return {
     userId,
@@ -315,6 +346,38 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
 
     deleteMatch(id) {
       return db.delete(matches).where(ownMatch(id)).run().changes > 0;
+    },
+
+    getSubscriptionOverride,
+
+    listSubscriptionOverrides() {
+      return db
+        .select()
+        .from(subscriptionOverrides)
+        .where(eq(subscriptionOverrides.userId, userId))
+        .all();
+    },
+
+    upsertSubscriptionOverride(wallosSubscriptionId, input) {
+      // Validate before storing so every stored rate parses back as a positive decimal.
+      const rate = input.rate.trim();
+      parseRate(rate);
+      db.insert(subscriptionOverrides)
+        .values({ userId, wallosSubscriptionId, rate, updatedAt: input.now })
+        .onConflictDoUpdate({
+          target: [subscriptionOverrides.userId, subscriptionOverrides.wallosSubscriptionId],
+          set: { rate, updatedAt: input.now },
+        })
+        .run();
+      const row = getSubscriptionOverride(wallosSubscriptionId);
+      if (row === undefined) {
+        throw new Error('subscription override missing after upsert');
+      }
+      return row;
+    },
+
+    deleteSubscriptionOverride(wallosSubscriptionId) {
+      return db.delete(subscriptionOverrides).where(ownOverride(wallosSubscriptionId)).run().changes > 0;
     },
   };
 }

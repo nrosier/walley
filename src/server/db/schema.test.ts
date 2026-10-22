@@ -53,6 +53,7 @@ describe('migration', () => {
       'email_verifications',
       'matches',
       'sessions',
+      'subscription_overrides',
       'user_configs',
       'user_identities',
       'users',

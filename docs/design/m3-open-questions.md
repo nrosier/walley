@@ -62,7 +62,7 @@ Built on as placeholders. Ask the owner at 08:00 and revisit any code that depen
 - Junk X-Forwarded-For: shared bucket.
 - NAT64: accept.
 - Shared email lockout: accept.
-- Wallos API key header: check the Wallos API docs. Do not guess.
+- Wallos API key: confirmed 2026-10-22 from the official Wallos source (ellite/Wallos, api/subscriptions/get_subscriptions.php). The key is read only from the `api_key` (or `apiKey`) request parameter, not a header. Walley sends it as a POST form field. Auth failures return HTTP 200 with `success:false`.
 - M4 Actual isolation: serialize with a mutex.
 - Frequency mapper #31: move into M4.
 - Actual data directory: a separate DATA_DIR setting.

@@ -63,6 +63,7 @@ describe('openDatabase', () => {
       'email_verifications',
       'matches',
       'sessions',
+      'subscription_overrides',
       'user_configs',
       'user_identities',
       'users',
@@ -87,7 +88,7 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(4);
+    expect(journalCount(db)).toBe(5);
     const row = db.$client
       .prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u1'")
       .get() as { v: number | null };
@@ -108,11 +109,11 @@ describe('openDatabase', () => {
     first.$client
       .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
       .run('u1', 'a@example.com', Buffer.alloc(32, 1));
-    expect(journalCount(first)).toBe(4);
+    expect(journalCount(first)).toBe(5);
     closeDatabase(first);
 
     const second = track(openDatabase(path));
-    expect(journalCount(second)).toBe(4);
+    expect(journalCount(second)).toBe(5);
     const users = second.$client.prepare('SELECT id FROM users').all() as { id: string }[];
     expect(users).toEqual([{ id: 'u1' }]);
   });

@@ -146,10 +146,37 @@ export const matches = sqliteTable(
   ],
 );
 
+/**
+ * A manual exchange-rate override for one Wallos subscription. `rate` is text, the decimal
+ * string as typed (for example "1.0850"), so no float drift is stored; it is parsed when used.
+ * The rate is on the Wallos scale (units per Wallos main currency). Keyed by
+ * (user_id, wallos_subscription_id), so an override belongs to one user's subscription only.
+ */
+export const subscriptionOverrides = sqliteTable(
+  'subscription_overrides',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    wallosSubscriptionId: text('wallos_subscription_id').notNull(),
+    rate: text('rate').notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('subscription_overrides_user_subscription_unique').on(
+      t.userId,
+      t.wallosSubscriptionId,
+    ),
+    index('subscription_overrides_user_id_idx').on(t.userId),
+    check('subscription_overrides_rate_check', sql`length(${t.rate}) > 0`),
+  ],
+);
+
 export type UserRow = typeof users.$inferSelect;
 export type UserIdentityRow = typeof userIdentities.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
 export type EmailVerificationRow = typeof emailVerifications.$inferSelect;
 export type UserConfigRow = typeof userConfigs.$inferSelect;
+export type SubscriptionOverrideRow = typeof subscriptionOverrides.$inferSelect;
 export type MatchRow = typeof matches.$inferSelect;
 export type NewMatchRow = typeof matches.$inferInsert;

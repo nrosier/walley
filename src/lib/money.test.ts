@@ -6,6 +6,10 @@ describe('toActualCents', () => {
     expect(toActualCents(12.5, { expense: true })).toBe(-1250);
   });
 
+  it('keeps a negative amount expense as a negative cent value', () => {
+    expect(toActualCents(-12.5, { expense: true })).toBe(1250);
+  });
+
   it('rounds half away from zero', () => {
     expect(toActualCents(0.005, { expense: false })).toBe(1);
     expect(toActualCents(-0.005, { expense: false })).toBe(-1);
@@ -24,6 +28,16 @@ describe('toActualCents', () => {
   it('round trips two-decimal values', () => {
     for (const value of [0.01, 19.99, 1234.56]) {
       expect(fromActualCents(toActualCents(value, { expense: false }))).toBe(value);
+    }
+  });
+
+  it('round trips expense values through negative cents', () => {
+    expect(toActualCents(12.5, { expense: true })).toBe(-1250);
+    expect(fromActualCents(-1250)).toBe(-12.5);
+    for (const value of [12.5, 19.99, 1234.56]) {
+      const cents = toActualCents(value, { expense: true });
+      expect(cents).toBeLessThan(0);
+      expect(fromActualCents(cents)).toBe(-value);
     }
   });
 

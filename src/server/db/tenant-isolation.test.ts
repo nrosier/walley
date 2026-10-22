@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { CurrencyConversionError } from '../../lib/currency-convert.js';
 import { createUser } from './accounts.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './client.js';
 import { findSessionByIdHash } from './lookup.js';
@@ -77,6 +78,56 @@ describe('tenant isolation', () => {
         .prepare('SELECT email_verified_at AS v FROM users WHERE id = ?')
         .get(b.userId) as { v: number | null };
       expect(bRow.v).toBeNull();
+    });
+  });
+
+  describe('subscription overrides', () => {
+    const now = new Date(1_000_000);
+    const later = new Date(2_000_000);
+
+    it('A cannot read B override for the same Wallos subscription id', () => {
+      b.upsertSubscriptionOverride('w1', { rate: '1.0850', now });
+      expect(a.getSubscriptionOverride('w1')).toBeUndefined();
+      expect(a.listSubscriptionOverrides()).toEqual([]);
+      expect(b.getSubscriptionOverride('w1')?.rate).toBe('1.0850');
+    });
+
+    it('A and B can each hold an override for the same Wallos subscription id', () => {
+      a.upsertSubscriptionOverride('w1', { rate: '1.1000', now });
+      b.upsertSubscriptionOverride('w1', { rate: '2.2000', now });
+      expect(a.getSubscriptionOverride('w1')?.rate).toBe('1.1000');
+      expect(b.getSubscriptionOverride('w1')?.rate).toBe('2.2000');
+      expect(a.listSubscriptionOverrides()).toHaveLength(1);
+      expect(b.listSubscriptionOverrides()).toHaveLength(1);
+    });
+
+    it('A upsert does not change B override', () => {
+      const before = b.upsertSubscriptionOverride('w1', { rate: '1.0850', now });
+      a.upsertSubscriptionOverride('w1', { rate: '9.0000', now: later });
+      expect(b.getSubscriptionOverride('w1')).toEqual(before);
+    });
+
+    it('A delete of a B override returns false and leaves it in place', () => {
+      b.upsertSubscriptionOverride('w1', { rate: '1.0850', now });
+      expect(a.deleteSubscriptionOverride('w1')).toBe(false);
+      expect(b.getSubscriptionOverride('w1')?.rate).toBe('1.0850');
+      expect(b.deleteSubscriptionOverride('w1')).toBe(true);
+      expect(b.getSubscriptionOverride('w1')).toBeUndefined();
+    });
+
+    it('upsert replaces the rate for the same user and subscription', () => {
+      a.upsertSubscriptionOverride('w1', { rate: '1.0000', now });
+      const updated = a.upsertSubscriptionOverride('w1', { rate: '1.2500', now: later });
+      expect(updated.rate).toBe('1.2500');
+      expect(updated.updatedAt).toEqual(later);
+      expect(a.listSubscriptionOverrides()).toHaveLength(1);
+    });
+
+    it('rejects an invalid rate and stores nothing', () => {
+      expect(() => a.upsertSubscriptionOverride('w1', { rate: '0', now })).toThrow(
+        CurrencyConversionError,
+      );
+      expect(a.getSubscriptionOverride('w1')).toBeUndefined();
     });
   });
 

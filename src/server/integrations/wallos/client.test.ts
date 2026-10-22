@@ -11,6 +11,7 @@ import {
   WallosNetworkError,
   createWallosClient,
 } from './client.js';
+import type { WallosCurrency } from './types.js';
 
 const APP_SECRET = 'test-app-secret-test-app-secret-0123';
 const KEY_A = 'key-A-7f3c9e1d2b';
@@ -18,7 +19,9 @@ const KEY_B = 'key-B-4a8d6c0e9f';
 
 interface Call {
   url: string;
+  method: string | undefined;
   headers: Record<string, string>;
+  body: string;
 }
 
 function stubFetch(respond: (url: string) => Response | Promise<Response>) {
@@ -29,11 +32,14 @@ function stubFetch(respond: (url: string) => Response | Promise<Response>) {
     new Headers(init?.headers).forEach((value, name) => {
       headers[name] = value;
     });
-    calls.push({ url, headers });
+    calls.push({ url, method: init?.method, headers, body: typeof init?.body === 'string' ? init.body : '' });
     return respond(url);
   };
   return { calls, fetch: impl };
 }
+
+const ok = (subscriptions: unknown[]) =>
+  json({ success: true, title: 'Subscriptions', subscriptions, notes: [] });
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -68,7 +74,7 @@ describe('createWallosClient', () => {
 
   it("each user's call reaches only that user's host", async () => {
     const stub = stubFetch((url) =>
-      json(url.startsWith('https://wallos-a.test') ? [{ id: 1 }] : [{ id: 2 }]),
+      ok(url.startsWith('https://wallos-a.test') ? [{ id: 1 }] : [{ id: 2 }]),
     );
     const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
 
@@ -76,24 +82,71 @@ describe('createWallosClient', () => {
     expect(await client.listSubscriptions(b.userId)).toEqual([{ id: 2 }]);
 
     expect(stub.calls.map((c) => c.url)).toEqual([
-      'https://wallos-a.test/api/subscriptions',
-      'https://wallos-b.test/base/api/subscriptions',
+      'https://wallos-a.test/api/subscriptions/get_subscriptions.php',
+      'https://wallos-b.test/base/api/subscriptions/get_subscriptions.php',
     ]);
     // Whatever header carries the key, A's key never goes to B's host and vice versa.
     expect(JSON.stringify(stub.calls[0])).not.toContain(KEY_B);
     expect(JSON.stringify(stub.calls[1])).not.toContain(KEY_A);
   });
 
-  it("each call sends that user's key in the x-api-key header", async () => {
-    const stub = stubFetch(() => json([]));
+  it("each call posts that user's key as a form field, not in the URL", async () => {
+    const stub = stubFetch(() => ok([]));
     const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
     await client.listSubscriptions(a.userId);
     await client.listSubscriptions(b.userId);
-    expect(stub.calls[0]?.headers['x-api-key']).toBe(KEY_A);
-    expect(stub.calls[0]?.headers['accept']).toBe('application/json');
-    expect(JSON.stringify(stub.calls[0])).not.toContain(KEY_B);
-    expect(stub.calls[1]?.headers['x-api-key']).toBe(KEY_B);
-    expect(JSON.stringify(stub.calls[1])).not.toContain(KEY_A);
+    const [ca, cb] = stub.calls;
+    expect(ca?.method).toBe('POST');
+    expect(ca?.headers['content-type']).toBe('application/x-www-form-urlencoded');
+    expect(ca?.headers['x-api-key']).toBeUndefined();
+    expect(new URLSearchParams(ca?.body).get('api_key')).toBe(KEY_A);
+    expect(ca?.url).not.toContain(KEY_A);
+    expect(ca?.url).not.toContain('api_key');
+    expect(JSON.stringify(ca?.headers)).not.toContain(KEY_A);
+    expect(ca?.body).not.toContain(KEY_B);
+    expect(new URLSearchParams(cb?.body).get('api_key')).toBe(KEY_B);
+    expect(cb?.url).not.toContain(KEY_B);
+    expect(cb?.body).not.toContain(KEY_A);
+  });
+
+  it('HTTP 200 with success:false gives WallosAuthError and leaks nothing', async () => {
+    const stub = stubFetch(() => json({ success: false, title: `Invalid API key ${KEY_A}` }));
+    const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+    const err = await client.listSubscriptions(a.userId).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WallosAuthError);
+    expect(String(err)).not.toContain(KEY_A);
+  });
+
+  it('maps the response only through the typed fields', async () => {
+    const stub = stubFetch(() =>
+      ok([
+        { id: 7, name: 'Netflix', price: 9.99, category_ids: [1, 2], secret_extra: 'x' },
+        { id: '8' },
+      ]),
+    );
+    const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+    expect(await client.listSubscriptions(a.userId)).toEqual([
+      { id: 7, name: 'Netflix', price: 9.99, category_ids: [1, 2] },
+      { id: '8' },
+    ]);
+  });
+
+  it.each([
+    ['a bare array', [{ id: 1 }]],
+    ['a missing success flag', { subscriptions: [] }],
+    ['a missing subscriptions list', { success: true }],
+    ['a subscription without an id', { success: true, subscriptions: [{ name: 'x' }] }],
+    ['a null body', null],
+  ])('%s gives WallosHttpError', async (_label, body) => {
+    const stub = stubFetch(() => json(body));
+    const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+    await expect(client.listSubscriptions(a.userId)).rejects.toBeInstanceOf(WallosHttpError);
+  });
+
+  it('a non-JSON body gives WallosHttpError', async () => {
+    const stub = stubFetch(() => new Response('<html>', { status: 200 }));
+    const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+    await expect(client.listSubscriptions(a.userId)).rejects.toBeInstanceOf(WallosHttpError);
   });
 
   it('a failing call does not leak the key or the query string', async () => {
@@ -115,7 +168,7 @@ describe('createWallosClient', () => {
     }
 
     a.upsertConfig({ wallosUrl: leaky });
-    const stub = stubFetch(() => json([]));
+    const stub = stubFetch(() => ok([]));
     const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
     const err = await client.listSubscriptions(a.userId).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(WallosConfigMissing);
@@ -164,7 +217,7 @@ describe('createWallosClient', () => {
 
   it('a missing config row gives WallosConfigMissing', async () => {
     const c = repoFor(createUser(db, { email: 'c@example.com', passwordHash: null }).id);
-    const stub = stubFetch(() => json([]));
+    const stub = stubFetch(() => ok([]));
     const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
     await expect(client.listSubscriptions(c.userId)).rejects.toBeInstanceOf(WallosConfigMissing);
     expect(stub.calls).toHaveLength(0);
@@ -172,7 +225,7 @@ describe('createWallosClient', () => {
 
   it('an http URL with a query string gives WallosConfigMissing', async () => {
     a.upsertConfig({ wallosUrl: 'http://wallos-a.test/?x=1' });
-    const stub = stubFetch(() => json([]));
+    const stub = stubFetch(() => ok([]));
     const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
     await expect(client.listSubscriptions(a.userId)).rejects.toBeInstanceOf(WallosConfigMissing);
     expect(stub.calls).toHaveLength(0);
@@ -186,7 +239,7 @@ describe('createWallosClient', () => {
     '',
   ])('rejects the stored URL %j with WallosConfigMissing', async (url) => {
     a.upsertConfig({ wallosUrl: url });
-    const stub = stubFetch(() => json([]));
+    const stub = stubFetch(() => ok([]));
     const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
     await expect(client.listSubscriptions(a.userId)).rejects.toBeInstanceOf(WallosConfigMissing);
     expect(stub.calls).toHaveLength(0);
@@ -194,8 +247,95 @@ describe('createWallosClient', () => {
 
   it('an empty key gives WallosConfigMissing', async () => {
     a.upsertConfig({ wallosApiKeyEnc: '' });
-    const stub = stubFetch(() => json([]));
+    const stub = stubFetch(() => ok([]));
     const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
     await expect(client.listSubscriptions(a.userId)).rejects.toBeInstanceOf(WallosConfigMissing);
+  });
+
+  describe('listCurrencies', () => {
+    // Saved fixture: the documented example in ellite/Wallos api/currencies/get_currencies.php.
+    const CURRENCY_EXAMPLE = {
+      success: true,
+      title: 'currencies',
+      main_currency: 3,
+      currencies: [
+        { id: 1, name: 'US Dollar', symbol: '$', code: 'USD', rate: '1.1000', in_use: true },
+        { id: 2, name: 'Japanese Yen', symbol: '¥', code: 'JPY', rate: '150.0000', in_use: true },
+        { id: 3, name: 'Euro', symbol: '€', code: 'EUR', rate: '1.0000', in_use: true },
+      ],
+      notes: [],
+    };
+    const CURRENCIES_URL = 'https://wallos-a.test/api/currencies/get_currencies.php';
+
+    it('POSTs the key as a form field to the currencies endpoint, not in the URL', async () => {
+      const stub = stubFetch(() => json(CURRENCY_EXAMPLE));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await client.listCurrencies(a.userId);
+      const [call] = stub.calls;
+      expect(call?.url).toBe(CURRENCIES_URL);
+      expect(call?.method).toBe('POST');
+      expect(call?.headers['content-type']).toBe('application/x-www-form-urlencoded');
+      expect(new URLSearchParams(call?.body).get('api_key')).toBe(KEY_A);
+      expect(call?.url).not.toContain(KEY_A);
+      expect(call?.url).not.toContain('api_key');
+      expect(JSON.stringify(call?.headers)).not.toContain(KEY_A);
+    });
+
+    it('keeps only id, code, name and rate from each currency', async () => {
+      const stub = stubFetch(() => json(CURRENCY_EXAMPLE));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      const expected: WallosCurrency[] = [
+        { id: 1, name: 'US Dollar', code: 'USD', rate: '1.1000' },
+        { id: 2, name: 'Japanese Yen', code: 'JPY', rate: '150.0000' },
+        { id: 3, name: 'Euro', code: 'EUR', rate: '1.0000' },
+      ];
+      expect(await client.listCurrencies(a.userId)).toEqual(expected);
+    });
+
+    it('uses the same user-scoped host and key as subscriptions', async () => {
+      const stub = stubFetch(() => json(CURRENCY_EXAMPLE));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await client.listCurrencies(b.userId);
+      expect(stub.calls[0]?.url).toBe(
+        'https://wallos-b.test/base/api/currencies/get_currencies.php',
+      );
+      expect(new URLSearchParams(stub.calls[0]?.body).get('api_key')).toBe(KEY_B);
+    });
+
+    it('HTTP 200 with success:false gives WallosAuthError and leaks nothing', async () => {
+      const stub = stubFetch(() => json({ success: false, title: `Invalid API key ${KEY_A}` }));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      const err = await client.listCurrencies(a.userId).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(WallosAuthError);
+      expect(String(err)).not.toContain(KEY_A);
+    });
+
+    it('HTTP 401 gives WallosAuthError', async () => {
+      const stub = stubFetch(() => json({ success: false }, 401));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await expect(client.listCurrencies(a.userId)).rejects.toBeInstanceOf(WallosAuthError);
+    });
+
+    it('a body without a currencies array gives WallosHttpError', async () => {
+      const stub = stubFetch(() => json({ success: true, title: 'currencies' }));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await expect(client.listCurrencies(a.userId)).rejects.toBeInstanceOf(WallosHttpError);
+    });
+
+    it('a currency without a usable code gives WallosHttpError', async () => {
+      const stub = stubFetch(() =>
+        json({ success: true, currencies: [{ id: 1, code: '  ' }] }),
+      );
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await expect(client.listCurrencies(a.userId)).rejects.toBeInstanceOf(WallosHttpError);
+    });
+
+    it('an unconfigured user gives WallosConfigMissing without calling fetch', async () => {
+      const c = repoFor(createUser(db, { email: 'c@example.com', passwordHash: null }).id);
+      const stub = stubFetch(() => json(CURRENCY_EXAMPLE));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await expect(client.listCurrencies(c.userId)).rejects.toBeInstanceOf(WallosConfigMissing);
+      expect(stub.calls).toHaveLength(0);
+    });
   });
 });
