@@ -21,7 +21,7 @@ export interface CreateScheduleInput {
   readonly name: string;
   /** Converted integer cents, negative for an expense. */
   readonly amountCents: number;
-  /** Output of wallosToActual (shape pending verification in #32). */
+  /** Output of wallosToActual (shape verified against RecurConfig in @actual-app/core, api 26.10.0). */
   readonly recurrence: ActualRecurrence;
   /** First occurrence, YYYY-MM-DD. */
   readonly startDate: string;
@@ -90,6 +90,8 @@ export interface CreateScheduleResult {
   readonly payeeCreated: boolean;
   /** True only when the category rule was created. */
   readonly categoryApplied: boolean;
+  /** True when a category was requested but createRule failed; the schedule and payee still exist. */
+  readonly categoryError?: true;
 }
 
 export interface CategoryRulePayload {
@@ -129,8 +131,12 @@ export async function createScheduleOnApi(
   const scheduleId = await api.createSchedule(buildSchedulePayload(input, payeeId));
   let categoryApplied = false;
   if (input.categoryId !== undefined && input.categoryId !== '') {
-    await api.createRule(buildCategoryRulePayload(payeeId, input.categoryId));
-    categoryApplied = true;
+    try {
+      await api.createRule(buildCategoryRulePayload(payeeId, input.categoryId));
+      categoryApplied = true;
+    } catch {
+      return { scheduleId, payeeId, payeeCreated, categoryApplied: false, categoryError: true };
+    }
   }
   return { scheduleId, payeeId, payeeCreated, categoryApplied };
 }

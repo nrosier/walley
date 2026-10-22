@@ -204,9 +204,20 @@ describe('createActualSchedule', () => {
     expect(createdSchedules).toHaveLength(1);
   });
 
-  it('still closes the session when createRule fails', async () => {
+  it('reports a rule failure instead of throwing and still closes the session', async () => {
     failRule = true;
-    await expect(createActualSchedule(deps(), userId, base)).rejects.toThrow('rule boom');
+    const result = await createActualSchedule(
+      deps(),
+      userId,
+      { ...base, payee: { kind: 'new', name: 'Netflix' }, categoryId: 'cat-1' },
+    );
+    expect(result).toEqual({
+      scheduleId: 'sched-1',
+      payeeId: 'payee-new',
+      payeeCreated: true,
+      categoryApplied: false,
+      categoryError: true,
+    });
     expect(createdSchedules).toHaveLength(1);
     expect(calls).toEqual(['init', 'download', 'shutdown']);
   });
