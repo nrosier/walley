@@ -14,6 +14,7 @@
 - `currency-convert.test.ts`: tests for `currency-convert.ts`.
 - `frequency-mapper.ts`: `wallosToActual` and `actualToWallos` frequency mapping, plus `FrequencyMappingError`.
 - `frequency-mapper.test.ts`: tests for `frequency-mapper.ts`.
+- `sync-check-types.ts`: browser-safe response types of `POST /api/sync/check` (`SyncCheckResult`, `SyncItem`, `SyncCandidate`, `SyncMismatch`, `SyncUnmappable`, `SyncOrphaned`, `SyncLinked`, `SyncIgnored`, `SyncOrphanKind`, `UnmappableReason`). Types only; re-exported by `src/server/matching/sync-check.ts` for the web app.
 - `match-status.ts`: match status constants and the `isMatchStatus` guard.
 - `password-policy.ts`: `PASSWORD_MIN_CODE_POINTS` (15) and `PASSWORD_MAX_CODE_POINTS` (256), shared by `src/server/auth/passwords.ts` and the account form's `minLength`.
 - `money.ts`: `toActualCents` and `fromActualCents` conversions between decimals and Actual Budget integer cents.

@@ -20,7 +20,7 @@ afterEach(async () => {
 
 function setup(overrides: Partial<CreateDeps> = {}) {
   const t = makeAuthApp({ mailer: createCapturingMailer() });
-  const owned: Record<string, { sub: number; sched: string }> = {};
+  const owned: Record<string, { sub: number; sched: string; subName: string; schedName: string }> = {};
   const createSchedule = vi.fn();
   const createSubscription = vi.fn();
   const deps: CreateDeps = {
@@ -28,7 +28,7 @@ function setup(overrides: Partial<CreateDeps> = {}) {
       listSubscriptions: async (id: string) => [
         {
           id: owned[id]?.sub ?? 0,
-          name: 'Netflix',
+          name: owned[id]?.subName ?? 'Netflix',
           price: '12.50',
           currency_id: 1,
           cycle: 3,
@@ -48,7 +48,7 @@ function setup(overrides: Partial<CreateDeps> = {}) {
         getSchedules: async () => [
           {
             id: owned[id]?.sched ?? '',
-            name: 'Spotify',
+            name: owned[id]?.schedName ?? 'Spotify',
             amount: -999,
             amountOp: 'is',
             date: { frequency: 'monthly', start: '2026-01-01' },
@@ -73,8 +73,8 @@ function setup(overrides: Partial<CreateDeps> = {}) {
   void t.app.close();
   const a = makeUser(t.db);
   const b = makeUser(t.db);
-  owned[a] = { sub: 7, sched: 'sch-a' };
-  owned[b] = { sub: 8, sched: 'sch-b' };
+  owned[a] = { sub: 7, sched: 'sch-a', subName: 'Netflix', schedName: 'Spotify' };
+  owned[b] = { sub: 8, sched: 'sch-b', subName: 'Bravoflix', schedName: 'Bravotunes' };
   const ctx = { db: t.db, clock: t.clock };
   return { app, db: t.db, a, b, sa: signIn(ctx, a), sb: signIn(ctx, b), createSchedule, createSubscription };
 }
@@ -104,7 +104,18 @@ describe('POST /api/sync/check', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json<Record<string, unknown>>();
     expect(Object.keys(body).sort()).toEqual(
-      ['candidates', 'checkedAt', 'mismatches', 'orphaned', 'unlinkedActual', 'unlinkedWallos', 'unmappable'].sort(),
+      [
+        'baseCurrency',
+        'candidates',
+        'checkedAt',
+        'ignored',
+        'linked',
+        'mismatches',
+        'orphaned',
+        'unlinkedActual',
+        'unlinkedWallos',
+        'unmappable',
+      ].sort(),
     );
     expect(createSchedule).not.toHaveBeenCalled();
     expect(createSubscription).not.toHaveBeenCalled();
@@ -120,10 +131,17 @@ describe('POST /api/sync/check', () => {
       lastKnownWallosHash: 'x'.repeat(64),
       lastKnownActualHash: 'y'.repeat(64),
     });
+    const ib = repoB.insertMatch({ wallosId: null, actualScheduleId: 'sch-b-ignored', status: 'IGNORED_ACTUAL' });
     const ma = createUserRepo(db, a).insertMatch({ wallosId: '7', actualScheduleId: 'sch-a', status: 'LINKED' });
     const res = await injectAs(app, sa, { method: 'POST', url: URL, payload: { userId: b } });
     expect(res.statusCode).toBe(200);
-    expect(res.body).not.toMatch(/"8"|sch-b/);
+    expect(res.body).not.toMatch(/"8"|sch-b|Bravo/);
+    expect(res.body).not.toContain(mb.id);
+    expect(res.body).not.toContain(ib.id);
+    const body = res.json<{ baseCurrency: string; linked: { matchId: string }[]; ignored: unknown[] }>();
+    expect(body.baseCurrency).toBe('EUR');
+    expect(body.linked.map((l) => l.matchId)).toEqual([ma.id]);
+    expect(body.ignored).toEqual([]);
     expect(repoB.getMatch(mb.id)).toMatchObject({
       status: 'LINKED',
       lastKnownWallosHash: 'x'.repeat(64),

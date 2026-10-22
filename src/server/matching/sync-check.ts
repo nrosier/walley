@@ -9,13 +9,23 @@ import { CurrencyConversionError } from '../../lib/currency-convert.js';
 import { amountWithinTolerance, DEFAULT_TOLERANCE_PERCENT, rangeMidpointCents } from '../../lib/amount-match.js';
 import type { MatchFieldsInput } from '../../lib/match-fields.js';
 import { NAME_MATCH_THRESHOLD, nameScore } from '../../lib/name-match.js';
-import type { MatchStatus } from '../../lib/match-status.js';
+import type {
+  SyncCandidate,
+  SyncCheckResult,
+  SyncIgnored,
+  SyncItem,
+  SyncLinked,
+  SyncMismatch,
+  SyncOrphaned,
+  SyncUnmappable,
+  UnmappableReason,
+} from '../../lib/sync-check-types.js';
 import type { MatchPatch } from '../db/repo.js';
 import { CreateFlowError, type CreateDeps } from '../integrations/create.js';
 import { readBaseCurrency, readSchedules } from '../integrations/actual/read.js';
 import { prepareActualScheduleInput } from '../integrations/prepare.js';
 import { mapWallosSubscription, WallosMappingError } from '../integrations/wallos/map.js';
-import { classifySavedPairs, type PairClassification } from './engine.js';
+import { classifySavedPairs } from './engine.js';
 import { detectMismatches } from './mismatch.js';
 
 export interface SyncCheckDeps extends Pick<CreateDeps, 'wallos' | 'repoFor' | 'withActual'> {
@@ -23,70 +33,18 @@ export interface SyncCheckDeps extends Pick<CreateDeps, 'wallos' | 'repoFor' | '
   readonly now: () => number;
 }
 
-export type UnmappableReason =
-  | 'patterns_unsupported'
-  | 'no_recurrence'
-  | 'invalid_recurrence'
-  | 'invalid_amount'
-  | 'mapping_failed'
-  | 'currency_conversion_failed';
-
-/** An item on one side. `amountCents` is in the base currency (range: the midpoint), null when unmappable. */
-export interface SyncItem {
-  readonly id: string;
-  /** Display text only. */
-  readonly name: string;
-  readonly amountCents: number | null;
-  readonly isRange: boolean;
-  readonly reason: UnmappableReason | null;
-}
-
-export interface SyncCandidate {
-  readonly wallosId: string;
-  readonly actualScheduleId: string;
-  readonly nameScore: number;
-  readonly wallosName: string;
-  readonly actualName: string;
-  readonly wallosAmountCents: number;
-  readonly actualAmountCents: number;
-  readonly isRange: boolean;
-}
-
-export interface SyncMismatch {
-  readonly wallosId: string;
-  readonly actualScheduleId: string;
-  readonly wallosName: string;
-  readonly actualName: string;
-  readonly wallosAmountCents: number;
-  readonly actualAmountCents: number;
-  readonly isRange: boolean;
-  readonly wallosDrift: boolean;
-  readonly actualDrift: boolean;
-}
-
-export interface SyncUnmappable {
-  readonly side: 'wallos' | 'actual';
-  readonly id: string;
-  readonly name: string;
-  readonly reason: UnmappableReason;
-}
-
-export interface SyncOrphaned {
-  readonly wallosId: string;
-  readonly actualScheduleId: string;
-  readonly classification: Exclude<PairClassification, 'linked'>;
-  readonly status: MatchStatus;
-}
-
-export interface SyncCheckResult {
-  readonly checkedAt: string;
-  readonly unlinkedWallos: SyncItem[];
-  readonly unlinkedActual: SyncItem[];
-  readonly candidates: SyncCandidate[];
-  readonly mismatches: SyncMismatch[];
-  readonly unmappable: SyncUnmappable[];
-  readonly orphaned: SyncOrphaned[];
-}
+export type {
+  SyncCandidate,
+  SyncCheckResult,
+  SyncIgnored,
+  SyncItem,
+  SyncLinked,
+  SyncMismatch,
+  SyncOrphaned,
+  SyncOrphanKind,
+  SyncUnmappable,
+  UnmappableReason,
+} from '../../lib/sync-check-types.js';
 
 export interface Side extends SyncItem {
   readonly fields: MatchFieldsInput | null;
@@ -156,6 +114,8 @@ function mapActual(
 export interface CurrentSides {
   readonly wallosSides: Map<string, Side>;
   readonly actualSides: Map<string, Side>;
+  /** Actual base currency code, trimmed and upper case. */
+  readonly baseCode: string;
 }
 
 /** Keeps only the sides that can be hashed (no pattern schedules, no unmappable Wallos items). */
@@ -229,14 +189,39 @@ export async function readCurrentSides(
   for (const schedule of actual.schedules) {
     actualSides.set(schedule.id, mapActual(schedule, baseCode));
   }
-  return { wallosSides, actualSides };
+  return { wallosSides, actualSides, baseCode };
+}
+
+/**
+ * The candidate rule: both items have an amount, the name score reaches NAME_MATCH_THRESHOLD and
+ * the amounts are within `tolerance` percent. Pure. Returns the candidate, or null.
+ */
+export function isCandidate(
+  w: Pick<SyncItem, 'id' | 'name' | 'amountCents'>,
+  a: Pick<SyncItem, 'id' | 'name' | 'amountCents' | 'isRange'>,
+  tolerance: number,
+): SyncCandidate | null {
+  if (w.amountCents === null || a.amountCents === null) return null;
+  const score = nameScore(w.name, a.name);
+  if (score < NAME_MATCH_THRESHOLD) return null;
+  if (!amountWithinTolerance(w.amountCents, a.amountCents, tolerance)) return null;
+  return {
+    wallosId: w.id,
+    actualScheduleId: a.id,
+    nameScore: score,
+    wallosName: w.name,
+    actualName: a.name,
+    wallosAmountCents: w.amountCents,
+    actualAmountCents: a.amountCents,
+    isRange: a.isRange,
+  };
 }
 
 export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise<SyncCheckResult> {
   const repo = deps.repoFor(userId);
   const tolerance = repo.getConfig()?.tolerancePercent ?? DEFAULT_TOLERANCE_PERCENT;
   const rows = repo.listMatches();
-  const { wallosSides, actualSides } = await readCurrentSides(deps, userId);
+  const { wallosSides, actualSides, baseCode } = await readCurrentSides(deps, userId);
 
   // #35: saved pairs are classified on every run; nothing about them needs user action.
   const classified = classifySavedPairs(
@@ -261,6 +246,7 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
     const a = actualSides.get(r.actualScheduleId);
     if (r.nextStatus === 'MISMATCH_DETECTED' && w !== undefined && a !== undefined) {
       mismatches.push({
+        matchId: row.id,
         wallosId: r.wallosId,
         actualScheduleId: r.actualScheduleId,
         wallosName: w.name,
@@ -287,22 +273,9 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
   // A candidate must pass BOTH the name and the amount rule.
   const candidates: SyncCandidate[] = [];
   for (const w of unlinkedWallos) {
-    if (w.amountCents === null) continue;
     for (const a of unlinkedActual) {
-      if (a.amountCents === null) continue;
-      const score = nameScore(w.name, a.name);
-      if (score < NAME_MATCH_THRESHOLD) continue;
-      if (!amountWithinTolerance(w.amountCents, a.amountCents, tolerance)) continue;
-      candidates.push({
-        wallosId: w.id,
-        actualScheduleId: a.id,
-        nameScore: score,
-        wallosName: w.name,
-        actualName: a.name,
-        wallosAmountCents: w.amountCents,
-        actualAmountCents: a.amountCents,
-        isRange: a.isRange,
-      });
+      const c = isCandidate(w, a, tolerance);
+      if (c !== null) candidates.push(c);
     }
   }
   candidates.sort((x, y) => y.nameScore - x.nameScore);
@@ -327,13 +300,60 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
         ],
   );
 
+  // Read-only display lists. The status is the one just written (or kept) above.
+  const nextStatusById = new Map<string, SyncLinked['status']>();
+  for (const r of drift.results) {
+    const row = rowByPair.get(`${r.wallosId}\u0000${r.actualScheduleId}`);
+    if (row !== undefined) nextStatusById.set(row.id, r.nextStatus);
+  }
+  const classByPair = new Map(classified.pairs.map((p) => [`${p.wallosId}\u0000${p.actualScheduleId}`, p.classification]));
+  const linked: SyncLinked[] = [];
+  const ignored: SyncIgnored[] = [];
+  for (const row of rows) {
+    if (row.status === 'LINKED' || row.status === 'MISMATCH_DETECTED') {
+      if (row.wallosId === null || row.actualScheduleId === null) continue; // violates the DB side check
+      const classification = classByPair.get(`${row.wallosId}\u0000${row.actualScheduleId}`);
+      const w = wallosSides.get(row.wallosId);
+      const a = actualSides.get(row.actualScheduleId);
+      linked.push({
+        matchId: row.id,
+        wallosId: row.wallosId,
+        actualScheduleId: row.actualScheduleId,
+        status: nextStatusById.get(row.id) ?? row.status,
+        orphan: classification === undefined || classification === 'linked' ? null : classification,
+        wallosName: w?.name ?? null,
+        actualName: a?.name ?? null,
+        wallosAmountCents: w?.amountCents ?? null,
+        actualAmountCents: a?.amountCents ?? null,
+        isRange: a?.isRange ?? false,
+      });
+    } else {
+      const side = row.status === 'IGNORED_WALLOS' ? 'wallos' : 'actual';
+      const itemId = side === 'wallos' ? row.wallosId : row.actualScheduleId;
+      if (itemId === null) continue; // violates the DB side check
+      const item = (side === 'wallos' ? wallosSides : actualSides).get(itemId);
+      ignored.push({
+        matchId: row.id,
+        side,
+        itemId,
+        name: item?.name ?? null,
+        amountCents: item?.amountCents ?? null,
+        isRange: item?.isRange ?? false,
+        reason: item?.reason ?? null,
+      });
+    }
+  }
+
   return {
     checkedAt: new Date(deps.now()).toISOString(),
+    baseCurrency: baseCode,
     unlinkedWallos: unlinkedWallos.map(toItem),
     unlinkedActual: unlinkedActual.map(toItem),
     candidates,
     mismatches,
     unmappable,
     orphaned,
+    linked,
+    ignored,
   };
 }
