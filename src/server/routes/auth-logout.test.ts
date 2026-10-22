@@ -103,9 +103,16 @@ describe('POST /api/auth/logout', () => {
   });
 
   it('buildApp rejects auth without db', () => {
-    expect(() => buildApp({ auth: { mode: 'local', secureCookies: false, allowRegistration: false } })).toThrow(
-      'auth requires db',
-    );
+    expect(() =>
+      buildApp({
+        auth: {
+          mode: 'local',
+          secureCookies: false,
+          allowRegistration: false,
+          publicOrigin: 'http://localhost:3000',
+        },
+      }),
+    ).toThrow('auth requires db');
   });
 });
 

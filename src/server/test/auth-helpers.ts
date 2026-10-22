@@ -16,6 +16,7 @@ export interface AuthApp {
   app: FastifyInstance;
   db: AppDatabase;
   clock: TestClock;
+  publicOrigin: string;
 }
 
 export interface SignedIn {
@@ -49,16 +50,18 @@ export function makeAuthApp(
 ): AuthApp {
   const db = openDatabase(':memory:');
   const clock = opts.clock ?? makeClock();
+  const publicOrigin = 'http://localhost:3000';
   const app = buildApp({
     db,
     auth: {
       mode: opts.mode ?? 'local',
       secureCookies: opts.secureCookies ?? false,
       allowRegistration: opts.allowRegistration ?? false,
+      publicOrigin,
       now: () => clock.now(),
     },
   });
-  return { app, db, clock };
+  return { app, db, clock, publicOrigin };
 }
 
 let counter = 0;
@@ -85,7 +88,9 @@ export function signIn(
   };
 }
 
-/** Injects a request with the session cookie and the X-CSRF-Token header. No Origin yet. */
+export const TEST_ORIGIN = 'http://localhost:3000';
+
+/** Injects with the session cookie, X-CSRF-Token and Origin. Caller headers override them. */
 export function injectAs(
   app: FastifyInstance,
   session: Pick<SignedIn, 'cookie' | 'csrfToken'>,
@@ -94,9 +99,10 @@ export function injectAs(
   return app.inject({
     ...options,
     headers: {
-      ...options.headers,
+      origin: TEST_ORIGIN,
       cookie: session.cookie,
       [CSRF_HEADER]: session.csrfToken,
+      ...options.headers,
     },
   });
 }

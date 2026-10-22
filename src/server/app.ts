@@ -11,27 +11,37 @@ import {
   findSession,
   type SessionContext,
 } from './auth/sessions.js';
+import { createCsrfHook } from './auth/csrf.js';
+import type { OidcRuntime } from './auth/oidc.js';
 import type { AppDatabase } from './db/client.js';
 import { authRoutes } from './routes/auth.js';
 import { healthRoutes } from './routes/health.js';
+import { registerOidcRoutes } from './routes/oidc.js';
 
 export interface AuthOptions {
   readonly mode: AuthMode;
   readonly secureCookies: boolean;
   /** Whether new accounts may be created. Reported by GET /api/auth/config. */
   readonly allowRegistration: boolean;
+  /** The origin browsers use to reach Walley, without a trailing slash. The CSRF hook compares Origin to it. */
+  readonly publicOrigin: string;
   /** Clock in ms since the epoch. Tests inject one; the default is Date.now. */
   readonly now?: () => number;
+  /** The OIDC provider runtime. Used in OIDC mode only; in local mode the OIDC routes answer 404. */
+  readonly oidc?: OidcRuntime;
 }
 
 export interface BuildAppOptions {
-  readonly logger?: boolean;
+  /** True logs to stdout. Tests pass `{ stream }` to capture the output. */
+  readonly logger?: boolean | { readonly stream: NodeJS.WritableStream };
   /** Absolute path to the built web folder. When omitted, no static files are served. */
   readonly webRoot?: string;
   /** Open database handle. The caller owns it and closes it. */
   readonly db?: AppDatabase;
   /** Turns on cookie sessions. Requires `db`. */
   readonly auth?: AuthOptions;
+  /** Addresses or CIDR ranges of the reverse proxies whose X-Forwarded-For is trusted. Default false. */
+  readonly trustProxy?: string[] | false;
 }
 
 declare module 'fastify' {
@@ -47,8 +57,31 @@ declare module 'fastify' {
   }
 }
 
+/**
+ * Logs the method and the path only. The query string can hold secrets, such as the OIDC
+ * authorisation code and state on the callback, so it never reaches the log.
+ */
+function serializeRequest(request: { method: string; url: string }): {
+  method: string;
+  path: string;
+} {
+  const queryStart = request.url.indexOf('?');
+  return {
+    method: request.method,
+    path: queryStart === -1 ? request.url : request.url.slice(0, queryStart),
+  };
+}
+
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 const NO_CACHE = 'no-cache';
+
+/**
+ * The 404 reply. It never echoes the request URL and never logs: the query string can hold
+ * secrets, such as the OIDC code and state on a callback that has no route in local mode.
+ */
+function sendNotFound(reply: FastifyReply): FastifyReply {
+  return reply.code(404).send({ message: 'Not Found', error: 'Not Found', statusCode: 404 });
+}
 
 /** True when a missing path should fall back to the SPA shell. */
 function isSpaRoute(method: string, rawUrl: string): boolean {
@@ -113,14 +146,20 @@ function registerAuth(app: FastifyInstance, db: AppDatabase, auth: AuthOptions):
       }
       done();
     });
-    //
-    // slot 4: CSRF hook (#20)
-    //
     void app.register(authRoutes, {
       prefix: '/api',
       db,
       mode: auth.mode,
       allowRegistration: auth.allowRegistration,
+      secureCookies: auth.secureCookies,
+      now: clock,
+    });
+    registerOidcRoutes(app, {
+      db,
+      secureCookies: auth.secureCookies,
+      allowRegistration: auth.allowRegistration,
+      now: clock,
+      oidc: auth.mode === 'oidc' ? (auth.oidc ?? null) : null,
     });
     app.post('/api/auth/logout', (request, reply) => {
       if (request.auth === null) {
@@ -134,7 +173,17 @@ function registerAuth(app: FastifyInstance, db: AppDatabase, auth: AuthOptions):
 }
 
 export function buildApp(opts?: BuildAppOptions): FastifyInstance {
-  const app = Fastify({ logger: opts?.logger ?? false });
+  const logger = opts?.logger ?? false;
+  const app = Fastify({
+    logger:
+      logger === false
+        ? false
+        : {
+            serializers: { req: serializeRequest },
+            ...(logger === true ? {} : { stream: logger.stream }),
+          },
+    trustProxy: opts?.trustProxy ?? false,
+  });
   app.decorate('db', opts?.db ?? null);
   app.decorateRequest('auth', null);
   void app.register(healthRoutes, { prefix: '/api' });
@@ -150,6 +199,9 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
   // Queued behind the session hook, which registerAuth adds inside its own `after`.
   app.after(() => {
     app.addHook('onRequest', denyHook);
+    if (auth !== undefined) {
+      app.addHook('onRequest', createCsrfHook(auth.publicOrigin));
+    }
   });
 
   const webRoot = opts?.webRoot;
@@ -171,12 +223,11 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
       if (isSpaRoute(request.method, request.url)) {
         return reply.header('Cache-Control', NO_CACHE).sendFile('index.html');
       }
-      return reply.code(404).send({
-        message: `Route ${request.method}:${request.url} not found`,
-        error: 'Not Found',
-        statusCode: 404,
-      });
+      return sendNotFound(reply);
     });
+  } else {
+    // Fastify's default handler logs the full URL, query string included. Replace it everywhere.
+    app.setNotFoundHandler((_request, reply) => sendNotFound(reply));
   }
 
   return app;

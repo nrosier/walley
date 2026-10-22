@@ -7,7 +7,7 @@ Encryption for per-user secrets: Wallos API keys, Actual Budget passwords and sy
 | Path | Exports | Read it when |
 | --- | --- | --- |
 | `secrets.ts` | `encryptSecret(plaintext, key)`, `decryptSecret(ciphertext, key)`, `DecryptError` | Storing or reading an encrypted secret |
-| `keys.ts` | `deriveUserKey(appSecret, keySalt, userId)`, `newKeySalt()`, `KEY_SALT_BYTES` | Changing how a user's key is derived |
+| `keys.ts` | `deriveUserKey(appSecret, keySalt, userId)`, `newKeySalt()`, `KEY_SALT_BYTES`, `deriveFlowKey(appSecret)` (OIDC flow cookie key: HKDF-SHA256, empty salt, info `walley/oidc-flow/v1`, 32 bytes) | Changing how a user's key or the flow cookie key is derived |
 | `*.test.ts` | Tests, including the HKDF golden vector in `keys.test.ts` | Checking a change to either module |
 
 ## Design
