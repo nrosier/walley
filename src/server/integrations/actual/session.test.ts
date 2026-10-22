@@ -25,6 +25,9 @@ vi.mock('@actual-app/api', () => ({
     calls.push('download');
     downloads.push({ id, opts });
   }),
+  sync: vi.fn(async () => {
+    calls.push('sync');
+  }),
   shutdown: vi.fn(async () => {
     calls.push('shutdown');
     active -= 1;

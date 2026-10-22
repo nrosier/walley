@@ -9,6 +9,7 @@ const createdPayees: unknown[] = [];
 const createdRules: unknown[] = [];
 let failSchedule = false;
 let failRule = false;
+let failSync = false;
 
 vi.mock('@actual-app/api', () => ({
   init: vi.fn(async () => {
@@ -34,6 +35,12 @@ vi.mock('@actual-app/api', () => ({
     }
     createdRules.push(rule);
     return { id: 'rule-1' };
+  }),
+  sync: vi.fn(async () => {
+    calls.push('sync');
+    if (failSync) {
+      throw new Error('sync boom pw-secret-value');
+    }
   }),
   shutdown: vi.fn(async () => {
     calls.push('shutdown');
@@ -61,6 +68,7 @@ beforeEach(() => {
   createdPayees.length = 0;
   failSchedule = false;
   failRule = false;
+  failSync = false;
   createdRules.length = 0;
   db = openDatabase(':memory:');
   dataDir = mkdtempSync(join(tmpdir(), 'walley-write-'));
@@ -139,7 +147,7 @@ describe('createActualSchedule', () => {
     expect(result).toMatchObject({ scheduleId: 'sched-1', payeeId: 'payee-netflix', payeeCreated: false });
     expect(createdSchedules[0]).toMatchObject({ amount: cents, payee: 'payee-netflix' });
     expect(createdPayees).toHaveLength(0);
-    expect(calls).toEqual(['init', 'download', 'shutdown']);
+    expect(calls).toEqual(['init', 'download', 'sync', 'shutdown']);
   });
 
   it('creates a new payee by name and uses its id', async () => {
@@ -219,6 +227,15 @@ describe('createActualSchedule', () => {
       categoryError: true,
     });
     expect(createdSchedules).toHaveLength(1);
-    expect(calls).toEqual(['init', 'download', 'shutdown']);
+    expect(calls).toEqual(['init', 'download', 'sync', 'shutdown']);
+  });
+
+  it('surfaces a sync failure as sync_failed and still closes the session', async () => {
+    failSync = true;
+    const err = await createActualSchedule(deps(), userId, base).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ActualWriteError);
+    expect((err as ActualWriteError).code).toBe('sync_failed');
+    expect((err as ActualWriteError).message).not.toContain('pw-secret-value');
+    expect(calls).toEqual(['init', 'download', 'sync', 'shutdown']);
   });
 });

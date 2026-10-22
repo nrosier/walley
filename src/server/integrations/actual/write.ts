@@ -46,10 +46,15 @@ export interface SchedulePayload {
   };
 }
 
+export type ActualWriteErrorCode = 'invalid_input' | 'sync_failed';
+
+/** Fixed messages only. `sync_failed` never carries the underlying error. */
 export class ActualWriteError extends Error {
-  constructor(message: string) {
+  readonly code: ActualWriteErrorCode;
+  constructor(message: string, code: ActualWriteErrorCode = 'invalid_input') {
     super(message);
     this.name = 'ActualWriteError';
+    this.code = code;
   }
 }
 
@@ -141,11 +146,23 @@ export async function createScheduleOnApi(
   return { scheduleId, payeeId, payeeCreated, categoryApplied };
 }
 
-/** Opens the user's budget, creates the schedule, and always closes the session. */
+/**
+ * Opens the user's budget, creates the schedule, pushes it with api.sync() and always closes the
+ * session. The library's shutdown swallows its own sync failure, so sync runs here, before
+ * shutdown, and a failure is an ActualWriteError with code sync_failed.
+ */
 export function createActualSchedule(
   deps: ActualSessionDeps,
   userId: string,
   input: CreateScheduleInput,
 ): Promise<CreateScheduleResult> {
-  return withActualSession(deps, userId, (api) => createScheduleOnApi(api, input));
+  return withActualSession(deps, userId, async (api) => {
+    const result = await createScheduleOnApi(api, input);
+    try {
+      await api.sync();
+    } catch {
+      throw new ActualWriteError('Could not sync the new schedule to the Actual server', 'sync_failed');
+    }
+    return result;
+  });
 }
