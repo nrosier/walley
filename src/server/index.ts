@@ -7,6 +7,7 @@ import { deriveFlowKey } from './crypto/keys.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './db/client.js';
 import { createUserRepo } from './db/repo.js';
 import { realCreateDeps } from './integrations/create.js';
+import { withActualServer, withActualSession } from './integrations/actual/session.js';
 import { createWallosClient } from './integrations/wallos/client.js';
 import { createMailer, createSmtpTransport } from './mail/index.js';
 import { registerShutdown } from './shutdown.js';
@@ -72,6 +73,9 @@ async function main(): Promise<void> {
       ? createMailer({ transport: createSmtpTransport(config.smtpUrl), from: config.mailFrom })
       : undefined;
 
+  const repoFor = (id: string) => createUserRepo(db, id);
+  const wallos = createWallosClient(repoFor, config.appSecret);
+  const actualDeps = { db, appSecret: config.appSecret, dataDir: config.dataDir };
   let app;
   try {
     app = buildApp({
@@ -79,11 +83,16 @@ async function main(): Promise<void> {
       webRoot,
       db,
       trustProxy: config.trustProxy,
-      integrations: realCreateDeps(
-        createWallosClient((id) => createUserRepo(db, id), config.appSecret),
-        (id) => createUserRepo(db, id),
-        { db, appSecret: config.appSecret, dataDir: config.dataDir },
-      ),
+      integrations: realCreateDeps(wallos, repoFor, actualDeps),
+      settings: {
+        repoFor,
+        wallos,
+        appSecret: config.appSecret,
+        actual: {
+          withActualServer: (userId, use) => withActualServer(actualDeps, userId, use),
+          withActual: (userId, use) => withActualSession(actualDeps, userId, use),
+        },
+      },
       auth: {
         mode: config.authMode,
         secureCookies: config.secureCookies,

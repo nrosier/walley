@@ -39,7 +39,7 @@ import { deriveUserKey } from '../../crypto/keys.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../../db/client.js';
 import { createUserRepo } from '../../db/repo.js';
 import { createUser } from '../../db/accounts.js';
-import { ActualSessionError, withActualSession } from './session.js';
+import { ActualSessionError, withActualServer, withActualSession } from './session.js';
 
 const APP_SECRET = 'a'.repeat(40);
 const PW_A = 'password-of-user-a-xyz';
@@ -190,5 +190,80 @@ describe('withActualSession', () => {
       expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
     }
+  });
+});
+
+describe('withActualServer', () => {
+  it('signs in with the server credentials only and never downloads a budget', async () => {
+    addUser('u1', PW_A, SYNC_A);
+    const result = await withActualServer(deps(), idOf('u1'), async () => 'ok');
+    expect(result).toBe('ok');
+    expect(calls).toEqual(['init', 'shutdown']);
+    expect(inits[0]).toEqual({
+      dataDir: join(dataDir, 'actual', idOf('u1')),
+      serverURL: 'https://actual-u1.example.com',
+      password: PW_A,
+    });
+    expect(downloads).toEqual([]);
+  });
+
+  it('works before a budget is chosen', async () => {
+    const { id } = createUser(db, { email: 'nb@example.com', passwordHash: null });
+    const repo = createUserRepo(db, id);
+    const key = deriveUserKey(APP_SECRET, repo.getKeySalt() ?? Buffer.alloc(0), id);
+    repo.upsertConfig({ actualUrl: 'https://nb.example.com', actualPasswordEnc: encryptSecret(PW_A, key) });
+    await expect(withActualServer(deps(), id, async () => 1)).resolves.toBe(1);
+    await expect(withActualSession(deps(), id, async () => 1)).rejects.toMatchObject({
+      code: 'not_configured',
+    });
+  });
+
+  it('refuses a user without url or password and never opens', async () => {
+    addUser('u3');
+    await expect(withActualServer(deps(), idOf('u3'), async () => 1)).rejects.toMatchObject({
+      code: 'not_configured',
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it('shuts down when the callback throws, and rethrows it', async () => {
+    addUser('u1', PW_A);
+    await expect(
+      withActualServer(deps(), idOf('u1'), async () => {
+        throw new Error('callback failed');
+      }),
+    ).rejects.toThrow('callback failed');
+    expect(calls).toEqual(['init', 'shutdown']);
+  });
+
+  it('shuts down when init fails, with an error that holds no credential', async () => {
+    addUser('u1', PW_A, SYNC_A);
+    failOpen = true;
+    const error = await withActualServer(deps(), idOf('u1'), async () => 1).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ActualSessionError);
+    expect((error as ActualSessionError).code).toBe('open_failed');
+    expect(calls).toEqual(['init', 'shutdown']);
+    const text = JSON.stringify(error) + (error as Error).message + ((error as Error).stack ?? '');
+    expect(text).not.toContain(PW_A);
+    expect((error as Error).cause).toBeUndefined();
+  });
+
+  it('shares one queue with withActualSession', async () => {
+    addUser('u1', PW_A);
+    addUser('u2', PW_B);
+    const slow = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    };
+    await Promise.all([
+      withActualSession(deps(), idOf('u1'), slow),
+      withActualServer(deps(), idOf('u2'), slow),
+      withActualSession(deps(), idOf('u2'), slow),
+    ]);
+    expect(maxActive).toBe(1);
+    expect(calls).toEqual([
+      'init', 'download', 'shutdown',
+      'init', 'shutdown',
+      'init', 'download', 'shutdown',
+    ]);
   });
 });

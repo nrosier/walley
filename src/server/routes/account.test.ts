@@ -7,7 +7,6 @@ import { closeDatabase } from '../db/client.js';
 import { findSessionByIdHash } from '../db/lookup.js';
 import { createUserRepo } from '../db/repo.js';
 import { makeAuthApp, injectAs, signIn, verifyEmail, TEST_ORIGIN, type AuthApp } from '../test/auth-helpers.js';
-import { accountRoutes } from './account.js';
 
 const OLD = 'correct horse battery staple';
 const NEW = 'a brand new long passphrase';
@@ -21,9 +20,8 @@ afterEach(async () => {
 });
 
 async function setup(mode: AuthMode = 'local'): Promise<AuthApp> {
+  // buildApp registers accountRoutes whenever auth is set.
   const t = makeAuthApp({ mode });
-  // Registered after buildApp, so the session, deny and CSRF hooks apply to it.
-  void t.app.register(accountRoutes, { prefix: '/api', db: t.db, mode });
   await t.app.ready();
   created.push(t);
   return t;
@@ -98,6 +96,22 @@ describe('account routes', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'invalid_request' });
     }
+  });
+
+  it('malformed JSON body gives a fixed 400 that never echoes the input', async () => {
+    const t = await setup();
+    const s = signIn(t, await addUser(t, 'a@example.test'));
+    const raw = `{"currentPassword":"${OLD}"`;
+    const res = await injectAs(t.app, s, {
+      method: 'PUT',
+      url: '/api/account/password',
+      headers: { 'content-type': 'application/json' },
+      payload: raw,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+    expect(res.body).not.toContain(raw);
+    expect(res.body).not.toContain(OLD);
   });
 
   it('success: 204, new password logs in, old fails, other sessions deleted, current kept', async () => {

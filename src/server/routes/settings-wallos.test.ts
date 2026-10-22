@@ -5,7 +5,6 @@ import { createUserRepo } from '../db/repo.js';
 import { WallosAuthError, WallosNetworkError } from '../integrations/wallos/client.js';
 import { createCapturingMailer } from '../mail/index.js';
 import { injectAs, makeAuthApp, makeUser, signIn, TEST_ORIGIN } from '../test/auth-helpers.js';
-import { settingsWallosRoutes } from './settings-wallos.js';
 
 const KEY_A = 'sekret-key-AAAA-1234567890';
 const KEY_B = 'sekret-key-BBBB-0987654321';
@@ -34,10 +33,7 @@ function setup() {
       publicOrigin: t.publicOrigin,
       now: () => t.clock.now(),
     },
-  });
-  void app.register(settingsWallosRoutes, {
-    prefix: '/api',
-    deps: {
+    settings: {
       repoFor: (id) => createUserRepo(t.db, id),
       wallos: { listCurrencies },
       appSecret: 'test-app-secret-value-0123456789abcdef',
@@ -78,6 +74,22 @@ describe('settings-wallos routes', () => {
     });
     expect(foreign.statusCode).toBe(403);
     expect(s.listCurrencies).not.toHaveBeenCalled();
+    expect(createUserRepo(s.db, s.a).getConfig()).toBeUndefined();
+  });
+
+  it('malformed JSON body gives a fixed 400 that never echoes the input', async () => {
+    const s = setup();
+    const raw = `{"apiKey":"${KEY_A}"`;
+    const res = await injectAs(s.app, s.sa, {
+      method: 'PUT',
+      url: PATH,
+      headers: { 'content-type': 'application/json' },
+      payload: raw,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+    expect(res.body).not.toContain(raw);
+    expect(res.body).not.toContain(KEY_A);
     expect(createUserRepo(s.db, s.a).getConfig()).toBeUndefined();
   });
 

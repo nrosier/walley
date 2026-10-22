@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyError, FastifyPluginAsync } from 'fastify';
 import type { AuthMode } from '../../lib/auth-mode.js';
 import {
   isAcceptablePasswordLength,
@@ -23,6 +23,15 @@ export interface AccountRoutesOptions {
  */
 export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (app, opts) => {
   const { db, mode } = opts;
+
+  // Body parse failures (malformed JSON, empty body, wrong media type) get a fixed body.
+  app.setErrorHandler((error: FastifyError, _request, reply) => {
+    const status = error.statusCode;
+    if (status !== undefined && status >= 400 && status < 500) {
+      return reply.code(400).send({ error: 'invalid_request' });
+    }
+    return reply.code(500).send({ error: 'internal_error' });
+  });
 
   app.get('/account', (request, reply) => {
     if (request.auth === null) {

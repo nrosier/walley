@@ -48,14 +48,24 @@ function serialize<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-interface Credentials {
+interface ServerCredentials {
   readonly serverURL: string;
   readonly password: string;
+}
+
+interface Credentials extends ServerCredentials {
   readonly budgetId: string;
   readonly syncKey: string | undefined;
 }
 
-function loadCredentials(deps: ActualSessionDeps, userId: string): Credentials {
+/** Decrypts the server password and, when `withBudget`, the budget id and optional sync key. */
+function loadCredentials(deps: ActualSessionDeps, userId: string, withBudget: true): Credentials;
+function loadCredentials(deps: ActualSessionDeps, userId: string, withBudget: false): ServerCredentials;
+function loadCredentials(
+  deps: ActualSessionDeps,
+  userId: string,
+  withBudget: boolean,
+): Credentials | ServerCredentials {
   const repo = createUserRepo(deps.db, userId);
   const config = repo.getConfig();
   const keySalt = repo.getKeySalt();
@@ -63,17 +73,21 @@ function loadCredentials(deps: ActualSessionDeps, userId: string): Credentials {
     config === undefined ||
     keySalt === undefined ||
     !config.actualUrl ||
-    !config.actualBudgetId ||
-    !config.actualPasswordEnc
+    !config.actualPasswordEnc ||
+    (withBudget && !config.actualBudgetId)
   ) {
     throw new ActualSessionError('not_configured');
   }
   try {
     const key = deriveUserKey(deps.appSecret, keySalt, userId);
-    return {
+    const server: ServerCredentials = {
       serverURL: config.actualUrl,
       password: decryptSecret(config.actualPasswordEnc, key),
-      budgetId: config.actualBudgetId,
+    };
+    if (!withBudget) return server;
+    return {
+      ...server,
+      budgetId: config.actualBudgetId ?? '',
       syncKey: config.actualSyncKeyEnc ? decryptSecret(config.actualSyncKeyEnc, key) : undefined,
     };
   } catch {
@@ -82,18 +96,19 @@ function loadCredentials(deps: ActualSessionDeps, userId: string): Credentials {
 }
 
 /**
- * Opens the user's budget, runs `use`, and always shuts the session down. Calls are serialized
- * across all users. The user's own config row is the only one read. The Actual server password
- * signs in to the server; the optional sync key is the budget's end-to-end encryption password.
- * Credentials never leave this function: not in the result, not in any error.
+ * One serialized lifecycle: init with the server credentials, run `afterInit` (for example a
+ * budget download), then `use`, and always shut down. Any init or `afterInit` failure becomes a
+ * fixed open_failed error; a shutdown failure only surfaces when nothing failed before it.
  */
-export function withActualSession<T>(
+function runSession<C extends ServerCredentials, T>(
   deps: ActualSessionDeps,
   userId: string,
+  load: () => C,
+  afterInit: (credentials: C) => Promise<void>,
   use: (api: ActualApi) => Promise<T>,
 ): Promise<T> {
   return serialize(async () => {
-    const credentials = loadCredentials(deps, userId);
+    const credentials = load();
     const dataDir = join(deps.dataDir, 'actual', userId);
     let result: T | undefined;
     let failure: { readonly error: unknown } | undefined;
@@ -105,10 +120,7 @@ export function withActualSession<T>(
           serverURL: credentials.serverURL,
           password: credentials.password,
         });
-        await actualApi.downloadBudget(
-          credentials.budgetId,
-          credentials.syncKey === undefined ? undefined : { password: credentials.syncKey },
-        );
+        await afterInit(credentials);
       } catch {
         throw new ActualSessionError('open_failed');
       }
@@ -126,4 +138,48 @@ export function withActualSession<T>(
     }
     return result as T;
   });
+}
+
+/**
+ * Opens the user's budget, runs `use`, and always shuts the session down. Calls are serialized
+ * across all users. The user's own config row is the only one read. The Actual server password
+ * signs in to the server; the optional sync key is the budget's end-to-end encryption password.
+ * Credentials never leave this function: not in the result, not in any error.
+ */
+export function withActualSession<T>(
+  deps: ActualSessionDeps,
+  userId: string,
+  use: (api: ActualApi) => Promise<T>,
+): Promise<T> {
+  return runSession(
+    deps,
+    userId,
+    () => loadCredentials(deps, userId, true),
+    async (c) => {
+      await actualApi.downloadBudget(
+        c.budgetId,
+        c.syncKey === undefined ? undefined : { password: c.syncKey },
+      );
+    },
+    use,
+  );
+}
+
+/**
+ * Signs in to the user's Actual server without opening a budget (for listing budgets), runs
+ * `use`, and always shuts down. Shares the serialization chain with withActualSession. Reads
+ * only the server URL and password; the budget id and sync key are not loaded or decrypted.
+ */
+export function withActualServer<T>(
+  deps: ActualSessionDeps,
+  userId: string,
+  use: (api: ActualApi) => Promise<T>,
+): Promise<T> {
+  return runSession(
+    deps,
+    userId,
+    () => loadCredentials(deps, userId, false),
+    () => Promise.resolve(),
+    use,
+  );
 }

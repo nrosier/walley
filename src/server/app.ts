@@ -15,12 +15,16 @@ import { createCsrfHook } from './auth/csrf.js';
 import type { OidcRuntime } from './auth/oidc.js';
 import type { AppDatabase } from './db/client.js';
 import type { Mailer } from './mail/index.js';
+import { accountRoutes } from './routes/account.js';
 import { authRoutes } from './routes/auth.js';
 import type { CreateDeps } from './integrations/create.js';
 import { healthRoutes } from './routes/health.js';
 import { integrationRoutes } from './routes/integrations.js';
 import { registerOidcRoutes } from './routes/oidc.js';
 import { matchesRoutes } from './routes/matches.js';
+import { settingsActualRoutes, type SettingsActualDeps } from './routes/settings-actual.js';
+import { settingsMatchingRoutes } from './routes/settings-matching.js';
+import { settingsWallosRoutes, type SettingsWallosDeps } from './routes/settings-wallos.js';
 import { syncRoutes } from './routes/sync.js';
 
 export interface AuthOptions {
@@ -49,6 +53,14 @@ export interface BuildAppOptions {
   readonly auth?: AuthOptions;
   /** Wallos and Actual clients for the create routes. Needs `auth`; without it no integration route exists. */
   readonly integrations?: CreateDeps;
+  /**
+   * Dependencies of the per-user settings routes (Wallos, Actual and matching). Needs `auth`; without
+   * it no settings route exists. `appSecret` encrypts saved credentials and never leaves the server.
+   * `actual` (the Actual sign-in and budget readers) is needed for the Actual settings routes.
+   */
+  readonly settings?: SettingsWallosDeps & {
+    readonly actual?: Omit<SettingsActualDeps, 'repoFor' | 'appSecret'>;
+  };
   /** Addresses or CIDR ranges of the reverse proxies whose X-Forwarded-For is trusted. Default false. */
   readonly trustProxy?: string[] | false;
 }
@@ -146,6 +158,7 @@ function registerAuth(
   db: AppDatabase,
   auth: AuthOptions,
   integrations: CreateDeps | undefined,
+  settings: BuildAppOptions['settings'],
 ): void {
   const clock = auth.now ?? Date.now;
   void app.register(fastifyCookie);
@@ -180,6 +193,22 @@ function registerAuth(
       now: clock,
       oidc: auth.mode === 'oidc' ? (auth.oidc ?? null) : null,
     });
+    void app.register(accountRoutes, { prefix: '/api', db, mode: auth.mode });
+    if (settings !== undefined) {
+      void app.register(settingsWallosRoutes, { prefix: '/api', deps: settings });
+      void app.register(settingsMatchingRoutes, { prefix: '/api', deps: { repoFor: settings.repoFor } });
+      if (settings.actual !== undefined) {
+        void app.register(settingsActualRoutes, {
+          prefix: '/api',
+          deps: {
+            repoFor: settings.repoFor,
+            appSecret: settings.appSecret,
+            withActualServer: settings.actual.withActualServer,
+            withActual: settings.actual.withActual,
+          },
+        });
+      }
+    }
     if (integrations !== undefined) {
       void app.register(integrationRoutes, { prefix: '/api', deps: integrations });
       void app.register(matchesRoutes, {
@@ -233,7 +262,7 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
       // Fixed text: never print config values.
       throw new Error('Local registration needs a mailer. Startup is aborted.');
     }
-    registerAuth(app, db, auth, opts?.integrations);
+    registerAuth(app, db, auth, opts?.integrations, opts?.settings);
   }
   // Queued behind the session hook, which registerAuth adds inside its own `after`.
   app.after(() => {

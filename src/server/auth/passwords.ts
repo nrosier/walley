@@ -1,4 +1,5 @@
 import { argon2, randomBytes, timingSafeEqual } from 'node:crypto';
+import { PASSWORD_MAX_CODE_POINTS, PASSWORD_MIN_CODE_POINTS } from '../../lib/password-policy.js';
 
 /** Argon2id parameters for new hashes: the OWASP minimum (19 MiB, 2 passes, 1 lane). */
 const MEMORY_KIB = 19456;
@@ -6,9 +7,6 @@ const PASSES = 2;
 const PARALLELISM = 1;
 const TAG_LENGTH = 32;
 const NONCE_LENGTH = 16;
-
-const MIN_CODE_POINTS = 15;
-const MAX_CODE_POINTS = 256;
 
 /**
  * Cap on the raw, un-normalised password, in UTF-16 units. NFKC can expand a character about
@@ -136,5 +134,5 @@ export function normalisePassword(password: string): string {
 /** True for 15 to 256 code points. Call it on the normalised value. */
 export function isAcceptablePasswordLength(password: string): boolean {
   const length = Array.from(password).length;
-  return length >= MIN_CODE_POINTS && length <= MAX_CODE_POINTS;
+  return length >= PASSWORD_MIN_CODE_POINTS && length <= PASSWORD_MAX_CODE_POINTS;
 }

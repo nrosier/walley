@@ -42,3 +42,30 @@ export async function readBaseCurrency(api: ActualApi): Promise<string | null> {
   const code = prefs.defaultCurrencyCode;
   return typeof code === 'string' && code.length > 0 ? code : null;
 }
+
+/** A budget on the user's Actual server. `id` is the sync id (groupId) that downloadBudget takes. */
+export interface ActualBudgetSummary {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * Budgets on the signed-in server, for use inside `withActualServer`. Each entry is reduced to
+ * `{ id: groupId, name }`; entries without a groupId (local-only files) cannot be downloaded by
+ * sync id and are dropped. The API lists local copies and remote files together, so a budget
+ * already downloaded appears twice with the same groupId; only the first is kept. No other field
+ * (owner, key ids, users) is passed on.
+ */
+export async function listBudgets(api: ActualApi): Promise<ActualBudgetSummary[]> {
+  const files: readonly unknown[] = await api.getBudgets();
+  const budgets: ActualBudgetSummary[] = [];
+  const seen = new Set<string>();
+  for (const file of files) {
+    if (typeof file !== 'object' || file === null) continue;
+    const { groupId, name } = file as { groupId?: unknown; name?: unknown };
+    if (typeof groupId !== 'string' || groupId === '' || seen.has(groupId)) continue;
+    seen.add(groupId);
+    budgets.push({ id: groupId, name: typeof name === 'string' ? name : '' });
+  }
+  return budgets;
+}

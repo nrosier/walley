@@ -1,13 +1,14 @@
 import { get } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuthMode } from '../../lib/auth-mode.js';
 import { buildApp } from '../app.js';
 import { hashToken } from '../auth/sessions.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../db/client.js';
+import { createUserRepo } from '../db/repo.js';
 import { createCapturingMailer } from '../mail/index.js';
 import { findSessionByIdHash } from '../db/lookup.js';
-import { injectAs, makeClock, makeUser, signIn } from '../test/auth-helpers.js';
+import { injectAs, makeClock, makeUser, signIn, TEST_ORIGIN } from '../test/auth-helpers.js';
 
 const MODES: readonly AuthMode[] = ['local', 'oidc'];
 const REGISTRATION = [true, false] as const;
@@ -196,5 +197,146 @@ describe('default-deny', () => {
     const session = signIn(t, makeUser(t.db), 'local');
     const res = await injectAs(t.app, session, { method: 'GET', url: '/api/nope' });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('buildApp wires account and settings routes', () => {
+  function setupWithSettings(mode: AuthMode = 'local') {
+    const db = openDatabase(':memory:');
+    dbs.push(db);
+    const clock = makeClock();
+    const app = buildApp({
+      db,
+      auth: {
+        mode,
+        secureCookies: false,
+        allowRegistration: false,
+        publicOrigin: TEST_ORIGIN,
+        now: () => clock.now(),
+      },
+      settings: {
+        repoFor: (id) => createUserRepo(db, id),
+        wallos: { listCurrencies: vi.fn().mockResolvedValue([]) },
+        appSecret: 'test-app-secret-value-0123456789abcdef',
+        actual: {
+          withActualServer: vi.fn().mockResolvedValue([]),
+          withActual: vi.fn().mockResolvedValue('USD'),
+        },
+      },
+    });
+    apps.push(app);
+    return { app, db, clock };
+  }
+  const GETS = ['/api/account', '/api/settings/wallos', '/api/settings/matching', '/api/settings/actual'];
+
+  it.each(MODES)('GET routes give 401 without a session and 200 with one (%s)', async (mode) => {
+    const t = setupWithSettings(mode);
+    const session = signIn(t, makeUser(t.db), mode);
+    for (const url of GETS) {
+      const anon = await t.app.inject({ method: 'GET', url });
+      expect(anon.statusCode, url).toBe(401);
+      expect(anon.json(), url).toEqual(UNAUTHENTICATED);
+      const res = await injectAs(t.app, session, { method: 'GET', url });
+      expect(res.statusCode, url).toBe(200);
+      expect(res.body, url).not.toContain('test-app-secret');
+    }
+  });
+
+  it.each(MODES)('Actual settings routes give 401 without a session (%s)', async (mode) => {
+    const t = setupWithSettings(mode);
+    const probes = [
+      { method: 'GET', url: '/api/settings/actual' },
+      { method: 'PUT', url: '/api/settings/actual' },
+      { method: 'POST', url: '/api/settings/actual/budgets' },
+      { method: 'POST', url: '/api/settings/actual/base-currency' },
+    ] as const;
+    for (const { method, url } of probes) {
+      const res = await t.app.inject({ method, url, payload: {}, headers: { origin: TEST_ORIGIN } });
+      expect(res.statusCode, `${method} ${url}`).toBe(401);
+      expect(res.json(), `${method} ${url}`).toEqual(UNAUTHENTICATED);
+    }
+  });
+
+  it('PUT /api/settings/actual without a CSRF token gives 403', async () => {
+    const t = setupWithSettings();
+    const session = signIn(t, makeUser(t.db));
+    const res = await t.app.inject({
+      method: 'PUT',
+      url: '/api/settings/actual',
+      payload: { actualUrl: 'https://actual.example.com', password: 'p' },
+      headers: { origin: TEST_ORIGIN, cookie: session.cookie },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('without settings, account is registered but settings routes are not', async () => {
+    const t = setup('local', false);
+    const session = signIn(t, makeUser(t.db), 'local');
+    expect((await injectAs(t.app, session, { method: 'GET', url: '/api/account' })).statusCode).toBe(200);
+    for (const url of ['/api/settings/wallos', '/api/settings/matching']) {
+      expect((await injectAs(t.app, session, { method: 'GET', url })).statusCode, url).toBe(404);
+    }
+  });
+
+  it('PUT without a CSRF token gives 403 and writes nothing', async () => {
+    const t = setupWithSettings();
+    const userId = makeUser(t.db);
+    const session = signIn(t, userId);
+    for (const [url, payload] of [
+      ['/api/settings/matching', { tolerancePercent: 10 }],
+      ['/api/settings/wallos', { wallosUrl: 'https://wallos.example.com', apiKey: 'k' }],
+      ['/api/account/password', { currentPassword: 'x', newPassword: 'y' }],
+    ] as const) {
+      const res = await t.app.inject({
+        method: 'PUT',
+        url,
+        payload,
+        headers: { origin: TEST_ORIGIN, cookie: session.cookie },
+      });
+      expect(res.statusCode, url).toBe(403);
+    }
+    expect(createUserRepo(t.db, userId).getConfig()).toBeUndefined();
+  });
+
+  it('matching tolerance boundaries through buildApp', async () => {
+    const t = setupWithSettings();
+    const session = signIn(t, makeUser(t.db));
+    const put = (payload: string | object) =>
+      injectAs(t.app, session, {
+        method: 'PUT',
+        url: '/api/settings/matching',
+        payload,
+        headers: { 'content-type': 'application/json' },
+      });
+    for (const v of [0, 50]) {
+      const res = await put({ tolerancePercent: v });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ tolerancePercent: v });
+    }
+    for (const v of [-0.1, 50.1]) {
+      const res = await put({ tolerancePercent: v });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: 'out_of_range' });
+    }
+    // JSON has no NaN; the raw literal is rejected before the handler as invalid_request.
+    const nan = await put('{"tolerancePercent":NaN}');
+    expect(nan.statusCode).toBe(400);
+    expect(nan.json()).toEqual({ error: 'invalid_request' });
+    const str = await put({ tolerancePercent: '10' });
+    expect(str.statusCode).toBe(400);
+    expect(str.json()).toEqual({ error: 'invalid_request' });
+  });
+
+  it("user A's PUT does not change user B's tolerance", async () => {
+    const t = setupWithSettings();
+    const a = signIn(t, makeUser(t.db));
+    const b = signIn(t, makeUser(t.db));
+    const put = (s: typeof a, v: number) =>
+      injectAs(t.app, s, { method: 'PUT', url: '/api/settings/matching', payload: { tolerancePercent: v } });
+    const get = (s: typeof a) => injectAs(t.app, s, { method: 'GET', url: '/api/settings/matching' });
+    expect((await put(b, 15)).statusCode).toBe(200);
+    expect((await put(a, 30)).statusCode).toBe(200);
+    expect((await get(a)).json()).toEqual({ tolerancePercent: 30 });
+    expect((await get(b)).json()).toEqual({ tolerancePercent: 15 });
   });
 });

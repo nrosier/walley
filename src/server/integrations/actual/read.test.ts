@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActualApi } from './session.js';
-import { readAccounts, readBaseCurrency, readCategories, readPayees, readSchedules } from './read.js';
+import {
+  listBudgets,
+  readAccounts,
+  readBaseCurrency,
+  readCategories,
+  readPayees,
+  readSchedules,
+} from './read.js';
 
 /*
  * The library is replaced by a fake that answers the five read methods from fixtures. Each fixture
@@ -135,5 +142,24 @@ describe('readBaseCurrency', () => {
   it('returns null for an empty currency code', async () => {
     const { api } = fakeApi({ getPreferences: vi.fn(async () => ({ defaultCurrencyCode: '' })) });
     await expect(readBaseCurrency(api)).resolves.toBeNull();
+  });
+});
+
+describe('listBudgets', () => {
+  it('maps to { id: groupId, name }, drops entries without a groupId and duplicates', async () => {
+    const getBudgets = vi.fn().mockResolvedValue([
+      { id: 'local-1', groupId: 'g-1', name: 'Home', owner: 'o', encryptKeyId: 'k' },
+      { cloudFileId: 'cf-1', groupId: 'g-1', name: 'Home', state: 'remote' },
+      { cloudFileId: 'cf-2', groupId: 'g-2', name: 'Work', state: 'remote' },
+      { id: 'local-only', name: 'Unsynced' },
+      { cloudFileId: 'cf-3', groupId: '', name: 'Blank' },
+      null,
+    ]);
+    const result = await listBudgets({ getBudgets } as unknown as ActualApi);
+    expect(result).toEqual([
+      { id: 'g-1', name: 'Home' },
+      { id: 'g-2', name: 'Work' },
+    ]);
+    expect(getBudgets).toHaveBeenCalledTimes(1);
   });
 });
