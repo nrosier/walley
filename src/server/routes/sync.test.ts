@@ -40,6 +40,7 @@ function setup(overrides: Partial<CreateDeps> = {}) {
       ],
       listCurrencies: async () => [{ id: 1, code: 'EUR', rate: '1' }],
       createSubscription,
+      updateSubscription: vi.fn(),
     },
     repoFor: (id) => createUserRepo(t.db, id),
     withActual: (id, use) =>

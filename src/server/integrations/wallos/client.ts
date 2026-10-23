@@ -6,7 +6,7 @@ import {
   type WallosCurrency,
   type WallosSubscription,
 } from './types.js';
-import type { WallosSubscriptionPayload } from './write.js';
+import type { WallosSubscriptionPayload, WallosSubscriptionUpdate } from './write.js';
 
 // Wallos reads api_key only from $_REQUEST['api_key'] ?? $_REQUEST['apiKey'] (query or form
 // body, never a header): ellite/Wallos api/subscriptions/get_subscriptions.php. We send it
@@ -79,6 +79,11 @@ export interface WallosClient {
   listCurrencies(userId: string): Promise<WallosCurrency[]>;
   /** Creates a subscription in the user's Wallos. Resolves to the new Wallos id. */
   createSubscription(userId: string, payload: WallosSubscriptionPayload): Promise<string>;
+  /**
+   * Edits one subscription in the user's Wallos (action=edit). Only the fields in `fields` change.
+   * `id` must be a string of digits.
+   */
+  updateSubscription(userId: string, id: string, fields: WallosSubscriptionUpdate): Promise<void>;
 }
 
 function buildEndpoint(stored: string, path: string): URL {
@@ -250,6 +255,23 @@ export function createWallosClient(
         currencies.push(mapped);
       }
       return currencies;
+    },
+
+    async updateSubscription(userId, id, fields) {
+      if (!/^\d+$/.test(id)) throw new WallosRejectedError('Invalid subscription ID');
+      // id and action follow the fields, so a field can never replace them; api_key stays last.
+      const { status, body } = await request(userId, CREATE_SUBSCRIPTION_PATH, {
+        ...fields,
+        action: 'edit',
+        id,
+      });
+      const envelope = body as { success?: unknown; title?: unknown };
+      if (typeof envelope.success !== 'boolean') throw new WallosHttpError(status);
+      if (!envelope.success) {
+        const title = typeof envelope.title === 'string' ? envelope.title : '';
+        if (AUTH_REJECTION_TITLES.has(title)) throw new WallosAuthError();
+        throw new WallosRejectedError(title);
+      }
     },
 
     async createSubscription(userId, payload) {

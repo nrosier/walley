@@ -56,3 +56,48 @@ export function prefillWallosSubscription(
     signal,
   });
 }
+
+export type PayeeChoice = { kind: 'existing'; id: string } | { kind: 'new'; name: string };
+
+export interface CreateActualScheduleInput {
+  wallosSubscriptionId: string;
+  accountId: string;
+  payee: PayeeChoice;
+  categoryId?: string;
+}
+
+export interface CreateActualScheduleResult {
+  scheduleId: string;
+  payeeId: string;
+  payeeCreated: boolean;
+  categoryApplied: boolean;
+  categoryError?: boolean;
+}
+
+/** POST /api/integrations/actual-schedules (live write). Throws ApiError with the server code. */
+export function createActualSchedule(
+  input: CreateActualScheduleInput,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+): Promise<CreateActualScheduleResult> {
+  return apiRequest<CreateActualScheduleResult>('/api/integrations/actual-schedules', {
+    method: 'POST',
+    body: input,
+    fetchImpl,
+    signal,
+  });
+}
+
+/** POST /api/integrations/wallos-subscriptions (live write). Throws ApiError with the server code. */
+export function createWallosSubscription(
+  scheduleId: string,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+): Promise<{ wallosSubscriptionId: string }> {
+  return apiRequest<{ wallosSubscriptionId: string }>('/api/integrations/wallos-subscriptions', {
+    method: 'POST',
+    body: { scheduleId },
+    fetchImpl,
+    signal,
+  });
+}

@@ -3,13 +3,14 @@ import type { SyncCheckResult, SyncIgnored, SyncLinked } from '../../lib/sync-ch
 import { formatMoney } from '../../lib/format-money';
 import { pairBadge } from '../../lib/match-badge';
 import { useT } from '@/i18n';
+import type { ResolveAction } from '@/lib/matches.api';
 import { performResolve } from '@/lib/resolve-mismatch';
 import { nextRowId, performAction, syncStore, useSyncCheck } from '@/lib/sync-check';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
 import { Badge } from '../components/ui/badge';
 import { DiffModal } from '../components/matches/DiffModal';
-import { diffModalMessages } from '../components/matches/DiffModal.messages';
+import { diffModalMessages, isOverwriteErrorCode } from '../components/matches/DiffModal.messages';
 import { Button } from '../components/ui/button';
 import { matchesMessages } from './Matches.messages';
 
@@ -237,13 +238,17 @@ export function Matches() {
   const [resolveFailed, setResolveFailed] = useState<{ id: string; text: string } | null>(null);
   const modalT = useT(diffModalMessages).t;
 
-  const resolve = (matchId: string, action: 'ignore_diff' | 'unlink') => {
+  const resolve = (matchId: string, action: ResolveAction) => {
     const name = sync.result?.mismatches.find((m) => m.matchId === matchId)?.wallosName ?? matchId;
     setReviewId(null);
     setResolveFailed(null);
     void performResolve(() => syncStore.getState().result, syncStore.setResult, matchId, action, syncStore.run).then((outcome) => {
       if (!outcome.ok) {
-        setResolveFailed({ id: matchId, text: `${modalT('failed', { name })} ${errorText(outcome.code)}` });
+        const reason =
+          action.startsWith('overwrite_') && isOverwriteErrorCode(outcome.code)
+            ? modalT(`overwriteErrors.${outcome.code}`)
+            : errorText(outcome.code);
+        setResolveFailed({ id: matchId, text: `${modalT('failed', { name })} ${reason}` });
       }
     });
   };
@@ -288,6 +293,7 @@ export function Matches() {
       baseCurrency={sync.result?.baseCurrency ?? ''}
       onClose={() => { setReviewId(null); }}
       onIgnoreDiff={(id) => { resolve(id, 'ignore_diff'); }}
+      onOverwrite={resolve}
       onUnlink={(id) => { resolve(id, 'unlink'); }}
     />
     </>

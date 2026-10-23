@@ -19,12 +19,14 @@ import type { AppDatabase } from './client.js';
 import {
   emailVerifications,
   matches,
+  overwriteSnapshots,
   sessions,
   subscriptionOverrides,
   userConfigs,
   userIdentities,
   users,
   type MatchRow,
+  type OverwriteSnapshotRow,
   type SubscriptionOverrideRow,
   type UserConfigRow,
 } from './schema.js';
@@ -70,6 +72,15 @@ export interface EmailVerificationInput {
   idHash: string;
   now: Date;
   expiresAt: Date;
+}
+
+export interface OverwriteSnapshotInput {
+  matchId: string;
+  target: 'wallos' | 'actual';
+  targetId: string;
+  /** JSON of the record as it was just before the overwrite. Must hold no credentials. */
+  valuesJson: string;
+  now: Date;
 }
 
 export interface UserRepo {
@@ -132,6 +143,10 @@ export interface UserRepo {
   ): SubscriptionOverrideRow;
   /** Returns false when this user has no override for that subscription; nothing is removed. */
   deleteSubscriptionOverride(wallosSubscriptionId: string): boolean;
+  /** Stores a pre-overwrite copy of a remote record for this user. */
+  insertOverwriteSnapshot(input: OverwriteSnapshotInput): OverwriteSnapshotRow;
+  /** This user's snapshots, oldest first. */
+  listOverwriteSnapshots(): OverwriteSnapshotRow[];
 }
 
 type ConfigValues = Partial<Omit<UserConfigRow, 'userId'>>;
@@ -433,6 +448,37 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
 
     deleteSubscriptionOverride(wallosSubscriptionId) {
       return db.delete(subscriptionOverrides).where(ownOverride(wallosSubscriptionId)).run().changes > 0;
+    },
+
+    insertOverwriteSnapshot(input) {
+      const id = randomUUID();
+      db.insert(overwriteSnapshots)
+        .values({
+          id,
+          userId,
+          matchId: input.matchId,
+          target: input.target,
+          targetId: input.targetId,
+          valuesJson: input.valuesJson,
+          createdAt: input.now,
+        })
+        .run();
+      const row = db
+        .select()
+        .from(overwriteSnapshots)
+        .where(and(eq(overwriteSnapshots.id, id), eq(overwriteSnapshots.userId, userId)))
+        .get();
+      if (row === undefined) throw new Error('overwrite snapshot missing after insert');
+      return row;
+    },
+
+    listOverwriteSnapshots() {
+      return db
+        .select()
+        .from(overwriteSnapshots)
+        .where(eq(overwriteSnapshots.userId, userId))
+        .orderBy(overwriteSnapshots.createdAt, overwriteSnapshots.id)
+        .all();
     },
   };
 }

@@ -2,21 +2,26 @@ import { useEffect, useId, useState } from 'react';
 import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
 import { ApiError } from '@/lib/api';
-import { prefillActualSchedule, type ActualSchedulePrefill } from '@/lib/create.api';
+import { createActualSchedule, prefillActualSchedule, type ActualSchedulePrefill, type CreateActualScheduleResult } from '@/lib/create.api';
+import { syncStore } from '@/lib/sync-check';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { createModalMessages } from './CreateModal.messages';
 import { everyKey, FIELD_CLASS } from './create-modal-shared';
-
-const NEW_PAYEE = '__new__';
+import { actualSubmitDisabled, buildActualBody, NEW_PAYEE, performCreate } from './create-submit';
 
 export interface CreateActualFormProps {
   prefill: ActualSchedulePrefill;
+  wallosId: string;
+  fetchImpl?: typeof fetch;
 }
 
-/** The pre-fill, three dropdowns and a Submit that stays disabled while creating is held. */
-export function CreateActualForm({ prefill }: CreateActualFormProps) {
-  const { t, locale } = useT(createModalMessages);
+/** The pre-fill, three dropdowns and a Submit that needs an account and is locked while in flight. */
+export function CreateActualForm({ prefill, wallosId, fetchImpl }: CreateActualFormProps) {
+  const { t, errorText, locale } = useT(createModalMessages);
+  const [pending, setPending] = useState(false);
+  const [created, setCreated] = useState<CreateActualScheduleResult | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const ids = { payee: useId(), newPayee: useId(), account: useId(), category: useId() };
   const [payee, setPayee] = useState(NEW_PAYEE);
   const [newName, setNewName] = useState(prefill.name);
@@ -29,6 +34,17 @@ export function CreateActualForm({ prefill }: CreateActualFormProps) {
       className="grid gap-3 text-sm"
       onSubmit={(e) => {
         e.preventDefault();
+        if (actualSubmitDisabled(account, pending) || created !== null) return;
+        setPending(true);
+        setErrorCode(null);
+        void performCreate(
+          () => createActualSchedule(buildActualBody(wallosId, account, payee, newName, category), fetchImpl),
+          () => syncStore.run(),
+        ).then((outcome) => {
+          if (outcome.ok) setCreated(outcome.result);
+          else setErrorCode(outcome.code);
+          setPending(false);
+        });
       }}
     >
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
@@ -94,9 +110,20 @@ export function CreateActualForm({ prefill }: CreateActualFormProps) {
           ))}
         </select>
       </label>
-      <p className="text-xs text-muted-foreground">{t('held')}</p>
-      <Button type="submit" size="sm" disabled title={t('held')} aria-label={`${t('submit')}. ${t('held')}`}>
-        {t('submit')}
+      {errorCode !== null ? <p role="alert" className="text-warning">{errorText(errorCode)}</p> : null}
+      {created !== null ? (
+        <div role="status" className="grid gap-1">
+          <p>{t('done')}</p>
+          {created.payeeCreated ? <p>{t('actual.payeeCreated')}</p> : null}
+          {created.categoryError === true ? <p className="text-warning">{t('actual.categoryError')}</p> : null}
+        </div>
+      ) : null}
+      <Button
+        type="submit"
+        size="sm"
+        disabled={actualSubmitDisabled(account, pending) || created !== null || (payee === NEW_PAYEE && newName.trim() === '')}
+      >
+        {pending ? t('creating') : t('submit')}
       </Button>
     </form>
   );
@@ -111,7 +138,7 @@ export interface CreateActualModalProps {
 
 type Load = { status: 'loading' } | { status: 'error'; code: string } | { status: 'ready'; prefill: ActualSchedulePrefill };
 
-/** Opened from a Wallos subscription. Loads the read-only pre-fill and never calls a create route. */
+/** Opened from a Wallos subscription. Loads the pre-fill; the create route is called only when the user submits. */
 export function CreateActualModal(props: CreateActualModalProps) {
   const { t, errorText } = useT(createModalMessages);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
@@ -138,7 +165,7 @@ export function CreateActualModal(props: CreateActualModalProps) {
         </DialogHeader>
         {load.status === 'loading' ? <p role="status">{t('loading')}</p> : null}
         {load.status === 'error' ? <p role="alert" className="text-warning">{errorText(load.code)}</p> : null}
-        {load.status === 'ready' ? <CreateActualForm prefill={load.prefill} /> : null}
+        {load.status === 'ready' ? <CreateActualForm prefill={load.prefill} wallosId={wallosId} fetchImpl={fetchImpl} /> : null}
         <DialogFooter>
           <Button type="button" variant="outline" size="sm" onClick={props.onClose}>
             {t('cancel')}

@@ -9,6 +9,7 @@ import {
   WallosConfigMissing,
   WallosHttpError,
   WallosNetworkError,
+  WallosRejectedError,
   createWallosClient,
 } from './client.js';
 import type { WallosCurrency } from './types.js';
@@ -336,6 +337,35 @@ describe('createWallosClient', () => {
       const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
       await expect(client.listCurrencies(c.userId)).rejects.toBeInstanceOf(WallosConfigMissing);
       expect(stub.calls).toHaveLength(0);
+    });
+  });
+  describe('updateSubscription', () => {
+    it('posts action=edit with id, only the given fields and api_key last, to the user host', async () => {
+      const stub = stubFetch(() => json({ success: true, title: 'Subscription updated' }));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await client.updateSubscription(a.userId, '7', { next_payment: '2026-11-03', price: '14.99' });
+      const call = stub.calls[0];
+      expect(call?.url).toBe('https://wallos-a.test/api/subscriptions/set_subscriptions.php');
+      expect(call?.method).toBe('POST');
+      const params = new URLSearchParams(call?.body);
+      expect([...params.keys()]).toEqual(['next_payment', 'price', 'action', 'id', 'api_key']);
+      expect(params.get('action')).toBe('edit');
+      expect(params.get('id')).toBe('7');
+      expect(params.get('api_key')).toBe(KEY_A);
+      expect(call?.url).not.toContain(KEY_A);
+    });
+
+    it('maps success:false to WallosAuthError or WallosRejectedError and rejects a non-numeric id before fetch', async () => {
+      let title = 'Invalid API key';
+      const stub = stubFetch(() => json({ success: false, title }));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      title = 'Unauthorized';
+      await expect(client.updateSubscription(a.userId, '7', { next_payment: '2026-11-03' })).rejects.toBeInstanceOf(WallosAuthError);
+      title = 'Invalid currency ID';
+      await expect(client.updateSubscription(a.userId, '7', { next_payment: '2026-11-03' })).rejects.toBeInstanceOf(WallosRejectedError);
+      const before = stub.calls.length;
+      await expect(client.updateSubscription(a.userId, '7&x=1', { next_payment: '2026-11-03' })).rejects.toBeInstanceOf(WallosRejectedError);
+      expect(stub.calls).toHaveLength(before);
     });
   });
 });

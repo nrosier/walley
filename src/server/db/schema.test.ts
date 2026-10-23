@@ -53,6 +53,7 @@ describe('migration', () => {
     expect(rows.map((r) => r.name)).toEqual([
       'email_verifications',
       'matches',
+      'overwrite_snapshots',
       'sessions',
       'subscription_overrides',
       'user_configs',

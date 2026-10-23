@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { SyncMismatch, SyncMismatchFields } from '../../../lib/sync-check-types';
 import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
+import type { OverwriteAction } from '@/lib/matches.api';
 import { driftedFields, type FieldKey } from '@/lib/resolve-mismatch';
 import { Button } from '../ui/button';
 import {
@@ -29,12 +30,14 @@ export interface DiffModalProps {
   baseCurrency: string;
   onClose: () => void;
   onIgnoreDiff: (matchId: string) => void;
+  /** Called only after the overwrite confirmation. */
+  onOverwrite: (matchId: string, action: OverwriteAction) => void;
   /** Called only after the Unlink confirmation. */
   onUnlink: (matchId: string) => void;
 }
 
 /** Wallos and Actual values of each drifted field, side by side, with the four resolve actions. */
-export function DiffModal({ mismatch, baseCurrency, onClose, onIgnoreDiff, onUnlink }: DiffModalProps) {
+export function DiffModal({ mismatch, baseCurrency, onClose, onIgnoreDiff, onOverwrite, onUnlink }: DiffModalProps) {
   const { t, locale } = useT(diffModalMessages);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
 
@@ -57,10 +60,14 @@ export function DiffModal({ mismatch, baseCurrency, onClose, onIgnoreDiff, onUnl
   };
 
   const rows = mismatch === null ? [] : driftedFields(mismatch.wallosFields, mismatch.actualFields);
-  const held = (label: string, titleKey: 'overwriteWallosConfirmTitle' | 'overwriteActualConfirmTitle') => (
+  const overwrite = (
+    label: string,
+    titleKey: 'overwriteWallosConfirmTitle' | 'overwriteActualConfirmTitle',
+    action: OverwriteAction,
+  ) => (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button type="button" variant="outline" disabled aria-describedby="diff-held">
+        <Button type="button" variant="outline">
           {label}
         </Button>
       </AlertDialogTrigger>
@@ -71,7 +78,13 @@ export function DiffModal({ mismatch, baseCurrency, onClose, onIgnoreDiff, onUnl
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-          <AlertDialogAction disabled>{t('confirm')}</AlertDialogAction>
+          <AlertDialogAction
+            onClick={() => {
+              if (mismatch !== null) onOverwrite(mismatch.matchId, action);
+            }}
+          >
+            {t('confirm')}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -110,10 +123,9 @@ export function DiffModal({ mismatch, baseCurrency, onClose, onIgnoreDiff, onUnl
               ))}
           </tbody>
         </table>
-        <p id="diff-held" className="text-xs text-muted-foreground">{t('held')}</p>
         <DialogFooter className="flex-wrap">
-          {held(t('overwriteWallos'), 'overwriteWallosConfirmTitle')}
-          {held(t('overwriteActual'), 'overwriteActualConfirmTitle')}
+          {overwrite(t('overwriteWallos'), 'overwriteWallosConfirmTitle', 'overwrite_wallos')}
+          {overwrite(t('overwriteActual'), 'overwriteActualConfirmTitle', 'overwrite_actual')}
           <Button type="button" variant="outline" onClick={() => {
               if (mismatch !== null) onIgnoreDiff(mismatch.matchId);
             }}>

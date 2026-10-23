@@ -62,6 +62,7 @@ describe('openDatabase', () => {
       '__drizzle_migrations',
       'email_verifications',
       'matches',
+      'overwrite_snapshots',
       'sessions',
       'subscription_overrides',
       'user_configs',
@@ -88,7 +89,7 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(5);
+    expect(journalCount(db)).toBe(6);
     const row = db.$client
       .prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u1'")
       .get() as { v: number | null };
@@ -109,11 +110,11 @@ describe('openDatabase', () => {
     first.$client
       .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
       .run('u1', 'a@example.com', Buffer.alloc(32, 1));
-    expect(journalCount(first)).toBe(5);
+    expect(journalCount(first)).toBe(6);
     closeDatabase(first);
 
     const second = track(openDatabase(path));
-    expect(journalCount(second)).toBe(5);
+    expect(journalCount(second)).toBe(6);
     const users = second.$client.prepare('SELECT id FROM users').all() as { id: string }[];
     expect(users).toEqual([{ id: 'u1' }]);
   });

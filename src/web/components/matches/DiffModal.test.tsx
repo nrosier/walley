@@ -6,6 +6,7 @@ import { applyResolve, driftedFields, performResolve } from '@/lib/resolve-misma
 import type { SyncCheckResult, SyncMismatch, SyncMismatchFields } from '../../../lib/sync-check-types';
 import src from './DiffModal.tsx?raw';
 import { DiffModal } from './DiffModal';
+import { diffModalMessages, isOverwriteErrorCode, OVERWRITE_ERROR_CODES } from './DiffModal.messages';
 
 const fields = (over: Partial<SyncMismatchFields> = {}): SyncMismatchFields => ({
   frequency: 'monthly',
@@ -72,7 +73,7 @@ describe('DiffModal markup', () => {
     expect(
       renderToStaticMarkup(
         <I18nProvider initialLocale="en">
-          <DiffModal mismatch={null} baseCurrency="EUR" onClose={() => undefined} onIgnoreDiff={() => undefined} onUnlink={() => undefined} />
+          <DiffModal mismatch={null} baseCurrency="EUR" onClose={() => undefined} onIgnoreDiff={() => undefined} onOverwrite={() => undefined} onUnlink={() => undefined} />
         </I18nProvider>,
       ),
     ).not.toContain('Overwrite Wallos');
@@ -97,23 +98,51 @@ describe('resolveMatch', () => {
 });
 
 describe('overwrite buttons', () => {
-  it('both are disabled in the markup and the component never imports an overwrite call', () => {
-    const out = renderToStaticMarkup(
-      <I18nProvider initialLocale="en">
-        <DiffModal mismatch={mismatch} baseCurrency="EUR" onClose={() => undefined} onIgnoreDiff={() => undefined} onUnlink={() => undefined} />
-      </I18nProvider>,
-    );
-    // Dialog content mounts only in a browser DOM, so check the source for the disabled buttons.
-    expect(out).toBeDefined();
-    expect(src).toMatch(/variant="outline" disabled/);
-    expect(src).not.toMatch(/overwrite_(wallos|actual)/);
+  it('are enabled, and only the confirmation action calls onOverwrite', () => {
+    expect(src).not.toMatch(/disabled/);
     expect(src).not.toMatch(/fetch|apiRequest|resolveMatch/);
+    // onOverwrite appears once in the call position: inside the AlertDialogAction onClick.
+    expect(src.match(/onOverwrite\(mismatch\.matchId, action\)/g)).toHaveLength(1);
+    const confirmBlock = src.slice(src.indexOf('<AlertDialogAction'), src.indexOf('</AlertDialogAction>'));
+    expect(confirmBlock).toContain('onOverwrite(mismatch.matchId, action)');
+    const cancelBlock = src.slice(src.indexOf('<AlertDialogCancel'), src.indexOf('</AlertDialogCancel>'));
+    expect(cancelBlock).not.toContain('onOverwrite');
+    expect(src).toContain("'overwrite_wallos'");
+    expect(src).toContain("'overwrite_actual'");
   });
-  it('the resolve client has no overwrite action', async () => {
+  it.each(['overwrite_wallos', 'overwrite_actual'] as const)('%s sends the action with confirm true, once', async (action) => {
     const f = ok();
-    await performResolve(() => result(), () => undefined, 'm1', 'ignore_diff', () => Promise.resolve(), f);
+    const refresh = vi.fn(() => Promise.resolve());
+    expect(f).not.toHaveBeenCalled(); // nothing is sent until the confirmation calls performResolve
+    const out = await performResolve(() => result(), () => undefined, 'm1', action, refresh, f);
+    expect(out).toEqual({ ok: true });
     expect(f).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(body(f))).not.toContain('overwrite');
+    expect((f.mock.calls[0] as unknown as [string])[0]).toBe('/api/matches/m1/resolve');
+    expect(body(f)).toEqual({ action, confirm: true });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+  it('a failed overwrite rolls back only that row', async () => {
+    const other = { ...mismatch, matchId: 'm2' };
+    let state: SyncCheckResult = { ...result(), mismatches: [mismatch, other] };
+    const before = state;
+    const f = vi.fn(() => Promise.resolve(Response.json({ error: 'overwrite_unverified' }, { status: 409 })));
+    const refresh = vi.fn(() => Promise.resolve());
+    const out = await performResolve(() => state, (r) => (state = r), 'm1', 'overwrite_wallos', refresh, f);
+    expect(out).toEqual({ ok: false, code: 'overwrite_unverified' });
+    expect(state.mismatches.map((m) => m.matchId).sort()).toEqual(['m1', 'm2']);
+    expect(state.linked).toEqual(before.linked);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+  it.each(OVERWRITE_ERROR_CODES)('maps %s to a fixed en and nl message', (code) => {
+    expect(isOverwriteErrorCode(code)).toBe(true);
+    for (const l of ['en', 'nl'] as const) {
+      const msg = diffModalMessages[l].overwriteErrors[code];
+      expect(msg.length).toBeGreaterThan(10);
+    }
+    expect(diffModalMessages.en.overwriteErrors[code]).not.toBe(diffModalMessages.nl.overwriteErrors[code]);
+  });
+  it('unknown server text is not a mapped code', () => {
+    expect(isOverwriteErrorCode('boom: raw server text')).toBe(false);
   });
 });
 

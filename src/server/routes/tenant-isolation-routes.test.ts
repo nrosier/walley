@@ -205,6 +205,7 @@ const B_TABLES = [
   ['user_identities', 'user_id'],
   ['email_verifications', 'user_id'],
   ['subscription_overrides', 'user_id'],
+  ['overwrite_snapshots', 'user_id'],
 ] as const;
 
 /** Every row B owns, as the raw database holds it. Includes session rows and password hashes. */
@@ -423,6 +424,38 @@ const CASES: Record<string, Case> = {
       expect(writes.createSubscription).not.toHaveBeenCalled();
     },
   },
+  'POST /api/integrations/actual-schedules/prefill': {
+    why: "A's Wallos list does not hold B's subscription: not found, read-only, no write client called",
+    attempts: () => [
+      {
+        method: 'POST',
+        url: '/api/integrations/actual-schedules/prefill',
+        payload: { wallosSubscriptionId: String(B_SUB_ID) },
+        status: NOT_FOUND,
+        error: 'wallos_subscription_not_found',
+      },
+    ],
+    after: ({ writes }) => {
+      expect(writes.createSchedule).not.toHaveBeenCalled();
+      expect(writes.createSubscription).not.toHaveBeenCalled();
+    },
+  },
+  'POST /api/integrations/wallos-subscriptions/prefill': {
+    why: "A's budget does not hold B's schedule: not found, read-only, no write client called",
+    attempts: () => [
+      {
+        method: 'POST',
+        url: '/api/integrations/wallos-subscriptions/prefill',
+        payload: { scheduleId: B_SCHEDULE_ID },
+        status: NOT_FOUND,
+        error: 'schedule_not_found',
+      },
+    ],
+    after: ({ writes }) => {
+      expect(writes.createSchedule).not.toHaveBeenCalled();
+      expect(writes.createSubscription).not.toHaveBeenCalled();
+    },
+  },
   'POST /api/sync/check': {
     why: "runs for the session user; B's matches and remote items never appear in A's result",
     attempts: () => [
@@ -496,6 +529,13 @@ const CASES: Record<string, Case> = {
         status: NOT_FOUND,
         error: 'match_not_found',
       },
+      ...(['overwrite_wallos', 'overwrite_actual'] as const).map((action) => ({
+        method: 'POST' as const,
+        url: `/api/matches/${m.mismatch.id}/resolve`,
+        payload: { action, confirm: true },
+        status: NOT_FOUND,
+        error: 'match_not_found',
+      })),
       {
         method: 'POST',
         url: `/api/matches/${m.linked.id}/resolve`,

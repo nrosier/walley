@@ -136,3 +136,21 @@ export function buildWallosSubscriptionPayload(
   }
   return payload;
 }
+
+/**
+ * Form fields for `edit` on ellite/Wallos api/subscriptions/set_subscriptions.php. Wallos keeps the
+ * stored value of every field that is not sent, so only changed fields are included, with one
+ * exception: `next_payment` is validated as YYYY-MM-DD on every edit, so it is always sent. Never
+ * add payment_method_id, category_id, payer_user_id, notify, inactive or notes here: sending
+ * category_id or payer_user_id replaces the whole list. `id`, `action` and `api_key` are added by
+ * the client.
+ */
+export type WallosSubscriptionUpdate = {
+  readonly next_payment: string;
+  readonly name?: string;
+  readonly price?: string;
+  readonly currency_id?: string;
+  readonly cycle?: string;
+  readonly frequency?: string;
+  readonly start_date?: string;
+};

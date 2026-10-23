@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { CreateDeps } from '../integrations/create.js';
 import { DEFAULT_TOLERANCE_PERCENT } from '../../lib/amount-match.js';
 import { hashMatchFields } from '../matching/hash.js';
+import { OverwriteReadbackError, overwriteActual, overwriteWallos } from '../matching/overwrite.js';
 import { isCandidate, readCurrentSides } from '../matching/sync-check.js';
 import { sendFailure } from './integrations.js';
 
@@ -33,11 +34,13 @@ const ALREADY_MATCHED = { error: 'already_matched' } as const;
  * /api/matches/:id restores an ignored item. These write only Walley's own matches table; the
  * link route reads both sides through readCurrentSides, the other two read nothing remote.
  *
- * POST /api/matches/:id/resolve. Only the two actions that write Walley's own data are built:
- * `ignore_diff` and `unlink`. Every other action (including the held `overwrite_wallos` and
- * `overwrite_actual`) answers 400 `unsupported_action` before anything is read or written. No
- * Wallos or Actual client is reachable from here. The match is looked up through the signed-in
- * user's repo only, so another user's id is a 404. Responses carry fixed codes, never ids.
+ * POST /api/matches/:id/resolve. `ignore_diff` and `unlink` write only Walley's own data.
+ * `overwrite_wallos` and `overwrite_actual` write to the remote side (see matching/overwrite.ts):
+ * they need `confirm: true` and a MISMATCH_DETECTED match, snapshot the target record first, and
+ * store server-computed hashes read back after the write. Any other action answers 400
+ * `unsupported_action` before anything is read or written. The match is looked up through the
+ * signed-in user's repo only, so another user's id is a 404 with no remote call. Responses carry
+ * fixed codes, never ids.
  */
 export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (app, opts) => {
   app.post<{ Params: { id: string } }>('/matches/:id/resolve', async (request, reply) => {
@@ -58,10 +61,15 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
     }
     const action = (body as Record<string, unknown>)['action'];
     const confirm = (body as Record<string, unknown>)['confirm'];
-    if (action !== 'ignore_diff' && action !== 'unlink') {
+    if (
+      action !== 'ignore_diff' &&
+      action !== 'unlink' &&
+      action !== 'overwrite_wallos' &&
+      action !== 'overwrite_actual'
+    ) {
       return reply.code(400).send({ error: 'unsupported_action' });
     }
-    if (action === 'unlink' && confirm !== true) {
+    if (action !== 'ignore_diff' && confirm !== true) {
       return reply.code(400).send({ error: 'confirmation_required' });
     }
     try {
@@ -89,12 +97,27 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
         repo.updateMatch(id, { status: 'LINKED', lastKnownWallosHash: wallosHash, lastKnownActualHash: actualHash });
         return await reply.code(200).send({ status: 'LINKED' });
       }
+      if (action === 'overwrite_wallos' || action === 'overwrite_actual') {
+        if (match.status !== 'MISMATCH_DETECTED') {
+          return await reply.code(400).send({ error: 'invalid_state' });
+        }
+        const run = action === 'overwrite_wallos' ? overwriteWallos : overwriteActual;
+        const outcome = await run(opts.deps, request.auth.userId, match, new Date());
+        if (outcome === 'no_change_needed') {
+          // Nothing differed, so nothing was written and the match is still MISMATCH_DETECTED.
+          return await reply.code(200).send({ status: 'MISMATCH_DETECTED', outcome: 'no_change_needed' });
+        }
+        return await reply.code(200).send({ status: 'LINKED' });
+      }
       if (match.status !== 'LINKED' && match.status !== 'MISMATCH_DETECTED') {
         return await reply.code(400).send({ error: 'invalid_state' });
       }
       repo.deleteMatch(id);
       return await reply.code(200).send({ status: 'UNLINKED' });
     } catch (error: unknown) {
+      if (error instanceof OverwriteReadbackError) {
+        return reply.code(502).send({ error: 'overwrite_unverified' });
+      }
       return sendFailure(reply, error);
     }
   });

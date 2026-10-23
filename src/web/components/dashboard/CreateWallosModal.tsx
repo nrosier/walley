@@ -1,21 +1,43 @@
 import { useEffect, useState } from 'react';
 import { useT } from '@/i18n';
 import { ApiError } from '@/lib/api';
-import { prefillWallosSubscription, type WallosSubscriptionPrefill } from '@/lib/create.api';
+import { createWallosSubscription, prefillWallosSubscription, type WallosSubscriptionPrefill } from '@/lib/create.api';
+import { syncStore } from '@/lib/sync-check';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { createModalMessages } from './CreateModal.messages';
 import { cycleKey } from './create-modal-shared';
+import { performCreate, wallosSubmitDisabled } from './create-submit';
 
-/** The pre-fill and a Submit that stays disabled while creating is held. */
-export function CreateWallosForm({ prefill }: { prefill: WallosSubscriptionPrefill }) {
-  const { t } = useT(createModalMessages);
+export interface CreateWallosFormProps {
+  prefill: WallosSubscriptionPrefill;
+  scheduleId: string;
+  fetchImpl?: typeof fetch;
+}
+
+/** The pre-fill and a Submit that is locked while the request is in flight. */
+export function CreateWallosForm({ prefill, scheduleId, fetchImpl }: CreateWallosFormProps) {
+  const { t, errorText } = useT(createModalMessages);
+  const [pending, setPending] = useState(false);
+  const [created, setCreated] = useState(false);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const cycle = cycleKey(prefill.cycle, prefill.frequency);
   return (
     <form
       className="grid gap-3 text-sm"
       onSubmit={(e) => {
         e.preventDefault();
+        if (wallosSubmitDisabled(pending) || created) return;
+        setPending(true);
+        setErrorCode(null);
+        void performCreate(
+          () => createWallosSubscription(scheduleId, fetchImpl),
+          () => syncStore.run(),
+        ).then((outcome) => {
+          if (outcome.ok) setCreated(true);
+          else setErrorCode(outcome.code);
+          setPending(false);
+        });
       }}
     >
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
@@ -30,9 +52,10 @@ export function CreateWallosForm({ prefill }: { prefill: WallosSubscriptionPrefi
         <dt className="text-muted-foreground">{t('wallos.startDate')}</dt>
         <dd className="font-mono">{prefill.startDate ?? prefill.nextPayment}</dd>
       </dl>
-      <p className="text-xs text-muted-foreground">{t('held')}</p>
-      <Button type="submit" size="sm" disabled title={t('held')} aria-label={`${t('submit')}. ${t('held')}`}>
-        {t('submit')}
+      {errorCode !== null ? <p role="alert" className="text-warning">{errorText(errorCode)}</p> : null}
+      {created ? <p role="status">{t('done')}</p> : null}
+      <Button type="submit" size="sm" disabled={wallosSubmitDisabled(pending) || created}>
+        {pending ? t('creating') : t('submit')}
       </Button>
     </form>
   );
@@ -50,7 +73,7 @@ type Load =
   | { status: 'error'; code: string }
   | { status: 'ready'; prefill: WallosSubscriptionPrefill };
 
-/** Opened from an Actual schedule. Loads the read-only pre-fill and never calls a create route. */
+/** Opened from an Actual schedule. Loads the pre-fill; the create route is called only when the user submits. */
 export function CreateWallosModal(props: CreateWallosModalProps) {
   const { t, errorText } = useT(createModalMessages);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
@@ -77,7 +100,7 @@ export function CreateWallosModal(props: CreateWallosModalProps) {
         </DialogHeader>
         {load.status === 'loading' ? <p role="status">{t('loading')}</p> : null}
         {load.status === 'error' ? <p role="alert" className="text-warning">{errorText(load.code)}</p> : null}
-        {load.status === 'ready' ? <CreateWallosForm prefill={load.prefill} /> : null}
+        {load.status === 'ready' ? <CreateWallosForm prefill={load.prefill} scheduleId={scheduleId} fetchImpl={fetchImpl} /> : null}
         <DialogFooter>
           <Button type="button" variant="outline" size="sm" onClick={props.onClose}>
             {t('cancel')}

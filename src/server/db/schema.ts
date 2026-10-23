@@ -172,11 +172,37 @@ export const subscriptionOverrides = sqliteTable(
   ],
 );
 
+/**
+ * Copy of a remote record taken just before an overwrite changes it, so a bad overwrite can be
+ * restored by hand. `values_json` is the JSON of the Wallos subscription (documented fields only)
+ * or the Actual schedule. It holds no credentials. `match_id` has no foreign key: unlinking
+ * deletes the match, and the snapshot must outlive it. Cascades with the user.
+ */
+export const overwriteSnapshots = sqliteTable(
+  'overwrite_snapshots',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    matchId: text('match_id').notNull(),
+    target: text('target', { enum: ['wallos', 'actual'] }).notNull(),
+    targetId: text('target_id').notNull(),
+    valuesJson: text('values_json').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('overwrite_snapshots_user_id_idx').on(t.userId),
+    check('overwrite_snapshots_target_check', sql`${t.target} IN ('wallos','actual')`),
+  ],
+);
+
 export type UserRow = typeof users.$inferSelect;
 export type UserIdentityRow = typeof userIdentities.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
 export type EmailVerificationRow = typeof emailVerifications.$inferSelect;
 export type UserConfigRow = typeof userConfigs.$inferSelect;
 export type SubscriptionOverrideRow = typeof subscriptionOverrides.$inferSelect;
+export type OverwriteSnapshotRow = typeof overwriteSnapshots.$inferSelect;
 export type MatchRow = typeof matches.$inferSelect;
 export type NewMatchRow = typeof matches.$inferInsert;

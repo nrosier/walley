@@ -11,7 +11,7 @@ export function driftedFields(wallos: SyncMismatchFields, actual: SyncMismatchFi
   return KEYS.filter((k) => JSON.stringify(wallos[k]) !== JSON.stringify(actual[k]));
 }
 
-/** Optimistic resolve: the row leaves mismatches[]; Ignore Diff makes it LINKED, Unlink drops it from linked[]. */
+/** Optimistic resolve: the row leaves mismatches[]; Ignore Diff and the overwrites make it LINKED, Unlink drops it from linked[]. */
 export function applyResolve(result: SyncCheckResult, matchId: string, action: ResolveAction): SyncCheckResult {
   const mismatches = result.mismatches.filter((m) => m.matchId !== matchId);
   const linked =
@@ -57,7 +57,11 @@ export async function performResolve(
   if (snapshot === null) return { ok: false, code: 'request_failed' };
   set(applyResolve(snapshot, matchId, action));
   try {
-    await resolveMatch(matchId, action, fetchImpl);
+    // The server wrote nothing and kept the mismatch: undo the optimistic change and say so.
+    if ((await resolveMatch(matchId, action, fetchImpl)) === 'no_change_needed') {
+      set(rollbackResolve(get() ?? snapshot, snapshot, matchId));
+      return { ok: false, code: 'no_change_needed' };
+    }
   } catch (error: unknown) {
     set(rollbackResolve(get() ?? snapshot, snapshot, matchId));
     return { ok: false, code: error instanceof ApiError ? error.code : 'request_failed' };

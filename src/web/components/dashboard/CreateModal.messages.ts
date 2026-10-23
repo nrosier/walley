@@ -1,6 +1,7 @@
 const en = {
   loading: 'Loading the pre-fill...',
-  held: 'Held: creating items arrives in a later release.',
+  creating: 'Creating...',
+  done: 'Created.',
   submit: 'Create',
   cancel: 'Cancel',
   actual: {
@@ -18,6 +19,8 @@ const en = {
     accountRequired: 'An account is required.',
     category: 'Category',
     categoryNone: 'No category',
+    payeeCreated: 'A new payee was created.',
+    categoryError: 'The schedule was created, but the category could not be set.',
   },
   wallos: {
     title: 'Create Wallos subscription',
@@ -37,7 +40,8 @@ const en = {
 
 const nl: typeof en = {
   loading: 'Voorinvulling laden...',
-  held: 'Vastgehouden: items aanmaken volgt in een latere versie.',
+  creating: 'Aanmaken...',
+  done: 'Aangemaakt.',
   submit: 'Aanmaken',
   cancel: 'Annuleren',
   actual: {
@@ -55,6 +59,8 @@ const nl: typeof en = {
     accountRequired: 'Een rekening is verplicht.',
     category: 'Categorie',
     categoryNone: 'Geen categorie',
+    payeeCreated: 'Er is een nieuwe begunstigde aangemaakt.',
+    categoryError: 'Het schema is aangemaakt, maar de categorie kon niet worden ingesteld.',
   },
   wallos: {
     title: 'Wallos-abonnement aanmaken',

@@ -259,10 +259,10 @@ describe('POST /api/matches/:id/resolve', () => {
     noCalls();
   });
 
-  it('answers 400 unsupported_action for held and unknown actions and calls nothing', async () => {
+  it('answers 400 unsupported_action for unknown actions and calls nothing', async () => {
     const { app, sa, row, repoA, noCalls } = setup();
     const m = row('MISMATCH_DETECTED');
-    for (const action of ['overwrite_wallos', 'overwrite_actual', 'bogus', 5]) {
+    for (const action of ['bogus', 5]) {
       const res = await injectAs(app, sa, { method: 'POST', url: url(m.id), payload: { action, confirm: true } });
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'unsupported_action' });
