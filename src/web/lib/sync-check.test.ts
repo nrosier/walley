@@ -203,3 +203,55 @@ describe('sync store', () => {
     expect(store.getState()).toMatchObject({ status: 'error', errorCode: 'wallos_unavailable', result: null });
   });
 });
+
+describe('row actions update the shared store without a refetch (#48, #49)', () => {
+  const setup = () => {
+    const stub = vi.fn(async () => json(201, { id: 'm1', status: 'LINKED' }));
+    const store = createSyncStore(stub);
+    store.setResult(sample());
+    const run = (action: Parameters<typeof performAction>[2]) =>
+      performAction(() => store.getState().result, store.setResult, action, stub);
+    return { stub, store, run };
+  };
+  const urls = (stub: ReturnType<typeof setup>['stub']) =>
+    stub.mock.calls.map((c) => (c as unknown as [string, RequestInit])[0]);
+
+  it('Link started from the Actual column updates the store and calls only the match route once', async () => {
+    const { stub, store, run } = setup();
+    const out = await run({ kind: 'link', wallosId: 'w1', actualScheduleId: 'a1' });
+    expect(out).toEqual({ ok: true });
+    expect(stub).toHaveBeenCalledTimes(1);
+    expect(urls(stub)).toEqual(['/api/matches']);
+    expect(store.getState()).toMatchObject({ status: 'ready', errorCode: null });
+    expect(store.getState().result?.linked).toHaveLength(1);
+    expect(store.getState().result?.unlinkedActual.map((i) => i.id)).toEqual(['a2']);
+  });
+
+  it('Ignore on the Wallos side updates the store and calls only the ignore route once', async () => {
+    const { stub, store, run } = setup();
+    const out = await run({ kind: 'ignore', side: 'wallos', itemId: 'w2' });
+    expect(out).toEqual({ ok: true });
+    expect(stub).toHaveBeenCalledTimes(1);
+    expect(urls(stub)).toEqual(['/api/matches/ignore']);
+    expect(store.getState().result?.unlinkedWallos.map((i) => i.id)).toEqual(['w1']);
+    expect(store.getState().result?.ignored.at(-1)).toMatchObject({ side: 'wallos', itemId: 'w2' });
+  });
+
+  it('Ignore on the Actual side updates the store and calls only the ignore route once', async () => {
+    const { stub, store, run } = setup();
+    const out = await run({ kind: 'ignore', side: 'actual', itemId: 'a2' });
+    expect(out).toEqual({ ok: true });
+    expect(stub).toHaveBeenCalledTimes(1);
+    expect(urls(stub)).toEqual(['/api/matches/ignore']);
+    expect(store.getState().result?.unlinkedActual.map((i) => i.id)).toEqual(['a1']);
+    expect(store.getState().result?.ignored.at(-1)).toMatchObject({ side: 'actual', itemId: 'a2' });
+  });
+
+  it('never requests /api/sync/check during a row action', async () => {
+    const { stub, run } = setup();
+    await run({ kind: 'link', wallosId: 'w1', actualScheduleId: 'a1' });
+    await run({ kind: 'ignore', side: 'wallos', itemId: 'w2' });
+    await run({ kind: 'ignore', side: 'actual', itemId: 'a2' });
+    expect(urls(stub).some((u) => u.includes('sync/check'))).toBe(false);
+  });
+});

@@ -215,6 +215,23 @@ describe('POST /api/matches', () => {
     expect(repoA.listMatches().map((m) => m.id)).toEqual([idA]);
   });
 
+  it('B ignoring an item does not block A from linking it; B ignored row is untouched', async () => {
+    const { app, sa, sb, repoB, noWrites } = setup();
+    const ignored = await injectAs(app, sb, ignore('wallos', '7'));
+    expect(ignored.statusCode).toBe(201);
+    const idB = ignored.json<{ id: string }>().id;
+    const rowB = repoB.getMatch(idB);
+    expect(rowB).toBeDefined();
+
+    const ra = await injectAs(app, sa, link('7', 'sch-a'));
+    expect(ra.statusCode).toBe(201);
+    expect(ra.json<{ status: string }>().status).toBe('LINKED');
+
+    expect(repoB.getMatch(idB)).toEqual(rowB);
+    expect(repoB.listMatches()).toEqual([rowB]);
+    noWrites();
+  });
+
   it('401 without a session and 403 csrf_failed without the token', async () => {
     const { app, sa } = setup();
     const none = await app.inject({ ...link('7', 'sch-a'), headers: { origin: TEST_ORIGIN } });
@@ -269,6 +286,23 @@ describe('POST /api/matches/ignore', () => {
     const res = await app.inject({ ...ignore('wallos', '7'), headers: { origin: TEST_ORIGIN, cookie: sa.cookie } });
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'csrf_failed' });
+  });
+
+  it('A can ignore an item B has linked (201, not 409); B LINKED row is unchanged', async () => {
+    const { app, sa, sb, repoB, noWrites } = setup();
+    const linked = await injectAs(app, sb, link('7', 'sch-a'));
+    expect(linked.statusCode).toBe(201);
+    const idB = linked.json<{ id: string }>().id;
+    const rowB = repoB.getMatch(idB);
+    expect(rowB).toBeDefined();
+
+    const ra = await injectAs(app, sa, ignore('wallos', '7'));
+    expect(ra.statusCode).toBe(201);
+    expect(ra.json<{ status: string }>().status).toBe('IGNORED_WALLOS');
+
+    expect(repoB.getMatch(idB)).toEqual(rowB);
+    expect(repoB.listMatches()).toEqual([rowB]);
+    noWrites();
   });
 
   it('two users ignore the same Wallos id independently', async () => {

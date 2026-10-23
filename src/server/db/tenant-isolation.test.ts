@@ -40,6 +40,14 @@ describe('tenant isolation', () => {
     expect(b.getMatch(theirs.id)).toEqual(theirs);
   });
 
+  it('A findMatchByItem of B wallos or actual id is undefined', () => {
+    const theirs = b.insertMatch({ wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' });
+    expect(a.findMatchByItem('wallos', 'w1')).toBeUndefined();
+    expect(a.findMatchByItem('actual', 'a1')).toBeUndefined();
+    expect(b.findMatchByItem('wallos', 'w1')).toEqual(theirs);
+    expect(b.findMatchByItem('actual', 'a1')).toEqual(theirs);
+  });
+
   it('A updateMatch of a B match id returns false and leaves the row unchanged', () => {
     const theirs = b.insertMatch({ wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' });
     expect(a.updateMatch(theirs.id, { status: 'MISMATCH_DETECTED', lastKnownWallosHash: 'x' })).toBe(

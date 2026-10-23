@@ -8,7 +8,16 @@ import storeSrc from '@/lib/sync-check.ts?raw';
 import apiSrc from '@/lib/matches.api.ts?raw';
 import rowSrc from '@/components/dashboard/ItemRow.tsx?raw';
 import toolbarSrc from '@/components/dashboard/Toolbar.tsx?raw';
+import wallosColumnSrc from '@/components/dashboard/WallosColumn.tsx?raw';
+import actualColumnSrc from '@/components/dashboard/ActualColumn.tsx?raw';
 import { SyncDashboardView, type SyncDashboardViewProps } from './SyncDashboard';
+
+/** The markup of one column: from its data-column marker to the closing section tag. */
+const columnOf = (html: string, side: 'wallos' | 'actual') => {
+  const start = html.indexOf(`data-column="${side}"`);
+  expect(start, `${side} column`).toBeGreaterThan(-1);
+  return html.slice(start, html.indexOf('</section>', start));
+};
 
 const render = (state: SyncStoreState, extra: Partial<SyncDashboardViewProps> = {}, locale: Locale = 'en') =>
   renderToStaticMarkup(
@@ -70,6 +79,44 @@ describe('SyncDashboard states', () => {
     expect(buttons).toHaveLength(4);
     expect(buttons.every((b) => b.includes('disabled=""'))).toBe(true);
   });
+  it('right column (Actual) renders Link, a disabled Create in Wallos, and Ignore (#49)', () => {
+    const column = columnOf(render(ready()), 'actual');
+    expect(column).toContain('Actual Budget schedules');
+    expect(column.match(/>Link<\/button>/g)).toHaveLength(1);
+    expect(column).toContain('>Link<');
+    const creates = column.match(/<button[^>]*>Create in Wallos<\/button>/g) ?? [];
+    expect(creates).toHaveLength(2);
+    expect(creates.every((b) => b.includes('disabled=""'))).toBe(true);
+    expect(column.match(/>Ignore<\/button>/g)).toHaveLength(2);
+  });
+  it('left column (Wallos) renders Link, a disabled Create in AB, and Ignore (#48)', () => {
+    const column = columnOf(render(ready()), 'wallos');
+    expect(column).toContain('Wallos subscriptions');
+    expect(column.match(/>Link<\/button>/g)).toHaveLength(1);
+    const creates = column.match(/<button[^>]*>Create in AB<\/button>/g) ?? [];
+    expect(creates).toHaveLength(2);
+    expect(creates.every((b) => b.includes('disabled=""'))).toBe(true);
+    expect(column.match(/>Ignore<\/button>/g)).toHaveLength(2);
+  });
+  it('Create buttons carry the held text in their label and have no click handler', () => {
+    const held = 'Held: creating items arrives in a later release.';
+    const html = render(ready());
+    const wallosCreates = columnOf(html, 'wallos').match(/<button[^>]*>Create in AB<\/button>/g) ?? [];
+    const actualCreates = columnOf(html, 'actual').match(/<button[^>]*>Create in Wallos<\/button>/g) ?? [];
+    expect(wallosCreates.every((b) => b.includes(`aria-label="Create in AB. ${held}"`))).toBe(true);
+    expect(actualCreates.every((b) => b.includes(`aria-label="Create in Wallos. ${held}"`))).toBe(true);
+    expect([...wallosCreates, ...actualCreates].some((b) => /onclick/i.test(b))).toBe(false);
+    const createTag = rowSrc.match(/<Button[^>]*disabled[^>]*aria-label=\{`\$\{props\.createLabel\}[^>]*>/)?.[0] ?? '';
+    expect(createTag).not.toBe('');
+    expect(createTag).not.toMatch(/onClick/);
+  });
+  it('the dashboard and its column and row sources make no /api/integrations call', () => {
+    const files: Record<string, string> = { dashboardSrc, storeSrc, apiSrc, rowSrc, toolbarSrc, wallosColumnSrc, actualColumnSrc };
+    for (const [f, src] of Object.entries(files)) {
+      expect(src, f).not.toContain('/api/integrations');
+    }
+  });
+
   it('Show Ignored Items shows ignored rows with the badge', () => {
     expect(render(ready())).not.toContain('Old');
     const html = render(ready(), { showIgnored: true });
