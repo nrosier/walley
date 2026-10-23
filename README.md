@@ -4,7 +4,7 @@ Walley is a multi-user web app that keeps recurring subscriptions in sync betwee
 
 Each user connects their own Wallos and Actual Budget instances. Credentials are encrypted at rest.
 
-> **Status:** early development. The server, database, secret encryption and the web shell run. Sign-in (M3) and the sync features are not built yet, so there is no sign-in or sync screen to use.
+> **Status:** early development. Sign-in works in both modes: email and password with email verification (local), and single sign-on (OIDC). The sync features are still in progress.
 
 ## Features
 
@@ -28,12 +28,13 @@ These commands run the app locally. `npm run dev` starts the API and the Vite de
 ```bash
 npm ci
 cp .env.example .env   # then set APP_SECRET, PUBLIC_ORIGIN, DATABASE_PATH and DATA_DIR
+npm test               # run the test suite
 npm run dev
 ```
 
 The dev server starts the Fastify backend and the Vite frontend. Open the URL that Vite prints.
 
-Local development needs `PUBLIC_ORIGIN=http://127.0.0.1:5173`, the Vite dev server origin.
+Local development needs `PUBLIC_ORIGIN=http://127.0.0.1:5173`, the Vite dev server origin. Verification links in email use `PUBLIC_ORIGIN`, so they only work when it matches the origin you open.
 
 ## Scripts
 
@@ -82,6 +83,23 @@ Walley uses one of two sign-in modes, depending on the OIDC variables.
 - **OIDC mode** (all four OIDC variables set): single sign-on is the only way in. Password login, registration and password change are turned off. A first sign-on creates a new account only when `ALLOW_REGISTRATION` is `true`.
 
 Registration is off by default. Turn it on only for an instance you trust, or to create the first account and then turn it off again.
+
+### First run in local mode
+
+1. In `.env`, set `APP_SECRET`, `PUBLIC_ORIGIN`, `DATABASE_PATH` and `DATA_DIR`, then set `ALLOW_REGISTRATION=true`, `SMTP_URL` and `MAIL_FROM`.
+2. Start Walley with `npm run dev` (or your built or Docker setup).
+3. Open the app, choose **Create an account**, and enter your email and password. The page says to check your email whatever the outcome, and it does not sign you in.
+4. Open the verification link in the email. It opens `/verify-email` with the token in the URL fragment, and the page sends it to `POST /api/auth/verify-email`. The link expires after 24 hours.
+5. Sign in with your email and password.
+6. Set `ALLOW_REGISTRATION=false` and restart Walley, so no one else can register.
+
+### OIDC provider setup
+
+1. Register Walley as a web client with your identity provider. Walley uses client secret basic authentication and PKCE.
+2. Set the redirect (callback) URL to `<PUBLIC_ORIGIN>/api/auth/oidc/callback`, for example `https://walley.example.com/api/auth/oidc/callback`.
+3. Request the `openid` and `email` scopes. Walley asks for nothing else.
+4. Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `OIDC_CALLBACK_URL` to the provider's issuer, the client ID, the client secret and the callback URL from step 2. Set all four, or none.
+5. The provider must send `email_verified: true` in the ID token. Walley links a sign-in to an existing account only when the email is verified and matches that account. Without it, the sign-in is not linked to the account.
 
 **Moving from local mode to OIDC mode.** An existing account is linked on its first single sign-on if your identity provider reports the same email address as verified. The account keeps its saved connections and matches. Accounts that are not linked cannot sign in until the email addresses match. Password sessions end when Walley restarts in OIDC mode.
 

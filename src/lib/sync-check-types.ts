@@ -2,6 +2,7 @@
  * Response types of POST /api/sync/check, shared by the server (`src/server/matching/sync-check.ts`)
  * and the web app. Types only, browser-safe.
  */
+import type { MatchAmount } from './match-fields.js';
 import type { MatchStatus } from './match-status.js';
 
 export type UnmappableReason =
@@ -36,6 +37,16 @@ export interface SyncCandidate {
   readonly isRange: boolean;
 }
 
+/** One side's compared fields on a mismatch. Amount is in the base currency (range: both bounds). */
+export interface SyncMismatchFields {
+  readonly frequency: string;
+  /** Repeat every N units; a missing interval is folded to 1. */
+  readonly interval: number;
+  readonly startDate: string | null;
+  readonly currency: string;
+  readonly amount: MatchAmount;
+}
+
 export interface SyncMismatch {
   readonly matchId: string;
   readonly wallosId: string;
@@ -47,6 +58,8 @@ export interface SyncMismatch {
   readonly isRange: boolean;
   readonly wallosDrift: boolean;
   readonly actualDrift: boolean;
+  readonly wallosFields: SyncMismatchFields;
+  readonly actualFields: SyncMismatchFields;
 }
 
 export interface SyncUnmappable {

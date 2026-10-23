@@ -7,6 +7,8 @@ import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
 import { StatusBadge } from '../StatusBadge';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { CreateActualModal } from './CreateActualModal';
+import { CreateWallosModal } from './CreateWallosModal';
 
 export interface ItemRowProps {
   row: RowModel;
@@ -32,6 +34,7 @@ export function ItemRow(props: ItemRowProps) {
     side === 'wallos' ? c.wallosId === row.id : c.actualScheduleId === row.id,
   );
   const [chosen, setChosen] = useState(0);
+  const [creating, setCreating] = useState(false);
   const pick = mine[Math.min(chosen, mine.length - 1)];
   const otherName = (c: SyncCandidate) => (side === 'wallos' ? c.actualName : c.wallosName);
   const otherCents = (c: SyncCandidate) => (side === 'wallos' ? c.actualAmountCents : c.wallosAmountCents);
@@ -91,11 +94,16 @@ export function ItemRow(props: ItemRowProps) {
               </Button>
             </>
           ) : null}
-          <span title={t('row.held')}>
-            <Button type="button" size="xs" variant="outline" disabled aria-label={`${props.createLabel}. ${t('row.held')}`}>
-              {props.createLabel}
-            </Button>
-          </span>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              setCreating(true);
+            }}
+          >
+            {props.createLabel}
+          </Button>
           <Button type="button" size="xs" variant="ghost" onClick={() => props.onIgnore?.(side, row.id)}>
             {t('row.ignore')}
           </Button>
@@ -113,6 +121,24 @@ export function ItemRow(props: ItemRowProps) {
             {t('row.restore')}
           </Button>
         </div>
+      ) : null}
+      {creating && side === 'wallos' ? (
+        <CreateActualModal
+          wallosId={row.id}
+          wallosName={row.name}
+          onClose={() => {
+            setCreating(false);
+          }}
+        />
+      ) : null}
+      {creating && side === 'actual' ? (
+        <CreateWallosModal
+          scheduleId={row.id}
+          scheduleName={row.name}
+          onClose={() => {
+            setCreating(false);
+          }}
+        />
       ) : null}
       {props.error != null ? (
         <p role="alert" className={`text-xs text-warning ${CELL}`}>

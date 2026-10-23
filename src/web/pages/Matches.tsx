@@ -3,10 +3,13 @@ import type { SyncCheckResult, SyncIgnored, SyncLinked } from '../../lib/sync-ch
 import { formatMoney } from '../../lib/format-money';
 import { pairBadge } from '../../lib/match-badge';
 import { useT } from '@/i18n';
+import { performResolve } from '@/lib/resolve-mismatch';
 import { nextRowId, performAction, syncStore, useSyncCheck } from '@/lib/sync-check';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
 import { Badge } from '../components/ui/badge';
+import { DiffModal } from '../components/matches/DiffModal';
+import { diffModalMessages } from '../components/matches/DiffModal.messages';
 import { Button } from '../components/ui/button';
 import { matchesMessages } from './Matches.messages';
 
@@ -23,6 +26,11 @@ export interface MatchesViewProps {
   errorId?: string | null;
   /** Resolved text of the last failed restore. */
   errorMessage?: string | null;
+  /** Opens the diff modal for a mismatch row by its match id. */
+  onReview?: (matchId: string) => void;
+  /** Match id of the mismatch row whose resolve failed, and its resolved text. */
+  resolveErrorId?: string | null;
+  resolveErrorMessage?: string | null;
 }
 
 const CELL = 'px-3 py-1.5 text-sm';
@@ -43,6 +51,9 @@ export function MatchesView({
   busyId,
   errorId,
   errorMessage,
+  onReview,
+  resolveErrorId,
+  resolveErrorMessage,
 }: MatchesViewProps) {
   const { t, locale } = useT(matchesMessages);
   const money = (cents: number | null, currency: string): string =>
@@ -91,6 +102,23 @@ export function MatchesView({
                   </td>
                   <td className={CELL}>
                     <StatusBadge kind={kind} />
+                    {row.status === 'MISMATCH_DETECTED' && onReview !== undefined ? (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        className="ml-2"
+                        aria-label={t('reviewLabel')}
+                        onClick={() => { onReview(row.matchId); }}
+                      >
+                        {t('review')}
+                      </Button>
+                    ) : null}
+                    {resolveErrorId === row.matchId && resolveErrorMessage != null ? (
+                      <p role="alert" className="mt-1 text-xs text-warning">
+                        {resolveErrorMessage}
+                      </p>
+                    ) : null}
                   </td>
                 </tr>
               );
@@ -205,6 +233,20 @@ export function Matches() {
   const [showIgnored, setShowIgnored] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [failed, setFailed] = useState<{ id: string; text: string } | null>(null);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [resolveFailed, setResolveFailed] = useState<{ id: string; text: string } | null>(null);
+  const modalT = useT(diffModalMessages).t;
+
+  const resolve = (matchId: string, action: 'ignore_diff' | 'unlink') => {
+    const name = sync.result?.mismatches.find((m) => m.matchId === matchId)?.wallosName ?? matchId;
+    setReviewId(null);
+    setResolveFailed(null);
+    void performResolve(() => syncStore.getState().result, syncStore.setResult, matchId, action, syncStore.run).then((outcome) => {
+      if (!outcome.ok) {
+        setResolveFailed({ id: matchId, text: `${modalT('failed', { name })} ${errorText(outcome.code)}` });
+      }
+    });
+  };
 
   const restore = (matchId: string) => {
     const result = sync.result;
@@ -228,6 +270,7 @@ export function Matches() {
   };
 
   return (
+    <>
     <MatchesView
       result={sync.result}
       showIgnored={showIgnored}
@@ -236,6 +279,17 @@ export function Matches() {
       busyId={busyId}
       errorId={failed?.id ?? null}
       errorMessage={failed?.text ?? null}
+      onReview={setReviewId}
+      resolveErrorId={resolveFailed?.id ?? null}
+      resolveErrorMessage={resolveFailed?.text ?? null}
     />
+    <DiffModal
+      mismatch={sync.result?.mismatches.find((m) => m.matchId === reviewId) ?? null}
+      baseCurrency={sync.result?.baseCurrency ?? ''}
+      onClose={() => { setReviewId(null); }}
+      onIgnoreDiff={(id) => { resolve(id, 'ignore_diff'); }}
+      onUnlink={(id) => { resolve(id, 'unlink'); }}
+    />
+    </>
   );
 }

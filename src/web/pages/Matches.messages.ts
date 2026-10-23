@@ -27,6 +27,8 @@ const en = {
     restoreLabel: 'Restore (unignore)',
     failed: 'Could not restore {name}.',
   },
+  review: 'Review',
+  reviewLabel: 'Review differences',
 };
 
 const nl: typeof en = {
@@ -58,6 +60,8 @@ const nl: typeof en = {
     restoreLabel: 'Herstellen (negeren ongedaan maken)',
     failed: '{name} kon niet worden hersteld.',
   },
+  review: 'Bekijken',
+  reviewLabel: 'Verschillen bekijken',
 };
 
 export const matchesMessages = { en, nl };

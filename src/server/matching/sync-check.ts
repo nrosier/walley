@@ -16,6 +16,7 @@ import type {
   SyncItem,
   SyncLinked,
   SyncMismatch,
+  SyncMismatchFields,
   SyncOrphaned,
   SyncUnmappable,
   UnmappableReason,
@@ -125,6 +126,16 @@ export function fieldInputsOf(sides: ReadonlyMap<string, Side>): Map<string, Mat
   return out;
 }
 
+function mismatchFieldsOf(f: MatchFieldsInput): SyncMismatchFields {
+  return {
+    frequency: f.frequency,
+    interval: f.interval ?? 1,
+    startDate: f.startDate,
+    currency: f.currency,
+    amount: f.amount,
+  };
+}
+
 /**
  * Read-only: lists Wallos subscriptions and currencies and reads Actual schedules and the base
  * currency, then maps every item to its current comparable fields. Shared by the Sync Check and
@@ -231,7 +242,9 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
   );
 
   // #38: only hashable sides are compared; the rest keep status and stored hashes.
-  const drift = detectMismatches(rows, fieldInputsOf(wallosSides), fieldInputsOf(actualSides));
+  const wallosFields = fieldInputsOf(wallosSides);
+  const actualFields = fieldInputsOf(actualSides);
+  const drift = detectMismatches(rows, wallosFields, actualFields);
   const rowByPair = new Map(rows.map((r) => [`${r.wallosId ?? ''}\u0000${r.actualScheduleId ?? ''}`, r]));
   const mismatches: SyncMismatch[] = [];
   for (const r of drift.results) {
@@ -244,7 +257,9 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
     if (Object.keys(patch).length > 0) repo.updateMatch(row.id, patch);
     const w = wallosSides.get(r.wallosId);
     const a = actualSides.get(r.actualScheduleId);
-    if (r.nextStatus === 'MISMATCH_DETECTED' && w !== undefined && a !== undefined) {
+    const wf = wallosFields.get(r.wallosId);
+    const af = actualFields.get(r.actualScheduleId);
+    if (r.nextStatus === 'MISMATCH_DETECTED' && w !== undefined && a !== undefined && wf !== undefined && af !== undefined) {
       mismatches.push({
         matchId: row.id,
         wallosId: r.wallosId,
@@ -256,6 +271,8 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
         isRange: a.isRange,
         wallosDrift: r.wallosDrift,
         actualDrift: r.actualDrift,
+        wallosFields: mismatchFieldsOf(wf),
+        actualFields: mismatchFieldsOf(af),
       });
     }
   }

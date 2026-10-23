@@ -78,18 +78,55 @@ declare module 'fastify' {
   }
 }
 
+const REDACTED = '[Redacted]';
+
+/** Field names that hold a secret. Redacted at the top level and one and two levels down. */
+const SECRET_KEYS = [
+  'apiKey',
+  'api_key',
+  'password',
+  'syncKey',
+  'smtpUrl',
+  'clientSecret',
+  'wallos_api_key_enc',
+  'actual_password_enc',
+  'actual_sync_key_enc',
+  'wallosApiKeyEnc',
+  'actualPasswordEnc',
+  'actualSyncKeyEnc',
+] as const;
+
+/** Pino redact paths. A wildcard covers one level, so each name is listed at three depths. */
+export const LOG_REDACT_PATHS: readonly string[] = [
+  ...SECRET_KEYS.flatMap((key) => [key, `*.${key}`, `*.*.${key}`]),
+  'req.headers.cookie',
+  'req.headers.authorization',
+  'res.headers["set-cookie"]',
+];
+
 /**
- * Logs the method and the path only. The query string can hold secrets, such as the OIDC
- * authorisation code and state on the callback, so it never reaches the log.
+ * Logs the method and the path, plus the cookie and authorization header names with their
+ * values replaced. The query string can hold secrets, such as the OIDC authorisation code and
+ * state on the callback, so it never reaches the log. No other header is logged.
  */
-function serializeRequest(request: { method: string; url: string }): {
+function serializeRequest(request: {
+  method: string;
+  url: string;
+  headers?: Record<string, unknown>;
+}): {
   method: string;
   path: string;
+  headers: Record<string, string>;
 } {
   const queryStart = request.url.indexOf('?');
+  const headers: Record<string, string> = {};
+  for (const name of ['cookie', 'authorization']) {
+    if (request.headers?.[name] !== undefined) headers[name] = REDACTED;
+  }
   return {
     method: request.method,
     path: queryStart === -1 ? request.url : request.url.slice(0, queryStart),
+    headers,
   };
 }
 
@@ -244,6 +281,7 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
         ? false
         : {
             serializers: { req: serializeRequest },
+            redact: { paths: [...LOG_REDACT_PATHS], censor: REDACTED },
             ...(logger === true ? {} : { stream: logger.stream }),
           },
     trustProxy: opts?.trustProxy ?? false,

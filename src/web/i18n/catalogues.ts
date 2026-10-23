@@ -5,6 +5,9 @@
 import { commonMessages } from './common.messages';
 import { appMessages } from '../App.messages';
 import { appShellMessages } from '../components/AppShell.messages';
+import { createModalMessages } from '../components/dashboard/CreateModal.messages';
+import { diffModalMessages } from '../components/matches/DiffModal.messages';
+import { dialogMessages } from '../components/ui/dialog.messages';
 import { healthStatusMessages } from '../components/HealthStatus.messages';
 import { statusBadgeMessages } from '../components/StatusBadge.messages';
 import { accountSettingsMessages } from '../pages/AccountSettings.messages';
@@ -22,6 +25,9 @@ export const catalogues: Readonly<Record<string, Catalogue<object>>> = {
   common: commonMessages,
   app: appMessages,
   appShell: appShellMessages,
+  dialog: dialogMessages,
+  diffModal: diffModalMessages,
+  createModal: createModalMessages,
   healthStatus: healthStatusMessages,
   statusBadge: statusBadgeMessages,
   settingsPage: settingsPageMessages,

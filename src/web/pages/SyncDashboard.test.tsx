@@ -70,45 +70,20 @@ describe('SyncDashboard states', () => {
     expect(gym).not.toContain('>Link<');
     expect(html).toContain('NETFLIX.COM (€13.00)');
   });
-  it('Create buttons are disabled and carry the held text', () => {
+  it('Create buttons are enabled and open the pre-fill modals (the modals hold Submit)', () => {
     const html = render(ready());
-    expect(html).toContain('Create in AB');
-    expect(html).toContain('Create in Wallos');
-    expect(html).toContain('Held: creating items arrives in a later release.');
-    const buttons = html.match(/<button[^>]*>[^<]*Create in (AB|Wallos)/g) ?? [];
+    const buttons = html.match(/<button[^>]*>Create in (AB|Wallos)<\/button>/g) ?? [];
     expect(buttons).toHaveLength(4);
-    expect(buttons.every((b) => b.includes('disabled=""'))).toBe(true);
+    expect(buttons.some((b) => b.includes('disabled=""'))).toBe(false);
+    expect(columnOf(html, 'wallos').match(/>Create in AB<\/button>/g)).toHaveLength(2);
+    expect(columnOf(html, 'actual').match(/>Create in Wallos<\/button>/g)).toHaveLength(2);
   });
-  it('right column (Actual) renders Link, a disabled Create in Wallos, and Ignore (#49)', () => {
-    const column = columnOf(render(ready()), 'actual');
-    expect(column).toContain('Actual Budget schedules');
-    expect(column.match(/>Link<\/button>/g)).toHaveLength(1);
-    expect(column).toContain('>Link<');
-    const creates = column.match(/<button[^>]*>Create in Wallos<\/button>/g) ?? [];
-    expect(creates).toHaveLength(2);
-    expect(creates.every((b) => b.includes('disabled=""'))).toBe(true);
-    expect(column.match(/>Ignore<\/button>/g)).toHaveLength(2);
-  });
-  it('left column (Wallos) renders Link, a disabled Create in AB, and Ignore (#48)', () => {
-    const column = columnOf(render(ready()), 'wallos');
-    expect(column).toContain('Wallos subscriptions');
-    expect(column.match(/>Link<\/button>/g)).toHaveLength(1);
-    const creates = column.match(/<button[^>]*>Create in AB<\/button>/g) ?? [];
-    expect(creates).toHaveLength(2);
-    expect(creates.every((b) => b.includes('disabled=""'))).toBe(true);
-    expect(column.match(/>Ignore<\/button>/g)).toHaveLength(2);
-  });
-  it('Create buttons carry the held text in their label and have no click handler', () => {
-    const held = 'Held: creating items arrives in a later release.';
-    const html = render(ready());
-    const wallosCreates = columnOf(html, 'wallos').match(/<button[^>]*>Create in AB<\/button>/g) ?? [];
-    const actualCreates = columnOf(html, 'actual').match(/<button[^>]*>Create in Wallos<\/button>/g) ?? [];
-    expect(wallosCreates.every((b) => b.includes(`aria-label="Create in AB. ${held}"`))).toBe(true);
-    expect(actualCreates.every((b) => b.includes(`aria-label="Create in Wallos. ${held}"`))).toBe(true);
-    expect([...wallosCreates, ...actualCreates].some((b) => /onclick/i.test(b))).toBe(false);
-    const createTag = rowSrc.match(/<Button[^>]*disabled[^>]*aria-label=\{`\$\{props\.createLabel\}[^>]*>/)?.[0] ?? '';
-    expect(createTag).not.toBe('');
-    expect(createTag).not.toMatch(/onClick/);
+  it('columns still render Link and Ignore (#48, #49)', () => {
+    for (const side of ['wallos', 'actual'] as const) {
+      const column = columnOf(render(ready()), side);
+      expect(column.match(/>Link<\/button>/g)).toHaveLength(1);
+      expect(column.match(/>Ignore<\/button>/g)).toHaveLength(2);
+    }
   });
   it('the dashboard and its column and row sources make no /api/integrations call', () => {
     const files: Record<string, string> = { dashboardSrc, storeSrc, apiSrc, rowSrc, toolbarSrc, wallosColumnSrc, actualColumnSrc };

@@ -213,6 +213,51 @@ describe('runSyncCheck', () => {
     ]);
   });
 
+  it('adds field-level detail for both sides of a mismatch and keeps the old keys', async () => {
+    const t = setup([sub(1, 'Netflix', '12.50')], [sched('a1', 'Netflix', { num1: -1400, num2: -1600 })]);
+    const old = h('Netflix', -1250);
+    t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED', lastKnownWallosHash: old, lastKnownActualHash: old });
+    const [mm] = (await runSyncCheck(t.deps, t.userId)).mismatches;
+    expect(mm).toMatchObject({
+      wallosName: 'Netflix',
+      actualName: 'Netflix',
+      wallosAmountCents: -1250,
+      actualAmountCents: -1500,
+      isRange: true,
+      wallosDrift: false,
+      actualDrift: true,
+    });
+    expect(mm?.wallosFields).toEqual({
+      frequency: 'monthly',
+      interval: 1,
+      startDate: expect.any(String) as string,
+      currency: 'EUR',
+      amount: { kind: 'single', cents: -1250 },
+    });
+    expect(mm?.actualFields).toEqual({
+      frequency: 'monthly',
+      interval: 1,
+      startDate: '2026-01-01',
+      currency: 'EUR',
+      amount: { kind: 'range', num1: -1400, num2: -1600 },
+    });
+  });
+
+  it('keeps two users\' sync checks apart, rows and names', async () => {
+    const t = setup([sub(1, 'Netflix', '12.50')], [sched('a1', 'Netflix', -1499)]);
+    const old = h('Netflix', -1250);
+    const a = t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED', lastKnownWallosHash: old, lastKnownActualHash: old });
+    const bId = makeUser(t.db);
+    const resB = await runSyncCheck({ ...t.deps, repoFor: (id) => createUserRepo(t.db, id) }, bId);
+    expect(resB.mismatches).toEqual([]);
+    expect(resB.linked).toEqual([]);
+    expect(resB.ignored).toEqual([]);
+    expect(resB.orphaned).toEqual([]);
+    expect(JSON.stringify(resB)).not.toContain(a.id);
+    expect(t.repo.getMatch(a.id)?.status).toBe('LINKED');
+    expect((await runSyncCheck(t.deps, t.userId)).mismatches).toHaveLength(1);
+  });
+
   it('marks each orphan kind in linked with null fields for the missing side', async () => {
     const t = setup([sub(1, 'Netflix', '12.50')], [sched('a2', 'Spotify', -999)]);
     const mw = t.repo.insertMatch({ wallosId: 'gone-w', actualScheduleId: 'a2', status: 'LINKED' });

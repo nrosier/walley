@@ -95,6 +95,47 @@ describe('applyLink, applyIgnore, rollback', () => {
   });
 });
 
+describe('mismatch field detail', () => {
+  const side = (cents: number) => ({
+    frequency: 'monthly',
+    interval: 1,
+    startDate: '2026-01-01',
+    currency: 'EUR',
+    amount: { kind: 'single' as const, cents },
+  });
+  const withMismatch = (): SyncCheckResult => ({
+    ...sample(),
+    mismatches: [
+      {
+        matchId: 'm9',
+        wallosId: 'w5',
+        actualScheduleId: 'a5',
+        wallosName: 'Gym',
+        actualName: 'Gym',
+        wallosAmountCents: -1000,
+        actualAmountCents: -1100,
+        isRange: false,
+        wallosDrift: false,
+        actualDrift: true,
+        wallosFields: side(-1000),
+        actualFields: side(-1100),
+      },
+    ],
+  });
+  it('keeps mismatches, with their field detail, through link, ignore and restore', () => {
+    const before = withMismatch();
+    expect(applyLink(before, 'w1', 'a1').mismatches).toEqual(before.mismatches);
+    expect(applyIgnore(before, 'wallos', 'w1').mismatches).toEqual(before.mismatches);
+    expect(applyRestore(before, 'm1').mismatches).toEqual(before.mismatches);
+    expect(before.mismatches[0]?.actualFields.amount).toEqual({ kind: 'single', cents: -1100 });
+  });
+  it('does not touch the mismatch rows when filtering the dashboard columns', () => {
+    const r = withMismatch();
+    expect(buildRows(r, 'wallos', '', false).map((x) => x.id)).toEqual(['w1', 'w2']);
+    expect(buildRows(r, 'actual', '', false).map((x) => x.id)).toEqual(['a1', 'a2']);
+  });
+});
+
 describe('performAction', () => {
   const harness = () => {
     let current: SyncCheckResult | null = sample();

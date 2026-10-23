@@ -7,6 +7,8 @@ import {
   createActualScheduleFromWallos,
   createWallosSubscriptionFromActualSchedule,
   CreateFlowError,
+  prefillActualScheduleFromWallos,
+  prefillWallosSubscriptionFromSchedule,
   type CreateDeps,
 } from '../integrations/create.js';
 import {
@@ -137,6 +139,43 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
         scheduleId: body['scheduleId'],
       });
       return await reply.code(201).send({ wallosSubscriptionId: result.wallosSubscriptionId });
+    } catch (error: unknown) {
+      return await Promise.resolve(sendFailure(reply, error));
+    }
+  });
+
+  // Read-only previews: same derivation as the create routes, no write client is called.
+  app.post('/integrations/actual-schedules/prefill', async (request, reply) => {
+    if (request.auth === null) {
+      return reply.code(401).send({ error: 'unauthenticated' });
+    }
+    const body: unknown = request.body;
+    if (!isRecord(body) || !isId(body['wallosSubscriptionId'])) {
+      return reply.code(400).send(INVALID);
+    }
+    try {
+      const result = await prefillActualScheduleFromWallos(deps, request.auth.userId, {
+        wallosSubscriptionId: body['wallosSubscriptionId'],
+      });
+      return await reply.code(200).send(result);
+    } catch (error: unknown) {
+      return await Promise.resolve(sendFailure(reply, error));
+    }
+  });
+
+  app.post('/integrations/wallos-subscriptions/prefill', async (request, reply) => {
+    if (request.auth === null) {
+      return reply.code(401).send({ error: 'unauthenticated' });
+    }
+    const body: unknown = request.body;
+    if (!isRecord(body) || !isId(body['scheduleId'])) {
+      return reply.code(400).send(INVALID);
+    }
+    try {
+      const result = await prefillWallosSubscriptionFromSchedule(deps, request.auth.userId, {
+        scheduleId: body['scheduleId'],
+      });
+      return await reply.code(200).send(result);
     } catch (error: unknown) {
       return await Promise.resolve(sendFailure(reply, error));
     }

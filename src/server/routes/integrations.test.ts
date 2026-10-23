@@ -60,6 +60,9 @@ function setup(overrides: Partial<CreateDeps> = {}) {
     withActual: (id, use) =>
       use({
         getPreferences: async () => ({ defaultCurrencyCode: 'EUR' }),
+        getAccounts: async () => [{ id: `acc-${id}`, name: 'Main' }],
+        getPayees: async () => [{ id: `pay-${id}`, name: 'Payee' }],
+        getCategories: async () => [{ id: `cat-${id}`, name: 'Cat' }],
         getSchedules: async () =>
           (owned[id]?.schedules ?? []).map((s) => ({
             id: s,
@@ -96,6 +99,8 @@ function setup(overrides: Partial<CreateDeps> = {}) {
 
 const SCHED_URL = '/api/integrations/actual-schedules';
 const SUB_URL = '/api/integrations/wallos-subscriptions';
+const SCHED_PREFILL = '/api/integrations/actual-schedules/prefill';
+const SUB_PREFILL = '/api/integrations/wallos-subscriptions/prefill';
 const SCHED_BODY = { wallosSubscriptionId: '7', accountId: 'acc', payee: { kind: 'new', name: 'N' } };
 
 describe('auth gate and CSRF', () => {
@@ -194,6 +199,107 @@ describe('POST /api/integrations/wallos-subscriptions', () => {
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: 'schedule_not_found' });
     expect(createSubscription).not.toHaveBeenCalled();
+  });
+});
+
+describe('pre-fill routes', () => {
+  it('actual-schedules/prefill returns the converted preview and the lists, with no write', async () => {
+    const { app, sa, a, createSchedule, createSubscription } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: SCHED_PREFILL, payload: { wallosSubscriptionId: '7' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      name: 'Netflix',
+      amountCents: -1250,
+      baseCurrency: 'EUR',
+      recurrence: { frequency: 'monthly', interval: 1 },
+      startDate: '2026-11-03',
+      accounts: [{ id: `acc-${a}`, name: 'Main' }],
+      payees: [{ id: `pay-${a}`, name: 'Payee' }],
+      categories: [{ id: `cat-${a}`, name: 'Cat' }],
+    });
+    expect(createSchedule).not.toHaveBeenCalled();
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
+  it('wallos-subscriptions/prefill returns the mapped fields, with no write', async () => {
+    const { app, sa, createSchedule, createSubscription } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: SUB_PREFILL, payload: { scheduleId: 'sch-a' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      name: 'Spotify',
+      price: '12.50',
+      currencyCode: 'EUR',
+      cycle: 3,
+      frequency: 1,
+      startDate: '2026-01-01',
+      nextPayment: '2026-01-01',
+    });
+    expect(createSchedule).not.toHaveBeenCalled();
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
+  it.each([SCHED_PREFILL, SUB_PREFILL])('%s answers 401 without a session', async (url) => {
+    const { app } = setup();
+    const res = await app.inject({ method: 'POST', url, payload: {}, headers: { origin: TEST_ORIGIN } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it.each([
+    [SCHED_PREFILL, {}],
+    [SCHED_PREFILL, { wallosSubscriptionId: 7 }],
+    [SUB_PREFILL, {}],
+    [SUB_PREFILL, { scheduleId: 3 }],
+  ])('%s rejects a bad body %#', async (url, payload) => {
+    const { app, sa } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url, payload });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+  });
+
+  it("404 for another user's subscription id, and Actual is never opened", async () => {
+    const withActual = vi.fn();
+    const { app, sa, createSchedule } = setup({ withActual });
+    const res = await injectAs(app, sa, { method: 'POST', url: SCHED_PREFILL, payload: { wallosSubscriptionId: '8' } });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'wallos_subscription_not_found' });
+    expect(withActual).not.toHaveBeenCalled();
+    expect(createSchedule).not.toHaveBeenCalled();
+  });
+
+  it("404 for another user's schedule id, with no Wallos currency read and no write", async () => {
+    const { app, sa, createSubscription } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: SUB_PREFILL, payload: { scheduleId: 'sch-b' } });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'schedule_not_found' });
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
+  it('range schedule answers 400 range_amount_unsupported', async () => {
+    const { app, sa, createSubscription } = setup({
+      withActual: (_id, use) =>
+        use({
+          getPreferences: async () => ({ defaultCurrencyCode: 'EUR' }),
+          getSchedules: async () => [
+            { id: 'sch-a', name: 'S', amount: { num1: -1, num2: -2 }, amountOp: 'isbetween', date: { frequency: 'monthly', start: '2026-01-01' } },
+          ],
+        } as never),
+    });
+    const res = await injectAs(app, sa, { method: 'POST', url: SUB_PREFILL, payload: { scheduleId: 'sch-a' } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'range_amount_unsupported' });
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
+  it('failures map to fixed codes without secret text', async () => {
+    const { app, sa } = setup({ withActual: () => Promise.reject(new ActualSessionError('open_failed')) });
+    for (const [url, payload] of [
+      [SCHED_PREFILL, { wallosSubscriptionId: '7' }],
+      [SUB_PREFILL, { scheduleId: 'sch-a' }],
+    ] as const) {
+      const res = await injectAs(app, sa, { method: 'POST', url, payload });
+      expect(res.statusCode).toBe(502);
+      expect(res.json()).toEqual({ error: 'actual_unavailable' });
+    }
   });
 });
 

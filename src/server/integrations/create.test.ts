@@ -8,6 +8,8 @@ import {
   createActualScheduleFromWallos,
   createWallosSubscriptionFromActualSchedule,
   CreateFlowError,
+  prefillActualScheduleFromWallos,
+  prefillWallosSubscriptionFromSchedule,
   type CreateDeps,
 } from './create.js';
 import { prepareWallosSubscriptionPayload } from './prepare.js';
@@ -61,6 +63,9 @@ function deps(): CreateDeps {
   const api = {
     getPreferences: async () => ({ defaultCurrencyCode: apiState.baseCurrency }),
     getSchedules: async () => apiState.schedules,
+    getAccounts: async () => [{ id: 'acc-1', name: 'Main' }],
+    getPayees: async () => [{ id: 'p1', name: 'Payee' }],
+    getCategories: async () => [{ id: 'cat-1', name: 'Cat' }],
   } as unknown as ActualApi;
   return {
     wallos: wallos as unknown as WallosClient,
@@ -179,6 +184,70 @@ describe('createWallosSubscriptionFromActualSchedule', () => {
     await expect(
       createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1' }),
     ).rejects.toMatchObject({ name: 'WallosMappingError' });
+  });
+});
+
+describe('pre-fill previews', () => {
+  it('actual schedule preview equals what the submit would create, and writes nothing', async () => {
+    const preview = await prefillActualScheduleFromWallos(deps(), userId, { wallosSubscriptionId: '7' });
+    expect(created).toHaveLength(0);
+    await createActualScheduleFromWallos(deps(), userId, REQ);
+    expect(created[0]).toMatchObject({
+      name: preview.name,
+      amountCents: preview.amountCents,
+      recurrence: preview.recurrence,
+      startDate: preview.startDate,
+    });
+    expect(preview).toMatchObject({ amountCents: -1000, baseCurrency: 'EUR', startDate: '2026-01-03' });
+    expect(preview.accounts).toEqual([{ id: 'acc-1', name: 'Main' }]);
+    expect(preview.payees).toEqual([{ id: 'p1', name: 'Payee' }]);
+    expect(preview.categories).toEqual([{ id: 'cat-1', name: 'Cat' }]);
+  });
+
+  it('actual schedule preview honours the override and rejects unknown ids and missing base', async () => {
+    createUserRepo(db, userId).upsertSubscriptionOverride('7', { rate: '2.2', now: new Date() });
+    expect((await prefillActualScheduleFromWallos(deps(), userId, { wallosSubscriptionId: '7' })).amountCents).toBe(-500);
+    await expect(
+      prefillActualScheduleFromWallos(deps(), userId, { wallosSubscriptionId: '9' }),
+    ).rejects.toMatchObject({ code: 'wallos_subscription_not_found' });
+    apiState.baseCurrency = undefined;
+    await expect(
+      prefillActualScheduleFromWallos(deps(), userId, { wallosSubscriptionId: '7' }),
+    ).rejects.toMatchObject({ code: 'base_currency_missing' });
+    expect(created).toHaveLength(0);
+  });
+
+  it('wallos preview equals the submit payload and does not call createSubscription', async () => {
+    apiState.schedules = [
+      { id: 'sch-1', name: 'Spotify', amount: -1250, amountOp: 'is', date: { frequency: 'monthly', interval: 2, start: '2026-02-01' }, next_date: '2026-12-01' },
+    ];
+    const preview = await prefillWallosSubscriptionFromSchedule(deps(), userId, { scheduleId: 'sch-1' });
+    expect(wallos.createSubscription).not.toHaveBeenCalled();
+    expect(preview).toEqual({
+      name: 'Spotify',
+      price: '12.50',
+      currencyCode: 'EUR',
+      cycle: 3,
+      frequency: 2,
+      startDate: '2026-02-01',
+      nextPayment: '2026-12-01',
+    });
+    await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1' });
+    const sent = wallos.createSubscription.mock.calls[0]?.[1] as Record<string, string>;
+    expect(sent).toMatchObject({ name: preview.name, price: preview.price, next_payment: preview.nextPayment });
+  });
+
+  it('wallos preview rejects a range schedule and an unknown schedule', async () => {
+    apiState.schedules = [
+      { id: 'r', name: 'R', amount: { num1: -1, num2: -2 }, amountOp: 'isbetween', date: { frequency: 'monthly', start: '2026-01-01' } },
+    ];
+    await expect(
+      prefillWallosSubscriptionFromSchedule(deps(), userId, { scheduleId: 'r' }),
+    ).rejects.toMatchObject({ code: 'range_amount_unsupported' });
+    await expect(
+      prefillWallosSubscriptionFromSchedule(deps(), userId, { scheduleId: 'zz' }),
+    ).rejects.toMatchObject({ code: 'schedule_not_found' });
+    expect(wallos.createSubscription).not.toHaveBeenCalled();
   });
 });
 
