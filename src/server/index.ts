@@ -13,8 +13,11 @@ import { createMailer, createSmtpTransport } from './mail/index.js';
 import { registerShutdown } from './shutdown.js';
 
 async function main(): Promise<void> {
-  if (existsSync('.env')) {
-    process.loadEnvFile('.env');
+  // Outside production, .env.local wins over .env, matching the Vite config. Production loads .env only.
+  const envFile =
+    process.env['NODE_ENV'] !== 'production' && existsSync('.env.local') ? '.env.local' : '.env';
+  if (existsSync(envFile)) {
+    process.loadEnvFile(envFile);
   }
 
   let config;

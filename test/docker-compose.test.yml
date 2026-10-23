@@ -1,0 +1,23 @@
+# Throwaway Wallos and Actual Budget for local Walley testing.
+# Start with test/start-test-env.sh. No accounts or credentials are set here.
+name: walley-test
+
+services:
+  wallos:
+    image: bellamy/wallos:latest
+    container_name: walley-test-wallos
+    ports:
+      - "127.0.0.1:8282:80/tcp"
+    environment:
+      TZ: "UTC"
+    volumes:
+      - ./.local/wallos/db:/var/www/html/db
+      - ./.local/wallos/logos:/var/www/html/images/uploads/logos
+
+  actual:
+    image: docker.io/actualbudget/actual-server:latest
+    container_name: walley-test-actual
+    ports:
+      - "127.0.0.1:5006:5006"
+    volumes:
+      - ./.local/actual:/data

@@ -13,3 +13,9 @@ data/
 .claude/worktrees/
 compose.yml
 probe.env
+
+# Local test environment data (test/start-test-env.sh)
+test/.local/
+
+# Playwright MCP browser output
+.playwright-mcp/

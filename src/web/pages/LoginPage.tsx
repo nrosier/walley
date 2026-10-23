@@ -4,6 +4,7 @@ import { commonMessages } from '@/i18n/common.messages';
 import { apiRequest, ApiError } from '@/lib/api';
 import { navigate } from '@/lib/route';
 import { loginPageMessages } from './LoginPage.messages';
+import { checkRegistration, registerErrorMessage } from './LoginPage.register';
 
 export interface AuthConfig {
   mode: 'local' | 'oidc';
@@ -48,17 +49,20 @@ const buttonClass =
 export interface LoginFormProps {
   config: AuthConfig;
   errorCode: string | null;
+  /** Starts in register mode. Used by tests, because static markup cannot click the toggle. */
+  initialRegistering?: boolean;
 }
 
 /** Renders the sign-in UI for a known auth mode. Local mode shows the password form; OIDC mode shows only SSO. */
-export function LoginForm({ config, errorCode }: LoginFormProps) {
+export function LoginForm({ config, errorCode, initialRegistering = false }: LoginFormProps) {
   const { t, errorText: errorFor, locale } = useT(loginPageMessages);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [failure, setFailure] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [registering, setRegistering] = useState(false);
+  const [registering, setRegistering] = useState(initialRegistering);
 
   const pageError = pageErrorMessage(errorCode, locale);
 
@@ -80,10 +84,15 @@ export function LoginForm({ config, errorCode }: LoginFormProps) {
 
   const onSubmit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setBusy(true);
     setFailure(null);
     setSent(false);
     if (registering) {
+      const check = checkRegistration(email, password, confirm);
+      if (check !== null) {
+        setFailure(check);
+        return;
+      }
+      setBusy(true);
       apiRequest('/api/auth/register', {
         method: 'POST',
         body: { email, password },
@@ -99,6 +108,7 @@ export function LoginForm({ config, errorCode }: LoginFormProps) {
         });
       return;
     }
+    setBusy(true);
     apiRequest('/api/auth/login', { method: 'POST', body: { email, password } })
       .then(() => {
         navigate('/sync');
@@ -146,9 +156,25 @@ export function LoginForm({ config, errorCode }: LoginFormProps) {
             className={inputClass}
           />
         </label>
+        {registering ? (
+          <label className="block text-sm">
+            <span className="mb-1 block text-muted-foreground">{t('confirmPassword')}</span>
+            <input
+              type="password"
+              name="confirmPassword"
+              autoComplete="new-password"
+              required
+              value={confirm}
+              onChange={(e) => {
+                setConfirm(e.target.value);
+              }}
+              className={inputClass}
+            />
+          </label>
+        ) : null}
         {failure !== null ? (
           <p role="alert" className="text-sm text-warning">
-            {errorFor(failure)}
+            {registering ? registerErrorMessage(failure, locale) : errorFor(failure)}
           </p>
         ) : null}
         {sent ? (
