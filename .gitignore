@@ -15,3 +15,12 @@ compose.yml
 
 # Local design mockups, not committed
 docs/ui/mockups/
+
+# Playwright MCP browser output
+.playwright-mcp/
+
+# Probe env files with local credentials
+probe.env
+
+# Local test environment data (test/start-test-env.sh)
+test/.local/
