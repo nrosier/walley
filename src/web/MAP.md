@@ -27,6 +27,7 @@
 | `components/AppShell.messages.ts` | Shell strings | |
 | `components/HealthStatus.tsx`, `components/HealthStatus.messages.ts` | `/api/health` indicator and its en/nl labels | |
 | `components/ui/button.tsx` | Shadcn button | |
+| `components/ui/more-actions-menu.tsx`, `segmented-control.tsx`, `disclosure.tsx`, `alert.tsx`, `scope-pill.tsx`, `dialog-shell.tsx`, `controls.messages.ts` | Shared controls (unused by pages until T5+): `MoreActionsMenu` (one-level Radix dropdown, per-row name), `SegmentedControl` (native radio group), `Disclosure` (Radix Collapsible), `Alert` (error/warning `role=alert`, info/success `role=status`), `ScopePill` (account/device), `DialogShell` (pinned header/footer, scrolling body, full-screen below 768px); tests in `controls.test.tsx` | Using or changing shared controls |
 | `components/ui/badge.tsx` | `Badge` pill, variants `linked` (green), `mismatch` (amber), `neutral` (gray), `orphaned` (gray fill with amber border); `text-xs` | Status badges |
 | `components/StatusBadge.tsx`, `components/StatusBadge.messages.ts` | `StatusBadge({kind})` for `PairBadgeKind` (`synced`, `mismatch`, `ignored`, `orphaned`): en/nl label, badge variant, Lucide `Unlink` icon (aria-hidden) on orphaned | Pair status pills |
 | `lib/theme.ts` | Pure theme helpers: read/write `walley-theme` in localStorage (dark on any failure), toggle, `applyTheme` | Theme storage |
