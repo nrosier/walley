@@ -11,6 +11,17 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-ring: var(--ring);
   --color-accent-text: var(--accent-text);
+  --color-muted: var(--muted);
+  --color-surface-2: var(--surface-2);
+  --color-danger: var(--danger);
+  --color-danger-line: var(--danger-line);
+  --color-danger-bg: var(--danger-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --color-hover: var(--hover);
+  --color-input-border: var(--input-border);
+  --color-scrim: var(--scrim);
+  --shadow-overlay: var(--shadow);
   --color-success: var(--success);
   --color-success-bg: var(--success-bg);
   --color-warning: var(--warning);
@@ -31,7 +42,23 @@
   --primary: #4f46e5;
   --primary-foreground: #ffffff;
   --ring: #6366f1;
-  --accent-text: #6366f1;
+  --accent-text: #818cf8;
+  --muted: #94a3b8;
+  --surface-2: #111827;
+  --danger: #fca5a5;
+  --danger-line: #f87171;
+  --danger-bg: rgb(239 68 68 / 0.15);
+  --info: #93c5fd;
+  --info-bg: rgb(59 130 246 / 0.15);
+  --hover: rgb(148 163 184 / 0.12);
+  /* Stronger border for form inputs only (>= 3:1 against the input fill). Cards and dividers keep --border. */
+  --input-border: #64748b;
+  --scrim: rgb(2 6 23 / 0.65);
+  --shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  /* shadcn names that were undefined; bare variables only, no --color-* mapping, so no utility changes. */
+  --destructive: var(--danger);
+  --accent: var(--hover);
+  --input: var(--input-border);
   --success: #86efac;
   --success-bg: rgb(34 197 94 / 0.15);
   --warning: #fcd34d;
@@ -51,12 +78,41 @@
   --primary-foreground: #ffffff;
   --ring: #6366f1;
   --accent-text: #4f46e5;
+  --muted: #556478;
+  --surface-2: #f1f5f9;
+  --danger: #b91c1c;
+  --danger-line: #dc2626;
+  --danger-bg: #fee2e2;
+  --info: #1e40af;
+  --info-bg: #dbeafe;
+  --hover: rgb(15 23 42 / 0.06);
+  /* Stronger border for form inputs only (>= 3:1 against the input fill). Cards and dividers keep --border. */
+  --input-border: #708096;
+  --scrim: rgb(15 23 42 / 0.45);
+  --shadow: 0 12px 32px rgb(15 23 42 / 0.22);
+  /* shadcn names that were undefined; bare variables only, no --color-* mapping, so no utility changes. */
+  --destructive: var(--danger);
+  --accent: var(--hover);
+  --input: var(--input-border);
   --success: #166534;
   --success-bg: #dcfce7;
   --warning: #92400e;
   --warning-bg: #fef3c7;
   --neutral: #475569;
   --neutral-bg: #f1f5f9;
+}
+
+/* Focus ring: 2px with 2px offset, colour is --ring (unchanged). */
+:root {
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --control-h: 32px;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  :root {
+    --control-h: 44px;
+  }
 }
 
 @layer base {
