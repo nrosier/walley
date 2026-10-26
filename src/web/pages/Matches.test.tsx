@@ -1,10 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import type { SyncCheckResult, SyncLinked, SyncIgnored } from '../../lib/sync-check-types';
 import matchesSrc from './Matches.tsx?raw';
 import storeSrc from '@/lib/sync-check.ts?raw';
 import { MatchesView, type MatchesViewProps } from './Matches';
+import { checkIfEmpty, createSyncStore, restoreAndRecheck } from '@/lib/sync-check';
+import { performResolve } from '@/lib/resolve-mismatch';
 
 const linkedRow = (over: Partial<SyncLinked>): SyncLinked => ({
   matchId: 'm',
@@ -125,13 +127,13 @@ describe('Matches missing sides', () => {
 });
 
 describe('Matches empty state', () => {
-  it('tells the user to run Sync Check when there is no linked data', () => {
+  it('shows the empty text when there is no linked data', () => {
     const html = renderToStaticMarkup(
       <I18nProvider initialLocale="en">
         <MatchesView result={null} showIgnored={false} />
       </I18nProvider>,
     );
-    expect(html).toContain('Run Sync Check on the Sync Dashboard to load them.');
+    expect(html).toContain('Link items on the Sync Dashboard and they appear here.');
     expect(html).not.toContain('<table');
   });
 
@@ -185,5 +187,121 @@ describe('Matches ignored section Restore', () => {
   it('uses only the restore write client and keeps the shared store', () => {
     expect(matchesSrc).not.toMatch(/linkPair|ignoreItem/);
     expect(storeSrc).toContain('export function useSyncCheck');
+  });
+});
+
+describe('Matches auto re-check', () => {
+  const checkCalls = (f: ReturnType<typeof vi.fn>) =>
+    f.mock.calls.filter((c) => (c as unknown as [string])[0] === '/api/sync/check').length;
+  /** Routes the fake fetch by URL; check responses are returned by `check`. */
+  const setup = (opts: { del?: number; resolve?: Response; check?: () => Promise<Response> } = {}) => {
+    const f = vi.fn(async (url: string) => {
+      if (url === '/api/sync/check') return opts.check ? opts.check() : Response.json(fixture());
+      if (url.endsWith('/resolve')) return opts.resolve ?? new Response(null, { status: 204 });
+      if ((opts.del ?? 204) === 204) return new Response(null, { status: 204 });
+      return Response.json({ error: 'match_not_found' }, { status: opts.del });
+    });
+    const store = createSyncStore(f as unknown as typeof fetch);
+    store.setResult(fixture());
+    return { f, store };
+  };
+
+  it('a successful Restore triggers exactly one check', async () => {
+    const { f, store } = setup();
+    expect(await restoreAndRecheck(store, 'i1', f as unknown as typeof fetch)).toEqual({ ok: true });
+    await vi.waitFor(() => { expect(store.getState().status).toBe('ready'); });
+    expect(checkCalls(f)).toBe(1);
+  });
+
+  it('a failed Restore triggers no check', async () => {
+    const { f, store } = setup({ del: 404 });
+    expect(await restoreAndRecheck(store, 'i1', f as unknown as typeof fetch)).toEqual({ ok: false, code: 'match_not_found' });
+    expect(checkCalls(f)).toBe(0);
+  });
+
+  it('a successful resolve triggers a check through requestRun', async () => {
+    const { f, store } = setup();
+    const out = await performResolve(() => store.getState().result, store.setResult, 'm2', 'ignore_diff', store.requestRun, f as unknown as typeof fetch);
+    expect(out).toEqual({ ok: true });
+    expect(checkCalls(f)).toBe(1);
+  });
+
+  it('no_change_needed triggers no check', async () => {
+    const { f, store } = setup({ resolve: Response.json({ outcome: 'no_change_needed' }) });
+    const out = await performResolve(() => store.getState().result, store.setResult, 'm2', 'overwrite_actual', store.requestRun, f as unknown as typeof fetch);
+    expect(out).toEqual({ ok: false, code: 'no_change_needed' });
+    expect(checkCalls(f)).toBe(0);
+  });
+
+  it('opening with no result starts a check; with a result it does not', async () => {
+    const { f, store } = setup();
+    checkIfEmpty(store); // setup stored a result
+    expect(checkCalls(f)).toBe(0);
+    const empty = createSyncStore(f as unknown as typeof fetch);
+    checkIfEmpty(empty);
+    expect(empty.getState().status).toBe('loading');
+    checkIfEmpty(empty); // already loading: no second check
+    await vi.waitFor(() => { expect(empty.getState().status).toBe('ready'); });
+    expect(checkCalls(f)).toBe(1);
+  });
+
+  it('a failing check keeps the restored row restored', async () => {
+    const { f, store } = setup({ check: async () => Response.json({ error: 'boom' }, { status: 500 }) });
+    await restoreAndRecheck(store, 'i1', f as unknown as typeof fetch);
+    await vi.waitFor(() => { expect(store.getState().status).toBe('error'); });
+    const r = store.getState().result;
+    expect(r?.ignored).toEqual([]);
+    expect(r?.unlinkedWallos.map((i) => i.id)).toContain('w9');
+  });
+
+  it('renders the updating status while a check runs and not otherwise', () => {
+    const html = render({ checking: true });
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('Updating sync status…');
+    expect(render({})).not.toContain('Updating sync status…');
+    expect(render({ checking: true }, 'nl')).toContain('Synchronisatiestatus bijwerken…');
+  });
+
+  it('renders the error line with Retry, and keeps the table', () => {
+    const html = render({ checkErrorMessage: 'Saved. Sync status could not be refreshed: x' });
+    expect(html).toContain('Saved. Sync status could not be refreshed: x');
+    expect(html).toContain('>Retry</button>');
+    expect(html).toContain('data-match-row');
+  });
+
+  it('wires Matches to requestRun and checkIfEmpty', () => {
+    expect(matchesSrc).toContain('syncStore.requestRun)');
+    expect(matchesSrc).toContain('checkIfEmpty(syncStore)');
+  });
+
+  const statusOf = (r: SyncCheckResult | null | undefined) => r?.linked.find((l) => l.matchId === 'm2')?.status;
+
+  it('a failed check after a resolve keeps the resolved state and rolls nothing back', async () => {
+    let n = 0;
+    const { f, store } = setup({ check: async () => (++n === 1 ? Response.json({ error: 'boom' }, { status: 500 }) : Response.json(fixture())) });
+    expect(statusOf(store.getState().result)).toBe('MISMATCH_DETECTED');
+    const out = await performResolve(() => store.getState().result, store.setResult, 'm2', 'ignore_diff', store.requestRun, f as unknown as typeof fetch);
+    expect(out).toEqual({ ok: true });
+    expect(store.getState().status).toBe('error');
+    expect(statusOf(store.getState().result)).toBe('LINKED');
+  });
+
+  it('a check in flight before a resolve cannot put the Mismatch status back when it lands', async () => {
+    const pending: Array<(r: Response) => void> = [];
+    const f = vi.fn(async (url: string) => {
+      if (url === '/api/sync/check') return new Promise<Response>((resolve) => { pending.push(resolve); });
+      return new Response(null, { status: 204 });
+    });
+    const store = createSyncStore(f as unknown as typeof fetch);
+    store.setResult(fixture());
+    const running = store.requestRun(); // check started before the resolve
+    const resolving = performResolve(() => store.getState().result, store.setResult, 'm2', 'ignore_diff', store.requestRun, f as unknown as typeof fetch);
+    pending[0]?.(Response.json(fixture())); // stale pre-resolve answer lands after the optimistic write
+    await vi.waitFor(() => { expect(pending.length).toBe(2); });
+    expect(statusOf(store.getState().result)).toBe('LINKED');
+    pending[1]?.(Response.json({ error: 'boom' }, { status: 500 }));
+    await Promise.all([running, resolving]);
+    expect(statusOf(store.getState().result)).toBe('LINKED');
   });
 });

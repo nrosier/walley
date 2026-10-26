@@ -10,7 +10,7 @@ const en = {
   },
   range: 'range',
   rangeHint: 'Amount is the midpoint of a range',
-  empty: 'No linked pairs yet. Run Sync Check on the Sync Dashboard to load them.',
+  empty: 'No linked pairs yet. Link items on the Sync Dashboard and they appear here.',
   ignored: {
     toggle: 'Show ignored items',
     title: 'Ignored items',
@@ -27,6 +27,10 @@ const en = {
     restoreLabel: 'Restore (unignore)',
     failed: 'Could not restore {name}.',
   },
+  checking: 'Updating sync status…',
+  refreshFailed: 'Saved. Sync status could not be refreshed: {reason}',
+  loadFailed: 'Sync status could not be loaded: {reason}',
+  retry: 'Retry',
   review: 'Review',
   reviewLabel: 'Review differences',
 };
@@ -43,7 +47,7 @@ const nl: typeof en = {
   },
   range: 'bereik',
   rangeHint: 'Het bedrag is het midden van een bereik',
-  empty: 'Nog geen gekoppelde paren. Start de synchronisatiecontrole op het Synchronisatie-dashboard om ze te laden.',
+  empty: 'Nog geen gekoppelde paren. Koppel items op het Synchronisatie-dashboard en ze verschijnen hier.',
   ignored: {
     toggle: 'Genegeerde items tonen',
     title: 'Genegeerde items',
@@ -60,6 +64,10 @@ const nl: typeof en = {
     restoreLabel: 'Herstellen (negeren ongedaan maken)',
     failed: '{name} kon niet worden hersteld.',
   },
+  checking: 'Synchronisatiestatus bijwerken…',
+  refreshFailed: 'Opgeslagen. De synchronisatiestatus kon niet worden vernieuwd: {reason}',
+  loadFailed: 'De synchronisatiestatus kon niet worden geladen: {reason}',
+  retry: 'Opnieuw proberen',
   review: 'Bekijken',
   reviewLabel: 'Verschillen bekijken',
 };

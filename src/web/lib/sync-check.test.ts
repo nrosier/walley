@@ -10,6 +10,7 @@ import {
   filterRows,
   nextRowId,
   performAction,
+  restoreAndRecheck,
   rollback,
 } from './sync-check';
 
@@ -294,5 +295,297 @@ describe('row actions update the shared store without a refetch (#48, #49)', () 
     await run({ kind: 'ignore', side: 'wallos', itemId: 'w2' });
     await run({ kind: 'ignore', side: 'actual', itemId: 'a2' });
     expect(urls(stub).some((u) => u.includes('sync/check'))).toBe(false);
+  });
+});
+
+describe('requestRun', () => {
+  const result = (name: string): SyncCheckResult => ({ ...sample(), checkedAt: name });
+  /** A fake fetch whose check calls stay pending until the test settles them in order. */
+  const gated = () => {
+    const pending: Array<(r: Response) => void> = [];
+    const f = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          pending.push(resolve);
+        }),
+    );
+    return { f, settle: (i: number, r: Response) => pending[i]?.(r) };
+  };
+  const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+
+  it('starts a check while idle', async () => {
+    const f = vi.fn(async () => json(200, result('one')));
+    const store = createSyncStore(f);
+    await store.requestRun();
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(store.getState()).toMatchObject({ status: 'ready', result: { checkedAt: 'one' } });
+  });
+
+  it('while loading, discards the stale result and runs one trailing check', async () => {
+    const g = gated();
+    const store = createSyncStore(g.f);
+    const first = store.requestRun();
+    await tick();
+    const second = store.requestRun();
+    g.settle(0, json(200, result('stale')));
+    await tick();
+    expect(store.getState().result).toBeNull();
+    expect(store.getState().status).toBe('loading');
+    expect(g.f).toHaveBeenCalledTimes(2);
+    g.settle(1, json(200, result('fresh')));
+    await Promise.all([first, second]);
+    expect(store.getState()).toMatchObject({ status: 'ready', result: { checkedAt: 'fresh' } });
+  });
+
+  it('three calls while loading give exactly one trailing check', async () => {
+    const g = gated();
+    const store = createSyncStore(g.f);
+    const all = [store.requestRun()];
+    await tick();
+    all.push(store.requestRun(), store.requestRun(), store.requestRun());
+    g.settle(0, json(200, result('stale')));
+    await tick();
+    g.settle(1, json(200, result('fresh')));
+    await Promise.all(all);
+    expect(g.f).toHaveBeenCalledTimes(2);
+    expect(store.getState().result?.checkedAt).toBe('fresh');
+  });
+
+  it('a failed check keeps the result and sets error', async () => {
+    const f = vi.fn(async () => json(500, { error: 'boom' }));
+    const store = createSyncStore(f);
+    store.setResult(result('kept'));
+    await store.requestRun();
+    expect(store.getState()).toMatchObject({ status: 'error', errorCode: 'boom', result: { checkedAt: 'kept' } });
+  });
+
+  it('a failed trailing check also keeps the result', async () => {
+    const g = gated();
+    const store = createSyncStore(g.f);
+    store.setResult(result('kept'));
+    const a = store.requestRun();
+    await tick();
+    const b = store.requestRun();
+    g.settle(0, json(200, result('stale')));
+    await tick();
+    g.settle(1, json(500, { error: 'boom' }));
+    await Promise.all([a, b]);
+    expect(store.getState()).toMatchObject({ status: 'error', result: { checkedAt: 'kept' } });
+  });
+
+  describe('concurrency', () => {
+    it('run() during a requestRun check after a setResult starts no second fetch', async () => {
+      const g = gated();
+      const store = createSyncStore(g.f);
+      const first = store.requestRun();
+      await tick();
+      store.setResult(result('optimistic')); // flips status away from loading in the old code
+      expect(store.getState().status).toBe('loading');
+      const viaRun = store.run();
+      const again = store.requestRun(); // queues the one trailing check
+      g.settle(0, json(200, result('stale')));
+      await tick();
+      g.settle(1, json(200, result('fresh')));
+      await Promise.all([first, viaRun, again]);
+      expect(g.f.mock.calls.length).toBeLessThanOrEqual(2);
+      expect(g.f).toHaveBeenCalledTimes(2);
+      expect(store.getState().result?.checkedAt).toBe('fresh');
+    });
+
+    it('run() alone during a check after a setResult joins it (one fetch)', async () => {
+      const g = gated();
+      const store = createSyncStore(g.f);
+      const first = store.requestRun();
+      await tick();
+      store.setResult(result('optimistic'));
+      const viaRun = store.run();
+      await tick();
+      expect(g.f).toHaveBeenCalledTimes(1);
+      g.settle(0, json(200, result('stale')));
+      await Promise.all([first, viaRun]);
+      expect(g.f).toHaveBeenCalledTimes(1);
+      expect(store.getState()).toMatchObject({ status: 'ready', result: { checkedAt: 'optimistic' } });
+    });
+
+    it('after the first check settles, requestRun starts exactly one new check', async () => {
+      const g = gated();
+      const store = createSyncStore(g.f);
+      const first = store.requestRun();
+      await tick();
+      store.setResult(result('optimistic'));
+      const viaRun = store.run();
+      g.settle(0, json(200, result('stale')));
+      await Promise.all([first, viaRun]);
+      expect(g.f).toHaveBeenCalledTimes(1);
+      const next = store.requestRun();
+      await tick();
+      expect(g.f).toHaveBeenCalledTimes(2);
+      g.settle(1, json(200, result('next')));
+      await next;
+      expect(g.f).toHaveBeenCalledTimes(2);
+      expect(store.getState().result?.checkedAt).toBe('next');
+    });
+
+    it('requestRun in the completion gap still runs its trailing check', async () => {
+      const g = gated();
+      const store = createSyncStore(g.f);
+      const first = store.requestRun();
+      await tick();
+      let second: Promise<void> | undefined;
+      store.subscribe(() => {
+        // Fires inside the loop's final set(), right before it checks wantsRerun() and finishes.
+        if (second === undefined && store.getState().status === 'ready') second = store.requestRun();
+      });
+      g.settle(0, json(200, result('one')));
+      await tick();
+      expect(second).toBeDefined();
+      expect(g.f).toHaveBeenCalledTimes(2); // the trailing check ran
+      g.settle(1, json(200, result('two')));
+      await Promise.all([first, second]);
+      expect(store.getState().result?.checkedAt).toBe('two');
+    });
+
+    it('requestRun right after the loop returns (gap before finally) starts a new check', async () => {
+      const g = gated();
+      const store = createSyncStore(g.f);
+      const first = store.requestRun();
+      await tick();
+      g.settle(0, json(200, result('one')));
+      await first;
+      const second = store.requestRun();
+      await tick();
+      expect(g.f).toHaveBeenCalledTimes(2);
+      g.settle(1, json(200, result('two')));
+      await second;
+    });
+
+    it('requestRun from a microtask right after the loop ends starts a new check', async () => {
+      const g = gated();
+      const store = createSyncStore(g.f);
+      let queued = false;
+      store.subscribe(() => {
+        if (!queued && store.getState().status === 'ready') {
+          queued = true;
+          queueMicrotask(() => {
+            void store.requestRun();
+          });
+        }
+      });
+      const first = store.requestRun();
+      await tick();
+      g.settle(0, json(200, result('one')));
+      await first;
+      await tick();
+      expect(queued).toBe(true);
+      expect(g.f).toHaveBeenCalledTimes(2);
+      g.settle(1, json(200, result('two')));
+      await tick();
+      expect(store.getState().result?.checkedAt).toBe('two');
+    });
+  });
+
+  describe('stale check versus an optimistic restore', () => {
+    const routed = (checkOutcomes: Array<(r: Response) => void>, restoreStatus = 204) => {
+      const calls: string[] = [];
+      const f = vi.fn((input: string) => {
+        const url = input;
+        calls.push(url);
+        if (url.includes('sync/check')) {
+          return new Promise<Response>((resolve) => {
+            checkOutcomes.push(resolve);
+          });
+        }
+        return Promise.resolve(restoreStatus === 204 ? new Response(null, { status: 204 }) : json(restoreStatus, { error: 'boom' }));
+      });
+      return { f: f as unknown as typeof fetch, calls };
+    };
+
+    it('a check that lands after the optimistic write does not put the pre-change row back', async () => {
+      const checks: Array<(r: Response) => void> = [];
+      const { f } = routed(checks);
+      const store = createSyncStore(f);
+      const first = store.requestRun();
+      await tick();
+      // The server answered with the ignored row still present (pre-change state).
+      store.setResult(sample());
+      const restored = restoreAndRecheck(store, 'm1', f);
+      // Optimistic write is in; the old check lands now, before the restore call has settled.
+      expect(store.getState().result?.ignored).toEqual([]);
+      checks[0]?.(json(200, sample()));
+      await tick();
+      expect(store.getState().result?.ignored).toEqual([]);
+      expect((await restored).ok).toBe(true);
+      await tick();
+      checks[1]?.(json(200, { ...sample(), ignored: [] }));
+      await first;
+      expect(store.getState().result?.ignored).toEqual([]);
+    });
+
+    it('if the trailing check fails, the restored row stays restored', async () => {
+      const checks: Array<(r: Response) => void> = [];
+      const { f } = routed(checks);
+      const store = createSyncStore(f);
+      const first = store.requestRun();
+      await tick();
+      store.setResult(sample());
+      const restored = restoreAndRecheck(store, 'm1', f);
+      checks[0]?.(json(200, sample())); // stale pre-change answer
+      await restored;
+      await tick();
+      checks[1]?.(json(500, { error: 'boom' }));
+      await first;
+      const state = store.getState();
+      expect(state.status).toBe('error');
+      expect(state.result?.ignored).toEqual([]);
+      expect(state.result?.unlinkedWallos.some((i) => i.id === 'w9')).toBe(true);
+    });
+
+    it('a stale check that lands before the restore call settles cannot undo the write (other order)', async () => {
+      const checks: Array<(r: Response) => void> = [];
+      const { f } = routed(checks);
+      const store = createSyncStore(f);
+      const first = store.requestRun();
+      await tick();
+      store.setResult(sample());
+      const restored = restoreAndRecheck(store, 'm1', f);
+      await restored; // restore call done first, trailing check queued
+      checks[0]?.(json(200, sample())); // stale answer lands after
+      await tick();
+      expect(store.getState().result?.ignored).toEqual([]);
+      checks[1]?.(json(500, { error: 'boom' }));
+      await first;
+      expect(store.getState().result?.ignored).toEqual([]);
+    });
+
+    it('a stale check landing while the restore call is still pending cannot put the row back', async () => {
+      const checks: Array<(r: Response) => void> = [];
+      let finishRestore: (r: Response) => void = () => undefined;
+      const f = vi.fn((input: string) =>
+        input.includes('sync/check')
+          ? new Promise<Response>((resolve) => {
+              checks.push(resolve);
+            })
+          : new Promise<Response>((resolve) => {
+              finishRestore = resolve;
+            }),
+      ) as unknown as typeof fetch;
+      const store = createSyncStore(f);
+      const first = store.requestRun();
+      await tick();
+      store.setResult(sample());
+      const restored = restoreAndRecheck(store, 'm1', f); // optimistic write now; the restore fetch stays pending
+      expect(store.getState().result?.ignored).toEqual([]);
+      checks[0]?.(json(200, sample())); // stale answer: the row is still ignored in it
+      await first;
+      expect(store.getState().result?.ignored).toEqual([]);
+      finishRestore(new Response(null, { status: 204 }));
+      expect((await restored).ok).toBe(true);
+      await tick();
+      expect(checks).toHaveLength(2); // the trailing check
+      checks[1]?.(json(500, { error: 'boom' }));
+      await tick();
+      expect(store.getState().status).toBe('error');
+      expect(store.getState().result?.ignored).toEqual([]);
+    });
   });
 });
