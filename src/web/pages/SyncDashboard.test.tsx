@@ -10,7 +10,13 @@ import rowSrc from '@/components/dashboard/ItemRow.tsx?raw';
 import toolbarSrc from '@/components/dashboard/Toolbar.tsx?raw';
 import wallosColumnSrc from '@/components/dashboard/WallosColumn.tsx?raw';
 import actualColumnSrc from '@/components/dashboard/ActualColumn.tsx?raw';
+import { ItemRow } from '@/components/dashboard/ItemRow';
+import { syncDashboardMessages } from './SyncDashboard.messages';
+import { createT } from '@/i18n/translate';
+import { failedSide } from '@/lib/sync-failure';
 import { SyncDashboardView, type SyncDashboardViewProps } from './SyncDashboard';
+
+const restoreLabel = (locale: Locale) => createT(syncDashboardMessages, locale)('row.restoreNamed', { name: 'Amazon Prime' });
 
 /** The markup of one column: from its data-column marker to the closing section tag. */
 const columnOf = (html: string, side: 'wallos' | 'actual') => {
@@ -22,7 +28,7 @@ const columnOf = (html: string, side: 'wallos' | 'actual') => {
 const render = (state: SyncStoreState, extra: Partial<SyncDashboardViewProps> = {}, locale: Locale = 'en') =>
   renderToStaticMarkup(
     <I18nProvider initialLocale={locale}>
-      <SyncDashboardView state={state} query="" showIgnored={false} {...extra} />
+      <SyncDashboardView state={state} query="" {...extra} />
     </I18nProvider>,
   );
 
@@ -63,27 +69,35 @@ describe('SyncDashboard states', () => {
     expect(html).toContain('>range</span>');
     expect(html).toContain('Invalid amount');
   });
-  it('Link only on items with candidates; unmappable has none', () => {
+  it('Link is the one action on rows with a candidate; others offer Create', () => {
     const html = render(ready());
-    expect(html.match(/>Link</g)).toHaveLength(2);
-    const gym = html.slice(html.indexOf('data-row-id="w2"'), html.indexOf('data-row-id="w2"') + 900);
+    expect(html.match(/>Link<\/button>/g)).toHaveLength(2);
+    const gym = html.slice(html.indexOf('data-row-id="w2"'), html.indexOf('data-row-id="w2"') + 1400);
     expect(gym).not.toContain('>Link<');
-    expect(html).toContain('NETFLIX.COM (€13.00)');
+    expect(html).toContain('Suggested match: NETFLIX.COM');
+    expect(html).toContain('Suggested match: Netflix');
+    expect(html).toContain('aria-label="Link Netflix to NETFLIX.COM"');
   });
-  it('Create buttons are enabled and open the pre-fill modals (the modals hold Submit)', () => {
+  it('Create appears only on rows without a candidate and opens the pre-fill modals', () => {
     const html = render(ready());
-    const buttons = html.match(/<button[^>]*>Create in (AB|Wallos)<\/button>/g) ?? [];
-    expect(buttons).toHaveLength(4);
-    expect(buttons.some((b) => b.includes('disabled=""'))).toBe(false);
-    expect(columnOf(html, 'wallos').match(/>Create in AB<\/button>/g)).toHaveLength(2);
-    expect(columnOf(html, 'actual').match(/>Create in Wallos<\/button>/g)).toHaveLength(2);
+    expect(columnOf(html, 'wallos').match(/>Create in AB<\/button>/g)).toHaveLength(1);
+    expect(columnOf(html, 'actual').match(/>Create in Wallos<\/button>/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Create in AB: Gym"');
+    expect(html).toContain('aria-label="Create in Wallos: Rent"');
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Create in/);
   });
-  it('columns still render Link and Ignore (#48, #49)', () => {
-    for (const side of ['wallos', 'actual'] as const) {
-      const column = columnOf(render(ready()), side);
-      expect(column.match(/>Link<\/button>/g)).toHaveLength(1);
-      expect(column.match(/>Ignore<\/button>/g)).toHaveLength(2);
+  it('each unignored row shows one primary action and a uniquely named More actions button', () => {
+    const html = render(ready());
+    expect(html).not.toContain('>Ignore<');
+    expect(html).not.toContain('>Restore<');
+    for (const name of ['Netflix', 'Gym', 'NETFLIX.COM', 'Rent']) {
+      expect(html.match(new RegExp(`aria-label="More actions for ${name}"`, 'g')), name).toHaveLength(1);
     }
+  });
+  it('only Run Sync Check is a filled indigo button', () => {
+    const html = render(ready());
+    expect(html.match(/data-variant="default"/g)).toHaveLength(1);
+    expect(html).toMatch(/data-variant="default"[^>]*>Run Sync Check</);
   });
   it('the dashboard and its column and row sources make no /api/integrations call', () => {
     const files: Record<string, string> = { dashboardSrc, storeSrc, apiSrc, rowSrc, toolbarSrc, wallosColumnSrc, actualColumnSrc };
@@ -92,24 +106,83 @@ describe('SyncDashboard states', () => {
     }
   });
 
-  it('Show Ignored Items shows ignored rows with the badge', () => {
-    expect(render(ready())).not.toContain('Old');
-    const html = render(ready(), { showIgnored: true });
-    expect(html).toContain('Old');
-    expect(html).toContain('data-kind="ignored"');
-    expect(html).toContain('role="switch"');
+  it('ignored rows sit in a collapsed disclosure with a count and a uniquely named Restore', () => {
+    const html = render(ready());
+    expect(html).toContain('Ignored items (1)');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('role="switch"');
+    expect(html).not.toContain('>Restore<');
   });
-  it('shows one Restore button on each ignored row', () => {
-    expect(render(ready())).not.toContain('Restore (unignore)');
-    const html = render(ready(), { showIgnored: true });
-    expect(html.match(/aria-label="Restore \(unignore\)"/g)).toHaveLength(1);
-    expect(html).toContain('>Restore</button>');
-    expect(render(ready(), { showIgnored: true }, 'nl')).toContain('>Herstellen</button>');
+  it('Restore is inside More actions, named per row', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider initialLocale="en">
+        <ItemRow
+          row={{ id: 'w9', name: 'Amazon Prime', amountCents: 500, isRange: false, reason: null, ignored: true, matchId: 'm1' }}
+          side="wallos"
+          baseCurrency="EUR"
+          candidates={[]}
+          createLabel="Create in AB"
+        />
+      </I18nProvider>,
+    );
+    expect(html).toContain('aria-label="More actions for Amazon Prime"');
+    expect(html).toContain('data-kind="ignored"');
+    expect(html).not.toContain('>Restore');
+    expect(restoreLabel('en')).toBe('Restore Amazon Prime');
+    expect(restoreLabel('nl')).toBe('Amazon Prime herstellen');
+  });
+  it('a row error keeps the row, says nothing changed and offers Try again', () => {
+    const html = render(ready(), { errorRowId: 'w1', rowError: 'Kapot', onRetryRow: () => undefined });
+    expect(html).toContain('Kapot');
+    expect(html).toContain('Nothing changed.');
+    expect(html).toContain('aria-label="Try again: Netflix"');
+    expect(html).toContain('data-row-id="w1"');
+    expect(render(ready(), { errorRowId: 'w1', rowError: 'Kapot', onRetryRow: () => undefined }, 'nl')).toContain('Er is niets gewijzigd.');
+  });
+  it('skeleton while the first check runs, with a status for screen readers', () => {
+    const html = render({ status: 'loading', result: null, errorCode: null });
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('animate-pulse');
+  });
+  it('not configured: names the missing side with a Check settings link and no Retry', () => {
+    const html = render({ status: 'error', result: null, errorCode: 'wallos_not_configured' });
+    expect(html).toContain('Wallos is not set up yet.');
+    expect(html).toContain('href="/settings"');
+    expect(html).toContain('Check settings');
+    expect(html).not.toContain('>Retry<');
+  });
+  it('sync failure names the side, offers Retry and Check settings, and keeps the last result marked Stale', () => {
+    const html = render({ status: 'error', result: sample(), errorCode: 'actual_unavailable' });
+    expect(html).toContain('The sync check failed on the Actual Budget side.');
+    expect(html).toContain('>Retry<');
+    expect(html).toContain('Check settings');
+    expect(html).toContain('>Stale<');
+    expect(html).toContain('Netflix');
+    const wallos = render({ status: 'error', result: null, errorCode: 'wallos_unavailable' });
+    expect(wallos).toContain('failed on the Wallos side');
+    expect(wallos).not.toContain('>Stale<');
+    expect(render({ status: 'error', result: null, errorCode: 'internal_error' })).toContain('The sync check failed.');
+  });
+  it('failedSide reads the side from the code', () => {
+    expect(failedSide('wallos_auth_failed')).toBe('wallos');
+    expect(failedSide('actual_sync_failed')).toBe('actual');
+    expect(failedSide('request_failed')).toBeNull();
+    expect(failedSide(null)).toBeNull();
+  });
+  it('a segmented control switches the lists below 768px; both lists stay in markup', () => {
+    const html = render(ready());
+    expect(html).toContain('role="radiogroup"');
+    expect(html).toContain('aria-label="Show list"');
+    expect(html).toContain('Wallos (2)');
+    expect(html).toContain('Actual Budget (2)');
+    expect(html).toContain('md:hidden');
+    // Wallos is the default pane, so only the Actual column hides below 768px.
+    expect(html).toMatch(/data-column="actual"[^>]*max-md:hidden/);
+    expect(html).not.toMatch(/data-column="wallos"[^>]*max-md:hidden/);
   });
   it('shows a row error and renders in nl', () => {
-    const html = render(ready(), { errorRowId: 'w1', rowError: 'Kapot' });
-    expect(html).toContain('Kapot');
     expect(render(ready(), {}, 'nl')).toContain('Aanmaken in AB');
+    expect(render(ready(), {}, 'nl')).toContain('Voorgestelde koppeling: NETFLIX.COM');
   });
   it('references no create or update client to Wallos or Actual', () => {
     const files: Record<string, string> = { dashboardSrc, storeSrc, apiSrc, rowSrc, toolbarSrc };

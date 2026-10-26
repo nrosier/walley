@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, type MouseEvent } from 'react';
 
 export type Route = 'sync' | 'matches' | 'settings' | 'login' | 'verify-email';
 export type TabRoute = 'sync' | 'matches' | 'settings';
@@ -42,4 +42,11 @@ function subscribe(onChange: () => void): () => void {
 /** The route for the current location; re-renders on navigate() and back/forward. */
 export function useRoute(): Route {
   return useSyncExternalStore(subscribe, () => parseRoute(window.location.pathname), () => 'sync');
+}
+
+/** Click handler for an in-app `<a href>`: plain left clicks use the router, modified clicks keep browser behaviour. */
+export function followInApp(event: MouseEvent<HTMLAnchorElement>, path: string): void {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  navigate(path);
 }

@@ -5,8 +5,11 @@ import { useT } from '@/i18n';
 import { type RowModel, type Side } from '@/lib/sync-check';
 import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
 import { StatusBadge } from '../StatusBadge';
+import { Alert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { Disclosure } from '../ui/disclosure';
+import { MoreActionsMenu, type MoreActionsItem } from '../ui/more-actions-menu';
 import { CreateActualModal } from './CreateActualModal';
 import { CreateWallosModal } from './CreateWallosModal';
 
@@ -22,43 +25,83 @@ export interface ItemRowProps {
   onLink?: (wallosId: string, actualScheduleId: string, side: Side) => void;
   onIgnore?: (side: Side, itemId: string) => void;
   onRestore?: (side: Side, matchId: string, itemId: string) => void;
+  /** Repeats the action that just failed on this row. */
+  onRetry?: () => void;
 }
 
 const CELL = 'px-3 py-1.5 text-sm';
+const ACTION = 'min-h-(--control-h) shrink-0';
 
-/** One item. Link only exists for items with candidates; unmappable items show their reason. */
+/**
+ * One item on one line: name, amount, one primary action, More actions.
+ * The primary action is Link (with a "Suggested match" line) when a candidate exists, otherwise Create.
+ * Ignore and Restore live only in More actions.
+ */
 export function ItemRow(props: ItemRowProps) {
   const { row, side } = props;
   const { t, locale } = useT(syncDashboardMessages);
-  const mine = props.candidates.filter((c) =>
-    side === 'wallos' ? c.wallosId === row.id : c.actualScheduleId === row.id,
-  );
-  const [chosen, setChosen] = useState(0);
   const [creating, setCreating] = useState(false);
-  const pick = mine[Math.min(chosen, mine.length - 1)];
+  const mine = props.candidates
+    .filter((c) => (side === 'wallos' ? c.wallosId === row.id : c.actualScheduleId === row.id))
+    .sort((a, b) => b.nameScore - a.nameScore);
+  const best = row.reason === null ? mine[0] : undefined;
   const otherName = (c: SyncCandidate) => (side === 'wallos' ? c.actualName : c.wallosName);
-  const otherCents = (c: SyncCandidate) => (side === 'wallos' ? c.actualAmountCents : c.wallosAmountCents);
-  const canAct = !row.ignored && props.disabled !== true;
+  const busy = props.disabled === true;
 
   let amount: ReactNode;
   if (row.reason !== null) {
     amount = <span className="text-warning">{t(`reason.${row.reason}`)}</span>;
   } else if (row.amountCents === null) {
-    amount = <span className="text-muted-foreground">{t('row.noAmount')}</span>;
+    amount = <span className="text-muted">{t('row.noAmount')}</span>;
   } else {
     amount = <span className="font-mono">{formatMoney(row.amountCents, props.baseCurrency, locale)}</span>;
+  }
+
+  const menu: MoreActionsItem[] = [];
+  if (row.ignored) {
+    if (row.matchId !== null) {
+      const matchId = row.matchId;
+      menu.push({
+        id: 'restore',
+        label: t('row.restoreNamed', { name: row.name }),
+        disabled: busy,
+        onSelect: () => props.onRestore?.(side, matchId, row.id),
+      });
+    }
+  } else {
+    // Other candidates stay reachable here so the suggestion is not the only way to link.
+    for (const c of mine.slice(best === undefined ? 0 : 1)) {
+      if (row.reason !== null) break;
+      menu.push({
+        id: `link:${c.wallosId}:${c.actualScheduleId}`,
+        label: t('row.linkNamed', { name: row.name, other: otherName(c) }),
+        disabled: busy,
+        onSelect: () => props.onLink?.(c.wallosId, c.actualScheduleId, side),
+      });
+    }
+    menu.push({
+      id: 'ignore',
+      label: t('row.ignoreNamed', { name: row.name }),
+      disabled: busy,
+      onSelect: () => props.onIgnore?.(side, row.id),
+    });
   }
 
   return (
     <li
       data-row-id={row.id}
       tabIndex={-1}
-      className="border-b outline-none last:border-b-0 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="border-b outline-none last:border-b-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
     >
-      <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${CELL}`}>
-        <span className="min-w-0 flex-1 truncate font-medium" title={row.name}>
-          {row.name}
-        </span>
+      <div className={`flex items-center gap-x-3 ${CELL}`}>
+        <div className="min-w-0 flex-1">
+          <span className="block truncate font-medium" title={row.name}>
+            {row.name}
+          </span>
+          {best !== undefined && !row.ignored ? (
+            <span className="block truncate text-xs text-muted">{t('row.suggested', { name: otherName(best) })}</span>
+          ) : null}
+        </div>
         {row.isRange ? (
           <Badge variant="mismatch" title={t('row.rangeHint')}>
             {t('row.range')}
@@ -66,62 +109,35 @@ export function ItemRow(props: ItemRowProps) {
         ) : null}
         {row.ignored ? <StatusBadge kind="ignored" /> : null}
         <span className="text-right">{amount}</span>
-      </div>
-      {canAct ? (
-        <div className={`flex flex-wrap items-center gap-2 pt-0 ${CELL}`}>
-          {pick !== undefined && row.reason === null ? (
-            <>
-              <select
-                aria-label={t('row.linkTo', { name: row.name })}
-                value={Math.min(chosen, mine.length - 1)}
-                onChange={(e) => {
-                  setChosen(Number(e.target.value));
-                }}
-                className="h-6 max-w-48 rounded-md border bg-background px-1 text-xs"
-              >
-                {mine.map((c, i) => (
-                  <option key={`${c.wallosId}:${c.actualScheduleId}`} value={i}>
-                    {otherName(c)} ({formatMoney(otherCents(c), props.baseCurrency, locale)})
-                  </option>
-                ))}
-              </select>
-              <Button
-                type="button"
-                size="xs"
-                onClick={() => props.onLink?.(pick.wallosId, pick.actualScheduleId, side)}
-              >
-                {t('row.link')}
-              </Button>
-            </>
-          ) : null}
+        {row.ignored ? null : best !== undefined ? (
           <Button
             type="button"
-            size="xs"
+            size="sm"
             variant="outline"
+            className={ACTION}
+            disabled={busy}
+            aria-label={t('row.linkNamed', { name: row.name, other: otherName(best) })}
+            onClick={() => props.onLink?.(best.wallosId, best.actualScheduleId, side)}
+          >
+            {t('row.link')}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={ACTION}
+            disabled={busy}
+            aria-label={t(side === 'wallos' ? 'row.createInActualNamed' : 'row.createInWallosNamed', { name: row.name })}
             onClick={() => {
               setCreating(true);
             }}
           >
             {props.createLabel}
           </Button>
-          <Button type="button" size="xs" variant="ghost" onClick={() => props.onIgnore?.(side, row.id)}>
-            {t('row.ignore')}
-          </Button>
-        </div>
-      ) : null}
-      {row.ignored && row.matchId !== null && props.disabled !== true ? (
-        <div className={`flex flex-wrap items-center gap-2 pt-0 ${CELL}`}>
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            aria-label={t('row.restoreLabel')}
-            onClick={() => props.onRestore?.(side, row.matchId ?? '', row.id)}
-          >
-            {t('row.restore')}
-          </Button>
-        </div>
-      ) : null}
+        )}
+        {menu.length > 0 ? <MoreActionsMenu items={menu} name={row.name} /> : null}
+      </div>
       {creating && side === 'wallos' ? (
         <CreateActualModal
           wallosId={row.id}
@@ -141,9 +157,23 @@ export function ItemRow(props: ItemRowProps) {
         />
       ) : null}
       {props.error != null ? (
-        <p role="alert" className={`text-xs text-warning ${CELL}`}>
-          {props.error}
-        </p>
+        <div className="px-3 pb-2">
+          <Alert variant="error">
+            {props.error} {t('row.nothingChanged')}
+            {props.onRetry === undefined ? null : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="ml-2 min-h-(--control-h)"
+                aria-label={t('row.tryAgainNamed', { name: row.name })}
+                onClick={props.onRetry}
+              >
+                {t('row.tryAgain')}
+              </Button>
+            )}
+          </Alert>
+        </div>
       ) : null}
     </li>
   );
@@ -153,6 +183,10 @@ export interface ItemColumnProps {
   side: Side;
   title: string;
   rows: readonly RowModel[];
+  /** Ignored rows of this column; shown in a disclosure. */
+  ignoredRows?: readonly RowModel[];
+  ignoredOpen?: boolean;
+  onIgnoredOpenChange?: (open: boolean) => void;
   baseCurrency: string;
   candidates: readonly SyncCandidate[];
   createLabel: string;
@@ -161,42 +195,59 @@ export interface ItemColumnProps {
   busyId?: string | null;
   errorRowId?: string | null;
   errorText?: string | null;
+  className?: string;
   onLink?: (wallosId: string, actualScheduleId: string, side: Side) => void;
   onIgnore?: (side: Side, itemId: string) => void;
   onRestore?: (side: Side, matchId: string, itemId: string) => void;
+  onRetry?: () => void;
 }
 
 /** Shared column body used by WallosColumn and ActualColumn. */
 export function ItemColumn(props: ItemColumnProps) {
+  const { t } = useT(syncDashboardMessages);
   const headingId = `col-${props.side}`;
+  const renderRow = (row: RowModel) => (
+    <ItemRow
+      key={row.id}
+      row={row}
+      side={props.side}
+      baseCurrency={props.baseCurrency}
+      candidates={props.candidates}
+      createLabel={props.createLabel}
+      disabled={props.busyId === row.id}
+      error={props.errorRowId === row.id ? props.errorText : null}
+      onLink={props.onLink}
+      onIgnore={props.onIgnore}
+      onRestore={props.onRestore}
+      onRetry={props.onRetry}
+    />
+  );
+  const ignored = props.ignoredRows ?? [];
   return (
-    <section aria-labelledby={headingId} data-column={props.side} tabIndex={-1} className="min-w-0 rounded-lg border bg-card outline-none">
+    <section
+      aria-labelledby={headingId}
+      data-column={props.side}
+      tabIndex={-1}
+      className={`min-w-0 rounded-lg border bg-card outline-none ${props.className ?? ''}`}
+    >
       <h2 id={headingId} className="border-b px-3 py-1.5 text-sm font-semibold">
-        {props.title}{' '}
-        <span className="font-mono text-xs font-normal text-muted-foreground">{props.rows.length}</span>
+        {props.title} <span className="font-mono text-xs font-normal text-muted">{props.rows.length}</span>
       </h2>
       {props.rows.length === 0 ? (
-        <p className="px-3 py-1.5 text-sm text-muted-foreground">{props.emptyText}</p>
+        <p className="px-3 py-1.5 text-sm text-muted">{props.emptyText}</p>
       ) : (
-        <ul>
-          {props.rows.map((row) => (
-            <ItemRow
-              key={row.id}
-              row={row}
-              side={props.side}
-              baseCurrency={props.baseCurrency}
-              candidates={props.candidates}
-              createLabel={props.createLabel}
-              disabled={props.busyId === row.id}
-              error={props.errorRowId === row.id ? props.errorText : null}
-              onLink={props.onLink}
-              onIgnore={props.onIgnore}
-              onRestore={props.onRestore}
-            />
-          ))}
-        </ul>
+        <ul>{props.rows.map(renderRow)}</ul>
       )}
+      {ignored.length > 0 ? (
+        <Disclosure
+          className="border-t px-3"
+          title={t('ignoredTitle', { count: ignored.length })}
+          open={props.ignoredOpen}
+          onOpenChange={props.onIgnoredOpenChange}
+        >
+          <ul className="-mx-3">{ignored.map(renderRow)}</ul>
+        </Disclosure>
+      ) : null}
     </section>
   );
 }
-

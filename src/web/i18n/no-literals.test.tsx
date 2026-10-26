@@ -69,7 +69,7 @@ const views: Record<string, ReactElement> = {
   'verify email': <VerifyEmailView state={{ kind: 'missing' }} />,
   'health status': <HealthStatus />,
   'sync dashboard': (
-    <SyncDashboardView state={{ status: 'ready', result, errorCode: null }} query="" showIgnored={false} />
+    <SyncDashboardView state={{ status: 'ready', result, errorCode: null }} query="" />
   ),
   matches: <MatchesView result={{ ...result, linked: [] }} showIgnored={false} />,
   'create actual form': (
