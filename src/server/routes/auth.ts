@@ -262,24 +262,28 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       if (found.pendingPasswordHash === null) {
         return reply.code(400).send({ error: 'token_without_password' });
       }
+      const repo = createUserRepo(db, found.userId);
+      const wrongPassword = (): FastifyReply => reply.code(401).send({ error: 'invalid_password' });
+      // Every attempt counts against the token and its owner's email BEFORE any Argon2 await, so
+      // parallel guesses cannot all pass the lookup and then race the limit. A refused attempt burns
+      // the token and answers like a wrong password, without running Argon2.
+      const tokenOk = limiter.take(`token:${idHash}`).allowed;
+      const emailOk = limiter.take(`email:${found.email}`).allowed;
+      if (!tokenOk || !emailOk) {
+        repo.deleteEmailVerification(idHash);
+        return wrongPassword();
+      }
       let ok = false;
       if (isWithinRawLimit(rawPassword)) {
         const password = normalisePassword(rawPassword);
         ok = isAcceptablePasswordLength(password) && (await verifyPassword(password, found.pendingPasswordHash));
       }
-      if (!ok) {
-        // Each miss counts against the token and its owner's email. Past the limit the token is
-        // burned, so a leaked link cannot be used to guess the password from many addresses.
-        const tokenOk = limiter.take(`token:${idHash}`).allowed;
-        const emailOk = limiter.take(`email:${found.email}`).allowed;
-        if (!tokenOk || !emailOk) {
-          createUserRepo(db, found.userId).deleteEmailVerification(idHash);
-        }
-        return reply.code(401).send({ error: 'invalid_password' });
+      // A correct password whose token was consumed or burned meanwhile looks like a wrong one.
+      if (!ok || !repo.consumeEmailVerification(idHash, when)) {
+        return wrongPassword();
       }
-      if (!createUserRepo(db, found.userId).consumeEmailVerification(idHash, when)) {
-        return reply.code(400).send({ error: 'invalid_token' });
-      }
+      limiter.clear(`token:${idHash}`);
+      limiter.clear(`email:${found.email}`);
       return reply.code(204).send();
     });
 

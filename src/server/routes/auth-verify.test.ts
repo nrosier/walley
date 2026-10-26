@@ -482,6 +482,59 @@ describe('verify-email brute-force limits', () => {
     expect(verified.headers['content-type']).toBe(unknown.headers['content-type']);
   });
 
+  it('(e) parallel guesses on one token cannot verify the account once the limit is used up', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'race@example.test');
+    const token = lastToken(mailer);
+    // The register call took one email count, so four attempts are allowed. Wrong guesses come
+    // first and use them up; the correct ones start after the limit is reached.
+    const wrong = Array.from({ length: 6 }, (_v, i) => verify(t, token, `wrong passphrase number ${String(i)}`));
+    const right = Array.from({ length: 4 }, () => verify(t, token));
+    const results = await Promise.all([...wrong, ...right]);
+    // A request that looks the token up after the burn gets 400 invalid_token, as a wrong one would.
+    for (const res of results) {
+      expect([400, 401]).toContain(res.statusCode);
+      expect(res.body).toBe(res.statusCode === 401 ? '{"error":"invalid_password"}' : '{"error":"invalid_token"}');
+    }
+    expect(userRow(t.db, 'race@example.test')).toEqual({ hash: null, verifiedAt: null });
+    expect(tokenCount(t.db)).toBe(0);
+  });
+
+  it('(f) after the burn the correct password gets the same status and body as a wrong one', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'same@example.test');
+    const token = lastToken(mailer);
+    await Promise.all(Array.from({ length: 6 }, (_v, i) => verify(t, token, `wrong passphrase number ${String(i)}`)));
+    const right = await verify(t, token);
+    const wrong = await verify(t, token, 'another wrong passphrase');
+    expect(right.statusCode).toBe(wrong.statusCode);
+    expect(right.body).toBe(wrong.body);
+    expect(right.headers['content-type']).toBe(wrong.headers['content-type']);
+  });
+
+  it('(g) a correct password whose consume fails gets the same status and body as a wrong one', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'twice@example.test');
+    const token = lastToken(mailer);
+    const [first, second] = await Promise.all([verify(t, token), verify(t, token)]);
+    const wrong = await verify(t, '0'.repeat(64), 'wrong passphrase here');
+    const statuses = [first.statusCode, second.statusCode].sort();
+    // One wins, the other finds the token already consumed after its Argon2 check.
+    expect(statuses).toEqual([204, 401]);
+    const loser = first.statusCode === 401 ? first : second;
+    expect(loser.body).toBe('{"error":"invalid_password"}');
+    const wrongOnLiveToken = await (async () => {
+      await register(t, 'other@example.test');
+      return verify(t, lastToken(mailer), 'wrong passphrase here');
+    })();
+    expect(loser.statusCode).toBe(wrongOnLiveToken.statusCode);
+    expect(loser.body).toBe(wrongOnLiveToken.body);
+    expect(wrong.statusCode).toBe(400);
+  });
+
   it('(d) still applies the per-IP limit', async () => {
     const t = setup();
     for (let i = 0; i < 20; i += 1) {
