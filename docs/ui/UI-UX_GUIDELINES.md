@@ -2,7 +2,7 @@
 
 **Status:** Normative guidance for new UI work  
 **Audience:** Coding agents and human contributors  
-**Related documents:** [UI/UX migration plan](./.md)
+**Related documents:** UI/UX migration plan
 
 This document defines how the app's features should be organized, presented, and implemented so that the interface remains predictable as the product grows. Apply it to new screens, feature additions, and substantial UI refactors.
 

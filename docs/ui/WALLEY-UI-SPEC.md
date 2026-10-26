@@ -1,6 +1,6 @@
 # Walley UI/UX Spec
 
-Status: draft, owner decisions applied. Rule set: `docs/ui/UI-UX_GUIDELINES.md`. Phasing: `docs/ui/.md`. Visual identity: `CLAUDE.md` (Look & Feel, UI Views). Existing UI: `src/web/MAP.md`.
+Status: draft, owner decisions applied. Rule set: `docs/ui/UI-UX_GUIDELINES.md`. Visual identity: `CLAUDE.md` (Look & Feel, UI Views). Existing UI: `src/web/MAP.md`.
 
 Where this spec and the guide conflict, the conflict and the owner's decision are listed in section 10. Every place the body applies a decision is tagged `[D-x decided: <answer>]`. Copy not found in `src/web/**/*.messages.ts` or `CLAUDE.md` is tagged `[approved, not yet in messages files]`; the strings must be added to the `*.messages.ts` files when the feature is built.
 
