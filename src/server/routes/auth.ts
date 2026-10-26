@@ -171,7 +171,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       throw error;
     });
 
-    local.post('/auth/register', { config: { public: true } }, async (request, reply) => {
+    local.post('/auth/register', { config: { public: true, localAuthOnly: true } }, async (request, reply) => {
       if (!allowRegistration) {
         return reply.code(403).send({ error: 'registration_disabled' });
       }
@@ -244,7 +244,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       return reply.code(202).send({ status: 'verification_sent' });
     });
 
-    local.post('/auth/verify-email', { config: { public: true } }, async (request, reply) => {
+    local.post('/auth/verify-email', { config: { public: true, localAuthOnly: true } }, async (request, reply) => {
       const body =
         typeof request.body === 'object' && request.body !== null
           ? (request.body as Record<string, unknown>)
@@ -309,7 +309,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       return reply.code(204).send();
     });
 
-    local.post('/auth/login', { config: { public: true } }, async (request, reply) => {
+    local.post('/auth/login', { config: { public: true, localAuthOnly: true } }, async (request, reply) => {
       // Order: mode gate (hook), IP, then email, before the dummy hash, lookup or any Argon2 work.
       if (limited(reply, `ip:${ipRateKey(request.ip)}`)) {
         return reply;

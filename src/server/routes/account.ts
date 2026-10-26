@@ -70,7 +70,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     };
   });
 
-  app.put('/account/password', async (request, reply) => {
+  app.put('/account/password', { config: { localAuthOnly: true } }, async (request, reply) => {
     if (request.auth === null) {
       return reply.code(401).send({ error: 'unauthenticated' });
     }

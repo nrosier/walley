@@ -76,6 +76,8 @@ declare module 'fastify' {
   interface FastifyContextConfig {
     /** Marks an /api route that may be reached without a session. */
     public?: boolean;
+    /** Marks a local password route. In OIDC mode the CSRF hook defers to its 403 local_auth_disabled. */
+    localAuthOnly?: boolean;
   }
 }
 
@@ -308,7 +310,7 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
   app.after(() => {
     app.addHook('onRequest', denyHook);
     if (auth !== undefined) {
-      app.addHook('onRequest', createCsrfHook(auth.publicOrigin));
+      app.addHook('onRequest', createCsrfHook(auth.publicOrigin, auth.mode));
     }
   });
 

@@ -125,6 +125,39 @@ describe('CSRF protection', () => {
     expect(res.json()).toEqual(FAILED);
   });
 
+  it.each(['/api/auth/login', '/api/auth/register', '/api/auth/verify-email'])(
+    'oidc mode: POST %s with no Origin returns 403 local_auth_disabled',
+    async (url) => {
+      const made = makeAuthApp({ mode: 'oidc' });
+      open.push(made);
+      const res = await made.app.inject({
+        method: 'POST',
+        url,
+        payload: { email: 'a@example.test', password: 'x' },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: 'local_auth_disabled' });
+    },
+  );
+
+  it('oidc mode: PUT password with a session but no Origin or token returns 403 local_auth_disabled', async () => {
+    const made = makeAuthApp({ mode: 'oidc' });
+    open.push(made);
+    const s = signIn(made, makeUser(made.db), 'oidc');
+    const res = await made.app.inject({ method: 'PUT', url: '/api/account/password', headers: { cookie: s.cookie } });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'local_auth_disabled' });
+  });
+
+  it('oidc mode: logout with no Origin still returns csrf_failed', async () => {
+    const made = makeAuthApp({ mode: 'oidc' });
+    open.push(made);
+    const s = signIn(made, makeUser(made.db), 'oidc');
+    const res = await made.app.inject({ ...LOGOUT, headers: { cookie: s.cookie } });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual(FAILED);
+  });
+
   it.each(['GET', 'HEAD'] as const)('%s /api/auth/me without Origin is not blocked', async (method) => {
     const t = setup();
     const s = signIn(t, makeUser(t.db));
