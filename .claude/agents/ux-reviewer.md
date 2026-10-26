@@ -1,7 +1,7 @@
 ---
 name: ux-reviewer
 description: UI/UX review for Walley. Use on any change to pages, components, modals, the navbar, theme tokens, or settings. Checks the change against the ui-* skills and the Walley look and feel in CLAUDE.md. Read-only: reports findings with file and line and does not edit code.
-model: claude-sonnet-5-5
+model: sonnet
 effort: medium
 tools: Read, Grep, Glob, Bash
 ---

@@ -1,7 +1,7 @@
 ---
 name: security-reviewer
 description: Security review for Walley. Use on any change to auth, sessions, CSRF, rate limits, secrets, encryption, OIDC, the Wallos or Actual Budget clients, or any route that reads or writes user data. Read-only: reports findings with file and line and does not edit code.
-model: claude-opus-5-5
+model: opus
 effort: high
 tools: Read, Grep, Glob, Bash
 ---
