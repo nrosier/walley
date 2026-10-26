@@ -23,6 +23,7 @@ import { integrationRoutes } from './routes/integrations.js';
 import { registerOidcRoutes } from './routes/oidc.js';
 import { matchesRoutes } from './routes/matches.js';
 import { settingsActualRoutes, type SettingsActualDeps } from './routes/settings-actual.js';
+import { overridesRoutes } from './routes/overrides.js';
 import { settingsMatchingRoutes } from './routes/settings-matching.js';
 import { settingsWallosRoutes, type SettingsWallosDeps } from './routes/settings-wallos.js';
 import { syncRoutes } from './routes/sync.js';
@@ -234,6 +235,7 @@ function registerAuth(
     if (settings !== undefined) {
       void app.register(settingsWallosRoutes, { prefix: '/api', deps: settings });
       void app.register(settingsMatchingRoutes, { prefix: '/api', deps: { repoFor: settings.repoFor } });
+      void app.register(overridesRoutes, { prefix: '/api', deps: { repoFor: settings.repoFor, now: clock } });
       if (settings.actual !== undefined) {
         void app.register(settingsActualRoutes, {
           prefix: '/api',

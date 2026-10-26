@@ -10,6 +10,12 @@ export interface ActualSchedulePrefill {
   /** Converted integer cents in the budget's base currency, negative for an expense. */
   amountCents: number;
   baseCurrency: string;
+  /** Wallos currency code of the subscription. */
+  sourceCurrency: string;
+  /** Wallos rate of that currency (Wallos scale), or null. */
+  wallosRate: string | null;
+  /** Saved manual rate, or null. `amountCents` already reflects it. */
+  overrideRate: string | null;
   recurrence: { frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'; interval?: number };
   startDate: string;
   accounts: NamedEntity[];

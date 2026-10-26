@@ -430,6 +430,30 @@ describe('runSyncCheck', () => {
     expect(res.unlinkedWallos[0]?.amountCents).toBe(-2500);
   });
 
+  it('after an override save resets the Wallos hash, a sync check shows no mismatch and stores the new hash', async () => {
+    // USD 25.00 at rate 2 is 12.50 EUR; the override rate 1 makes it 25.00 EUR.
+    const t = setup([sub(1, 'Netflix', '25.00', 2)], [sched('a1', 'Netflix', -1250)]);
+    const m = t.repo.insertMatch({
+      wallosId: '1',
+      actualScheduleId: 'a1',
+      status: 'LINKED',
+      lastKnownWallosHash: h('Netflix', -1250),
+      lastKnownActualHash: h('Netflix', -1250),
+    });
+    t.repo.saveSubscriptionOverride('1', { rate: '1', now: new Date(0) });
+    expect(t.repo.getMatch(m.id)).toMatchObject({
+      lastKnownWallosHash: null,
+      lastKnownActualHash: h('Netflix', -1250),
+    });
+    const res = await runSyncCheck(t.deps, t.userId);
+    expect(res.mismatches).toEqual([]);
+    expect(t.repo.getMatch(m.id)).toMatchObject({
+      status: 'LINKED',
+      lastKnownWallosHash: h('Netflix', -2500),
+      lastKnownActualHash: h('Netflix', -1250),
+    });
+  });
+
   it('reports an unconvertible Wallos item as unmappable instead of failing', async () => {
     const t = setup([sub(1, 'Netflix', '12.50', 99)], []);
     const res = await runSyncCheck(t.deps, t.userId);

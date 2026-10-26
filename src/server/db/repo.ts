@@ -57,6 +57,18 @@ export interface SubscriptionOverrideInput {
   now: Date;
 }
 
+export interface SaveSubscriptionOverrideResult {
+  override: SubscriptionOverrideRow;
+  changed: boolean;
+  /** Ids of the LINKED matches whose Wallos hash was reset. Empty when `changed` is false. */
+  resetMatchIds: string[];
+}
+
+export interface ClearSubscriptionOverrideResult {
+  deleted: boolean;
+  resetMatchIds: string[];
+}
+
 export interface SessionInput {
   /** Hex SHA-256 of the session token. The token itself is never stored. */
   idHash: string;
@@ -141,6 +153,21 @@ export interface UserRepo {
     wallosSubscriptionId: string,
     input: SubscriptionOverrideInput,
   ): SubscriptionOverrideRow;
+  /**
+   * #28: saves the override and, only when the stored rate changed (no previous row, or a different
+   * trimmed rate), sets `last_known_wallos_hash = NULL` on this user's LINKED matches for that
+   * Wallos id, in one transaction. MISMATCH_DETECTED, IGNORED_* rows and the Actual hash are never
+   * touched. Throws CurrencyConversionError (invalid_rate) before writing anything.
+   */
+  saveSubscriptionOverride(
+    wallosSubscriptionId: string,
+    input: SubscriptionOverrideInput,
+  ): SaveSubscriptionOverrideResult;
+  /**
+   * #28: removes the override and, when one existed, resets the LINKED Wallos hashes the same way
+   * as a changed save, in one transaction. Nothing is touched when no override existed.
+   */
+  clearSubscriptionOverride(wallosSubscriptionId: string): ClearSubscriptionOverrideResult;
   /** Returns false when this user has no override for that subscription; nothing is removed. */
   deleteSubscriptionOverride(wallosSubscriptionId: string): boolean;
   /** Stores a pre-overwrite copy of a remote record for this user. */
@@ -216,6 +243,20 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
 
   const getSubscriptionOverride = (wallosSubscriptionId: string): SubscriptionOverrideRow | undefined =>
     db.select().from(subscriptionOverrides).where(ownOverride(wallosSubscriptionId)).get();
+
+  /** Nulls the Wallos hash of this user's LINKED matches for one Wallos id. Runs inside a transaction. */
+  const resetLinkedWallosHashes = (tx: Pick<AppDatabase, 'select' | 'update'>, wallosId: string): string[] => {
+    const scope = and(
+      eq(matches.userId, userId),
+      eq(matches.wallosId, wallosId),
+      eq(matches.status, 'LINKED'),
+    );
+    const ids = tx.select({ id: matches.id }).from(matches).where(scope).all().map((r) => r.id);
+    if (ids.length > 0) {
+      tx.update(matches).set({ lastKnownWallosHash: null }).where(scope).run();
+    }
+    return ids;
+  };
 
   return {
     userId,
@@ -444,6 +485,45 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
         throw new Error('subscription override missing after upsert');
       }
       return row;
+    },
+
+    saveSubscriptionOverride(wallosSubscriptionId, input) {
+      const rate = input.rate.trim();
+      parseRate(rate);
+      return db.transaction((tx) => {
+        const previous = tx
+          .select()
+          .from(subscriptionOverrides)
+          .where(ownOverride(wallosSubscriptionId))
+          .get();
+        const changed = previous === undefined || previous.rate.trim() !== rate;
+        tx.insert(subscriptionOverrides)
+          .values({ userId, wallosSubscriptionId, rate, updatedAt: input.now })
+          .onConflictDoUpdate({
+            target: [subscriptionOverrides.userId, subscriptionOverrides.wallosSubscriptionId],
+            set: { rate, updatedAt: input.now },
+          })
+          .run();
+        const override = tx
+          .select()
+          .from(subscriptionOverrides)
+          .where(ownOverride(wallosSubscriptionId))
+          .get();
+        if (override === undefined) {
+          throw new Error('subscription override missing after save');
+        }
+        const resetMatchIds = changed ? resetLinkedWallosHashes(tx, wallosSubscriptionId) : [];
+        return { override, changed, resetMatchIds };
+      });
+    },
+
+    clearSubscriptionOverride(wallosSubscriptionId) {
+      return db.transaction((tx) => {
+        const deleted =
+          tx.delete(subscriptionOverrides).where(ownOverride(wallosSubscriptionId)).run().changes > 0;
+        const resetMatchIds = deleted ? resetLinkedWallosHashes(tx, wallosSubscriptionId) : [];
+        return { deleted, resetMatchIds };
+      });
     },
 
     deleteSubscriptionOverride(wallosSubscriptionId) {

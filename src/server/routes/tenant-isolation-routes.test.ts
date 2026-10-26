@@ -552,6 +552,42 @@ const CASES: Record<string, Case> = {
       },
     ],
   },
+  'GET /api/overrides/:wallosSubscriptionId': {
+    why: "the override lookup is user_id AND wallos id: B's subscription id gives 404 for A",
+    attempts: () => [
+      {
+        method: 'GET',
+        url: `/api/overrides/${String(B_SUB_ID)}`,
+        status: NOT_FOUND,
+        error: 'not_found',
+      },
+    ],
+  },
+  'PUT /api/overrides/:wallosSubscriptionId': {
+    why: "the save and the hash reset are bound to the session user; B's override and LINKED hashes stay as they were (same-id cross-user PUT is in overrides.test.ts, where echoing the id is not a leak)",
+    attempts: () => [
+      {
+        method: 'PUT',
+        url: '/api/overrides/a-own-sub',
+        payload: { rate: '3.5' },
+        status: [200],
+        verify: (res) => {
+          expect(res.json()).toEqual({ wallosSubscriptionId: 'a-own-sub', rate: '3.5', resetMatches: 0 });
+        },
+      },
+    ],
+  },
+  'DELETE /api/overrides/:wallosSubscriptionId': {
+    why: "the delete is user_id AND wallos id: B's override is not A's to remove, 404 and B's row is kept",
+    attempts: () => [
+      {
+        method: 'DELETE',
+        url: `/api/overrides/${String(B_SUB_ID)}`,
+        status: NOT_FOUND,
+        error: 'not_found',
+      },
+    ],
+  },
   'DELETE /api/matches/:id': {
     why: "the row lookup is id AND user_id: B's ids give 404, even for a LINKED row (which would be invalid_state)",
     attempts: ({ matches: m }) =>

@@ -206,7 +206,11 @@ describe('pre-fill previews', () => {
 
   it('actual schedule preview honours the override and rejects unknown ids and missing base', async () => {
     createUserRepo(db, userId).upsertSubscriptionOverride('7', { rate: '2.2', now: new Date() });
-    expect((await prefillActualScheduleFromWallos(deps(), userId, { wallosSubscriptionId: '7' })).amountCents).toBe(-500);
+    const withOverride = await prefillActualScheduleFromWallos(deps(), userId, { wallosSubscriptionId: '7' });
+    expect(withOverride.amountCents).toBe(-500);
+    expect(withOverride.overrideRate).toBe('2.2');
+    expect(withOverride.sourceCurrency).toEqual(expect.any(String));
+    expect(withOverride.wallosRate === null || typeof withOverride.wallosRate === 'string').toBe(true);
     await expect(
       prefillActualScheduleFromWallos(deps(), userId, { wallosSubscriptionId: '9' }),
     ).rejects.toMatchObject({ code: 'wallos_subscription_not_found' });

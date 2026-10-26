@@ -23,6 +23,7 @@ Fastify backend. It serves the API, the built web app (when `NODE_ENV=production
 | `routes/account.ts` | `accountRoutes` (`db`, `mode`): `GET /api/account`, `PUT /api/account/password`. Registered whenever `auth` is set | Account settings |
 | `routes/settings-wallos.ts` | `settingsWallosRoutes`: `GET`/`PUT /api/settings/wallos`, `POST /api/settings/wallos/test`. Registered when `settings` is set | Wallos settings |
 | `routes/settings-actual.ts` | `settingsActualRoutes`: `GET`/`PUT /api/settings/actual`, `POST /api/settings/actual/budgets` and `/base-currency`. Registered when `settings.actual` is set | Actual settings |
+| `routes/overrides.ts` | `overridesRoutes`: `GET`/`PUT`/`DELETE /api/overrides/:wallosSubscriptionId` (per-subscription rate override; a changed save or a clear resets the user's LINKED Wallos hashes). Registered when `settings` is set | Currency rate overrides |
 | `routes/settings-matching.ts` | `settingsMatchingRoutes`: `GET`/`PUT /api/settings/matching` (tolerance 0 to 50). Registered when `settings` is set | Matching settings |
 | `routes/MAP.md` | Map of the `routes/` folder | Finding a route file |
 | `db/` | SQLite schema, migrations and the scoped data layer; see `db/MAP.md` | Any stored data |
