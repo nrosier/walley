@@ -57,16 +57,16 @@ export function RateField({ prefill, wallosId, fetchImpl, onChanged }: RateField
           onChange={(e) => { setValue(e.target.value); }}
           className={`${FIELD_CLASS} w-32 font-mono`}
         />
-        <Button type="button" size="sm" variant="outline" disabled={busy || value.trim() === ''} onClick={() => { run(() => saveOverride(wallosId, value.trim(), fetchImpl), () => undefined); }}>
+        <Button type="button" size="sm" variant="outline" className="min-h-(--control-h)" disabled={busy || value.trim() === ''} onClick={() => { run(() => saveOverride(wallosId, value.trim(), fetchImpl), () => undefined); }}>
           {busy ? t('actual.rate.saving') : t('actual.rate.save')}
         </Button>
         {hasOverride ? (
-          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => { run(() => clearOverride(wallosId, fetchImpl), () => { setValue(''); }); }}>
+          <Button type="button" size="sm" variant="outline" className="min-h-(--control-h)" disabled={busy} onClick={() => { run(() => clearOverride(wallosId, fetchImpl), () => { setValue(''); }); }}>
             {t('actual.rate.clear')}
           </Button>
         ) : null}
       </div>
-      <span id={helpId} className="text-xs text-muted-foreground">
+      <span id={helpId} className="text-xs text-muted">
         {hasOverride ? `${t('actual.rate.overridden')} ` : ''}
         {help}
       </span>

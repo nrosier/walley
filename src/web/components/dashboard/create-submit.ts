@@ -8,6 +8,15 @@ export function actualSubmitDisabled(account: string, pending: boolean): boolean
   return account === '' || pending;
 }
 
+export type ActualDisabledReason = 'account' | 'payeeName';
+
+/** Why Create is off before sending, in the order the form shows it; null when nothing is missing. */
+export function actualDisabledReason(account: string, payee: string, newName: string): ActualDisabledReason | null {
+  if (account === '') return 'account';
+  if (payee === NEW_PAYEE && newName.trim() === '') return 'payeeName';
+  return null;
+}
+
 /** Wallos Submit needs no request in flight (the form only renders once the pre-fill has loaded). */
 export function wallosSubmitDisabled(pending: boolean): boolean {
   return pending;

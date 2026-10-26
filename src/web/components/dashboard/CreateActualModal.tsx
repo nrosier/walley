@@ -4,12 +4,14 @@ import { useT } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { createActualSchedule, prefillActualSchedule, type ActualSchedulePrefill, type CreateActualScheduleResult } from '@/lib/create.api';
 import { syncStore } from '@/lib/sync-check';
-import { Button } from '../ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Alert } from '../ui/alert';
+import { OptionCards } from '../ui/option-cards';
+import { CreateFooter } from './CreateFooter';
+import { CreateModalFrame } from './CreateModalFrame';
 import { RateField } from './RateField';
 import { createModalMessages } from './CreateModal.messages';
 import { everyKey, FIELD_CLASS } from './create-modal-shared';
-import { actualSubmitDisabled, buildActualBody, NEW_PAYEE, performCreate } from './create-submit';
+import { actualDisabledReason, buildActualBody, NEW_PAYEE, performCreate } from './create-submit';
 
 export interface CreateActualFormProps {
   prefill: ActualSchedulePrefill;
@@ -17,27 +19,38 @@ export interface CreateActualFormProps {
   fetchImpl?: typeof fetch;
   /** Called after the rate was saved or cleared so the caller can re-fetch the pre-fill. */
   onRateChanged?: () => void;
+  /** Where Cancel and Create render (the modal's pinned footer); see `CreateFooter.host`. */
+  footerHost?: HTMLElement | null;
+  onCancel?: () => void;
 }
 
-/** The pre-fill, three dropdowns and a Submit that needs an account and is locked while in flight. */
-export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged }: CreateActualFormProps) {
+/**
+ * The pre-fill (read-only until the override backend lands), a payee choice, account and category, and Create.
+ * Create needs an account and a payee name; the reason it is off shows in the footer and beside the field.
+ */
+export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged, footerHost, onCancel }: CreateActualFormProps) {
   const { t, errorText, locale } = useT(createModalMessages);
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState<CreateActualScheduleResult | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
-  const ids = { payee: useId(), newPayee: useId(), account: useId(), category: useId() };
+  const formId = useId();
+  const ids = { newPayee: useId(), account: useId(), category: useId(), reason: useId() };
   const [payee, setPayee] = useState(NEW_PAYEE);
   const [newName, setNewName] = useState(prefill.name);
   const [account, setAccount] = useState('');
   const [category, setCategory] = useState('');
   const every = everyKey(prefill.recurrence.frequency, prefill.recurrence.interval ?? 1);
+  const missing = actualDisabledReason(account, payee, newName);
+  const reasonText =
+    missing === 'account' ? t('actual.accountRequired') : missing === 'payeeName' ? t('actual.payeeNameRequired') : null;
 
   return (
     <form
-      className="grid gap-3 text-sm"
+      id={formId}
+      className="grid gap-4 text-sm"
       onSubmit={(e) => {
         e.preventDefault();
-        if (actualSubmitDisabled(account, pending) || created !== null) return;
+        if (missing !== null || pending || created !== null) return;
         setPending(true);
         setErrorCode(null);
         void performCreate(
@@ -50,30 +63,31 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged }
         });
       }}
     >
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-        <dt className="text-muted-foreground">{t('actual.name')}</dt>
-        <dd>{prefill.name}</dd>
-        <dt className="text-muted-foreground">{t('actual.amount')}</dt>
-        <dd className="font-mono">{formatMoney(prefill.amountCents, prefill.baseCurrency, locale)}</dd>
-        <dt className="text-muted-foreground">{t('actual.frequency')}</dt>
-        <dd>{t(every.key, { n: every.n })}</dd>
-        <dt className="text-muted-foreground">{t('actual.startDate')}</dt>
-        <dd className="font-mono">{prefill.startDate}</dd>
-      </dl>
+      <div className="grid gap-1">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border bg-surface-2 p-3">
+          <dt className="text-muted">{t('actual.name')}</dt>
+          <dd>{prefill.name}</dd>
+          <dt className="text-muted">{t('actual.amount')}</dt>
+          <dd className="font-mono">{formatMoney(prefill.amountCents, prefill.baseCurrency, locale)}</dd>
+          <dt className="text-muted">{t('actual.frequency')}</dt>
+          <dd>{t(every.key, { n: every.n })}</dd>
+          <dt className="text-muted">{t('actual.startDate')}</dt>
+          <dd className="font-mono">{prefill.startDate}</dd>
+        </dl>
+        <p className="text-xs text-muted">{t('readOnlyNote')}</p>
+      </div>
       {prefill.sourceCurrency !== prefill.baseCurrency ? (
         <RateField prefill={prefill} wallosId={wallosId} fetchImpl={fetchImpl} onChanged={onRateChanged} />
       ) : null}
-      <label htmlFor={ids.payee} className="grid gap-1">
-        {t('actual.payee')}
-        <select id={ids.payee} value={payee} onChange={(e) => { setPayee(e.target.value); }} className={FIELD_CLASS}>
-          <option value={NEW_PAYEE}>{t('actual.payeeNew')}</option>
-          {prefill.payees.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="grid gap-1">
+        <span className="font-medium">{t('actual.payee')}</span>
+        <OptionCards
+          aria-label={t('actual.payee')}
+          value={payee}
+          onValueChange={setPayee}
+          options={[{ value: NEW_PAYEE, label: t('actual.payeeNew') }, ...prefill.payees.map((p) => ({ value: p.id, label: p.name }))]}
+        />
+      </div>
       {payee === NEW_PAYEE ? (
         <label htmlFor={ids.newPayee} className="grid gap-1">
           {t('actual.payeeNewName')}
@@ -82,9 +96,11 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged }
             type="text"
             value={newName}
             maxLength={200}
+            aria-describedby={missing === 'payeeName' ? ids.reason : undefined}
             onChange={(e) => { setNewName(e.target.value); }}
             className={FIELD_CLASS}
           />
+          {missing === 'payeeName' ? <span className="text-xs text-muted">{t('actual.payeeNameRequired')}</span> : null}
         </label>
       ) : null}
       <label htmlFor={ids.account} className="grid gap-1">
@@ -103,7 +119,7 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged }
             </option>
           ))}
         </select>
-        {account === '' ? <span className="text-xs text-muted-foreground">{t('actual.accountRequired')}</span> : null}
+        {account === '' ? <span className="text-xs text-muted">{t('actual.accountRequired')}</span> : null}
       </label>
       <label htmlFor={ids.category} className="grid gap-1">
         {t('actual.category')}
@@ -116,21 +132,24 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged }
           ))}
         </select>
       </label>
-      {errorCode !== null ? <p role="alert" className="text-warning">{errorText(errorCode)}</p> : null}
+      {errorCode !== null ? <Alert variant="error">{errorText(errorCode)}</Alert> : null}
       {created !== null ? (
-        <div role="status" className="grid gap-1">
-          <p>{t('done')}</p>
-          {created.payeeCreated ? <p>{t('actual.payeeCreated')}</p> : null}
-          {created.categoryError === true ? <p className="text-warning">{t('actual.categoryError')}</p> : null}
-        </div>
+        <Alert variant="success">
+          {t('done')}
+          {created.payeeCreated ? ` ${t('actual.payeeCreated')}` : ''}
+          {created.categoryError === true ? ` ${t('actual.categoryError')}` : ''}
+        </Alert>
       ) : null}
-      <Button
-        type="submit"
-        size="sm"
-        disabled={actualSubmitDisabled(account, pending) || created !== null || (payee === NEW_PAYEE && newName.trim() === '')}
-      >
-        {pending ? t('creating') : t('submit')}
-      </Button>
+      <CreateFooter
+        formId={formId}
+        reasonId={ids.reason}
+        cancelLabel={t('cancel')}
+        submitLabel={pending ? t('creating') : t('submit')}
+        onCancel={onCancel}
+        reason={reasonText === null ? null : t('actual.createDisabled', { reason: reasonText })}
+        busy={pending || created !== null}
+        host={footerHost}
+      />
     </form>
   );
 }
@@ -150,6 +169,8 @@ export function CreateActualModal(props: CreateActualModalProps) {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const { wallosId, fetchImpl } = props;
   const [reloads, setReloads] = useState(0);
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  const footerId = useId();
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -164,21 +185,35 @@ export function CreateActualModal(props: CreateActualModalProps) {
   }, [wallosId, fetchImpl, reloads]);
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) props.onClose(); }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('actual.title')}</DialogTitle>
-          <DialogDescription>{t('actual.description', { name: props.wallosName })}</DialogDescription>
-        </DialogHeader>
-        {load.status === 'loading' ? <p role="status">{t('loading')}</p> : null}
-        {load.status === 'error' ? <p role="alert" className="text-warning">{errorText(load.code)}</p> : null}
-        {load.status === 'ready' ? <CreateActualForm prefill={load.prefill} wallosId={wallosId} fetchImpl={fetchImpl} onRateChanged={() => { setReloads((n) => n + 1); }} /> : null}
-        <DialogFooter>
-          <Button type="button" variant="outline" size="sm" onClick={props.onClose}>
-            {t('cancel')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <CreateModalFrame
+      title={t('actual.title')}
+      description={t('actual.description', { name: props.wallosName })}
+      onClose={props.onClose}
+      footer={<div ref={setHost} className="flex w-full" />}
+    >
+      {load.status === 'loading' ? <p role="status">{t('loading')}</p> : null}
+      {load.status === 'error' ? <Alert variant="error">{errorText(load.code)}</Alert> : null}
+      {load.status === 'ready' ? (
+        <CreateActualForm
+          prefill={load.prefill}
+          wallosId={wallosId}
+          fetchImpl={fetchImpl}
+          onRateChanged={() => { setReloads((n) => n + 1); }}
+          footerHost={host}
+          onCancel={props.onClose}
+        />
+      ) : (
+        <CreateFooter
+          formId={footerId}
+          reasonId={`${footerId}-reason`}
+          cancelLabel={t('cancel')}
+          submitLabel={t('submit')}
+          onCancel={props.onClose}
+          reason={load.status === 'error' ? t('loadFailed') : null}
+          busy
+          host={host}
+        />
+      )}
+    </CreateModalFrame>
   );
 }

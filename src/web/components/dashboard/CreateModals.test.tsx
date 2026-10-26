@@ -6,11 +6,13 @@ import { commonMessages } from '@/i18n/common.messages';
 import { createActualSchedule, createWallosSubscription, prefillActualSchedule, prefillWallosSubscription, type ActualSchedulePrefill, type WallosSubscriptionPrefill } from '@/lib/create.api';
 import { clearOverride, saveOverride } from '@/lib/overrides.api';
 import { CreateActualForm } from './CreateActualModal';
-import { actualSubmitDisabled, buildActualBody, performCreate, wallosSubmitDisabled } from './create-submit';
+import { actualDisabledReason, actualSubmitDisabled, buildActualBody, performCreate, wallosSubmitDisabled } from './create-submit';
 import { CreateWallosForm } from './CreateWallosModal';
 import actualSrc from './CreateActualModal.tsx?raw';
 import wallosSrc from './CreateWallosModal.tsx?raw';
 import apiSrc from '@/lib/create.api.ts?raw';
+import frameSrc from './CreateModalFrame.tsx?raw';
+import shellSrc from '../ui/dialog-shell.tsx?raw';
 
 const actual: ActualSchedulePrefill = {
   name: 'Netflix',
@@ -42,12 +44,14 @@ const jsonFetch = (body: unknown) =>
   vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 })));
 
 describe('CreateActualForm', () => {
-  it('renders the pre-fill, three dropdowns and a Submit that is disabled until an account is chosen', () => {
+  it('renders the pre-fill, payee option cards, two dropdowns and a Submit that is disabled until an account is chosen', () => {
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" />);
     expect(html).toContain('Netflix');
     expect(html).toMatch(/font-mono[^>]*>-?€12\.99|font-mono[^>]*>.€12\.99/);
     expect(html).toContain('Every month');
-    expect(html.match(/<select/g)).toHaveLength(3);
+    expect(html.match(/<select/g)).toHaveLength(2);
+    expect(html).toContain('role="radiogroup" aria-label="Payee"');
+    expect(html.match(/type="radio"/g)).toHaveLength(1 + actual.payees.length);
     expect(html).toContain('NETFLIX.COM');
     expect(html).toContain('Checking');
     expect(html).toContain('Fun');
@@ -207,5 +211,53 @@ describe('submit logic', () => {
       expect(src).not.toMatch(/\.message\b/);
     }
     expect(apiSrc).toContain('/api/integrations/actual-schedules');
+  });
+});
+
+describe('create modal layout (UI only, pre-fill read-only until the override backend lands)', () => {
+  it('Actual: pre-filled name, amount, frequency and start date are read-only display, not inputs', () => {
+    const html = render(<CreateActualForm prefill={actual} wallosId="w1" />);
+    expect(html).toContain('<dl');
+    expect(html).toContain('Pre-filled values are shown read-only.');
+    expect(html).not.toContain('value="2026-11-01"');
+    expect(html.match(/<input[^>]*type="text"/g)).toHaveLength(1); // the new payee name only
+  });
+  it('Actual: Cancel and Create sit together and the reason Create is off shows in the footer and beside the field', () => {
+    const html = render(<CreateActualForm prefill={actual} wallosId="w1" onCancel={() => undefined} />);
+    const footer = html.slice(html.indexOf('data-slot="create-footer"'));
+    expect(footer).toContain('>Cancel</button>');
+    expect(footer).toMatch(/<button[^>]*disabled=""[^>]*>Create<\/button>/);
+    expect(footer).toContain('Create is off: An account is required.');
+    expect(footer).toMatch(/aria-describedby="[^"]+"[^>]*>Create</);
+    const beside = html.slice(html.indexOf('Choose an account'), html.indexOf('data-slot="create-footer"'));
+    expect(beside).toContain('An account is required.');
+    expect(render(<CreateActualForm prefill={actual} wallosId="w1" />, 'nl')).toContain('Aanmaken is uitgeschakeld: Een rekening is verplicht.');
+  });
+  it('actualDisabledReason names the first missing field', () => {
+    expect(actualDisabledReason('', '__new__', 'x')).toBe('account');
+    expect(actualDisabledReason('a1', '__new__', '  ')).toBe('payeeName');
+    expect(actualDisabledReason('a1', 'p1', '')).toBeNull();
+    expect(actualDisabledReason('a1', '__new__', 'Netflix')).toBeNull();
+  });
+  it('Wallos: title, price, billing cycle (segmented) and start date are read-only display', () => {
+    const html = render(<CreateWallosForm prefill={wallos} scheduleId="s1" onCancel={() => undefined} />);
+    expect(html).toContain('role="radiogroup" aria-label="Billing cycle"');
+    expect(html.match(/type="radio"/g)).toHaveLength(4);
+    expect(html.match(/type="radio"[^>]*disabled=""|disabled=""[^>]*type="radio"/g)).toHaveLength(4);
+    expect(html).toMatch(/value="month"[^>]*checked=""|checked=""[^>]*value="month"/);
+    expect(html).not.toContain('type="text"');
+    expect(html).toContain('Pre-filled values are shown read-only.');
+    const footer = html.slice(html.indexOf('data-slot="create-footer"'));
+    expect(footer).toContain('>Cancel</button>');
+    expect(footer).toContain('>Create</button>');
+  });
+  it('both modals use the shared frame (DialogShell: pinned header and footer, scrolling body, sheet below 768px)', () => {
+    expect(frameSrc).toContain('<DialogShell');
+    expect(shellSrc).toContain('max-md:h-dvh');
+    expect(shellSrc).toContain('overflow-y-auto');
+    for (const src of [actualSrc, wallosSrc]) {
+      expect(src).toContain('<CreateModalFrame');
+      expect(src).toContain('footerHost={host}');
+    }
   });
 });
