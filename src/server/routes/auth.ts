@@ -254,7 +254,8 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       const idHash = hashToken(token);
       const when = new Date(now());
       const found = findEmailVerification(db, idHash, when);
-      if (found === undefined) {
+      // A verified owner's leftover token looks exactly like an unknown one.
+      if (found === undefined || found.emailVerified) {
         return reply.code(400).send({ error: 'invalid_token' });
       }
       // Issued before the password moved onto the token: nobody can prove the password, so refuse.
@@ -267,7 +268,13 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
         ok = isAcceptablePasswordLength(password) && (await verifyPassword(password, found.pendingPasswordHash));
       }
       if (!ok) {
-        // The token stays valid so the rightful owner can retry.
+        // Each miss counts against the token and its owner's email. Past the limit the token is
+        // burned, so a leaked link cannot be used to guess the password from many addresses.
+        const tokenOk = limiter.take(`token:${idHash}`).allowed;
+        const emailOk = limiter.take(`email:${found.email}`).allowed;
+        if (!tokenOk || !emailOk) {
+          createUserRepo(db, found.userId).deleteEmailVerification(idHash);
+        }
         return reply.code(401).send({ error: 'invalid_password' });
       }
       if (!createUserRepo(db, found.userId).consumeEmailVerification(idHash, when)) {

@@ -417,6 +417,82 @@ describe('verify-email password check', () => {
   });
 });
 
+describe('verify-email brute-force limits', () => {
+  it('(a) burns the token after repeated wrong passwords, so the correct one then fails', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'burn@example.test');
+    const token = lastToken(mailer);
+    for (let i = 0; i < 6; i += 1) {
+      const res = await verify(t, token, `wrong passphrase number ${String(i)}`);
+      // The register call already counted once against the shared email key, so the burn lands
+      // on the 5th miss at the latest; later tries find no token.
+      if (i < 4) {
+        expect(res.statusCode).toBe(401);
+        expect(res.json()).toEqual({ error: 'invalid_password' });
+      }
+      expect(res.statusCode).not.toBe(204);
+    }
+    expect(tokenCount(t.db)).toBe(0);
+    const right = await verify(t, token);
+    expect(right.statusCode).toBe(400);
+    expect(right.json()).toEqual({ error: 'invalid_token' });
+    expect(userRow(t.db, 'burn@example.test')).toEqual({ hash: null, verifiedAt: null });
+  });
+
+  it('keeps the token while the misses stay under the limit', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'few@example.test');
+    const token = lastToken(mailer);
+    for (let i = 0; i < 3; i += 1) {
+      expect((await verify(t, token, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
+    }
+    expect((await verify(t, token)).statusCode).toBe(204);
+  });
+
+  it('(b) a correct verify deletes the other tokens, and an older link returns invalid_token', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'multi@example.test');
+    const older = lastToken(mailer);
+    await register(t, 'multi@example.test');
+    const newer = lastToken(mailer);
+    expect(tokenCount(t.db)).toBe(2);
+    expect((await verify(t, newer)).statusCode).toBe(204);
+    expect(tokenCount(t.db)).toBe(0);
+    const res = await verify(t, older);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_token' });
+  });
+
+  it('(c) a verified user token gets the same response as an unknown token', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'done@example.test');
+    const token = lastToken(mailer);
+    const user = t.db.$client.prepare('select id from users where email = ?').get('done@example.test') as { id: string };
+    // A leftover token on a verified account, as legacy data could hold.
+    t.db.$client.prepare('update users set email_verified_at = 1000 where id = ?').run(user.id);
+    const verified = await verify(t, token);
+    const unknown = await verify(t, '0'.repeat(64));
+    expect(verified.statusCode).toBe(400);
+    expect(verified.body).toBe(unknown.body);
+    expect(verified.body).toBe('{"error":"invalid_token"}');
+    expect(verified.headers['content-type']).toBe(unknown.headers['content-type']);
+  });
+
+  it('(d) still applies the per-IP limit', async () => {
+    const t = setup();
+    for (let i = 0; i < 20; i += 1) {
+      expect((await verify(t, '0'.repeat(64))).statusCode).toBe(400);
+    }
+    const res = await verify(t, '0'.repeat(64));
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toEqual({ error: 'rate_limited' });
+  });
+});
+
 describe('re-registering', () => {
   it('sends a new link with its own pending hash and leaves the old token valid', async () => {
     const mailer = createCapturingMailer();
@@ -434,8 +510,10 @@ describe('re-registering', () => {
     expect((await verify(t, newToken, NEW_PASSWORD)).statusCode).toBe(204);
     expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(200);
     expect((await login(t, 'again@example.test')).statusCode).toBe(401);
-    // A token used after verification changes nothing.
-    expect((await verify(t, oldToken)).statusCode).toBe(204);
+    // Verifying deleted every token of the user, so the older link is now unknown.
+    const stale = await verify(t, oldToken);
+    expect(stale.statusCode).toBe(400);
+    expect(stale.json()).toEqual({ error: 'invalid_token' });
     expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(200);
     expect((await login(t, 'again@example.test')).statusCode).toBe(401);
   });

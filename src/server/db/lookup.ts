@@ -24,7 +24,7 @@ export function findSessionByIdHash(db: AppDatabase, idHash: string): SessionRow
 }
 
 /**
- * Returns the owner and the pending password hash of an unexpired email verification token,
+ * Returns the owner, the owner's email and verified state, and the pending password hash of an unexpired email verification token,
  * given the hex SHA-256 of the token. The hash is null only on tokens issued before the
  * password moved onto the token. This is the only token-keyed read: the caller then consumes
  * the token through `createUserRepo(db, owner)`, whose delete is also bound to that owner.
@@ -33,15 +33,25 @@ export function findEmailVerification(
   db: AppDatabase,
   idHash: string,
   now: Date,
-): { userId: string; pendingPasswordHash: string | null } | undefined {
-  return db
+): { userId: string; email: string; emailVerified: boolean; pendingPasswordHash: string | null } | undefined {
+  const row = db
     .select({
       userId: emailVerifications.userId,
+      email: users.email,
+      verifiedAt: users.emailVerifiedAt,
       pendingPasswordHash: emailVerifications.pendingPasswordHash,
     })
     .from(emailVerifications)
+    .innerJoin(users, eq(users.id, emailVerifications.userId))
     .where(and(eq(emailVerifications.id, idHash), gt(emailVerifications.expiresAt, now)))
     .get();
+  if (row === undefined) return undefined;
+  return {
+    userId: row.userId,
+    email: row.email,
+    emailVerified: row.verifiedAt !== null,
+    pendingPasswordHash: row.pendingPasswordHash,
+  };
 }
 
 /** Looks a user up by email for local sign-in. Trims and lowercases, as stored. */

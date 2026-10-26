@@ -21,7 +21,8 @@
     "test:watch": "vitest",
     "start": "node dist/server/index.js",
     "db:generate": "drizzle-kit generate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "db:cleanup-unverified": "tsx scripts/cleanup-unverified-passwords.ts"
   },
   "dependencies": {
     "@actual-app/api": "26.10.0",

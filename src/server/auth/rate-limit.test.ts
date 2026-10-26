@@ -18,6 +18,18 @@ function setup(overrides: Partial<RateLimiterOptions> = {}) {
 }
 
 describe('createRateLimiter', () => {
+  it('counts token keys apart from email and ip keys, with the email limit', () => {
+    const { limiter } = setup();
+    for (let i = 0; i < 5; i += 1) {
+      expect(limiter.take('token:abc')).toEqual({ allowed: true });
+    }
+    expect(limiter.take('token:abc').allowed).toBe(false);
+    expect(limiter.take('email:abc').allowed).toBe(true);
+    expect(limiter.take('ip:abc').allowed).toBe(true);
+    limiter.clear('token:abc');
+    expect(limiter.take('token:abc').allowed).toBe(true);
+  });
+
   it('allows the 5th email attempt in 15 minutes and refuses the 6th', () => {
     const { clock, limiter } = setup();
     for (let i = 1; i <= 5; i += 1) {

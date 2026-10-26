@@ -1,13 +1,14 @@
 import { isIP } from 'node:net';
 
 /** Key kinds the limiter knows. Each kind has its own map and its own limit. */
-export type RateLimitKey = `email:${string}` | `ip:${string}`;
+export type RateLimitKey = `email:${string}` | `ip:${string}` | `token:${string}`;
 
 export type RateLimitResult = { readonly allowed: true } | { readonly allowed: false; readonly retryAfterSeconds: number };
 
 export interface RateLimiterOptions {
   /** Clock in ms since the epoch. */
   readonly now: () => number;
+  /** Also the limit per `token:` key, which has its own map and follows the email rules. */
   readonly maxPerEmail: number;
   readonly maxPerIp: number;
   readonly windowMs: number;
@@ -41,9 +42,16 @@ export const SIGN_IN_MAX_KEYS = 10_000;
  */
 export function createRateLimiter(opts: RateLimiterOptions): RateLimiter {
   const { now, maxPerEmail, maxPerIp, windowMs, maxKeys } = opts;
-  const maps = { email: new Map<string, number[]>(), ip: new Map<string, number[]>() };
+  const maps = {
+    email: new Map<string, number[]>(),
+    ip: new Map<string, number[]>(),
+    token: new Map<string, number[]>(),
+  };
 
   function split(key: RateLimitKey): { map: Map<string, number[]>; id: string; max: number } {
+    if (key.startsWith('token:')) {
+      return { map: maps.token, id: key.slice('token:'.length), max: maxPerEmail };
+    }
     return key.startsWith('email:')
       ? { map: maps.email, id: key.slice('email:'.length), max: maxPerEmail }
       : { map: maps.ip, id: key.slice('ip:'.length), max: maxPerIp };
@@ -65,8 +73,9 @@ export function createRateLimiter(opts: RateLimiterOptions): RateLimiter {
       const cutoff = t - windowMs;
       sweep(maps.email, cutoff);
       sweep(maps.ip, cutoff);
+      sweep(maps.token, cutoff);
       const { map, id, max } = split(key);
-      if (key.startsWith('email:') && !map.has(id) && map.size >= maxKeys) {
+      if (map !== maps.ip && !map.has(id) && map.size >= maxKeys) {
         // Email keys are never evicted, so flooding cannot reset a victim's counter. Refuse the
         // new key until the oldest live key expires. Map order is by latest attempt.
         const oldestTimes = map.values().next();

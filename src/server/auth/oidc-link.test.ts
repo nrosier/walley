@@ -112,6 +112,7 @@ describe("resolveOidcLogin", () => {
       idHash: "a".repeat(64),
       now: new Date(),
       expiresAt: new Date(Date.now() + 60_000),
+      pendingPasswordHash: "hash-pending",
     });
     const before = userRow(db, kate.id);
     expect(before?.verifiedAt).toBeNull();

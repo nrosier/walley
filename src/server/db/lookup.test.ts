@@ -116,6 +116,7 @@ describe('lookup', () => {
         idHash: 'e'.repeat(64),
         now,
         expiresAt: new Date(20_000),
+        pendingPasswordHash: 'h',
       });
       expect(findEmailVerification(db, 'e'.repeat(64), now)?.userId).toBe(aliceId);
       expect(findEmailVerification(db, 'e'.repeat(64), new Date(20_000))).toBeUndefined();

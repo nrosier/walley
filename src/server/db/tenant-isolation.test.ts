@@ -148,7 +148,7 @@ describe('tenant isolation', () => {
         .get(id) as { n: number }).n;
 
     it('A cannot consume B tokens, or verify B', () => {
-      b.createEmailVerification({ idHash: 'd'.repeat(64), now, expiresAt });
+      b.createEmailVerification({ idHash: 'd'.repeat(64), now, expiresAt, pendingPasswordHash: 'h' });
       expect(a.consumeEmailVerification('d'.repeat(64), now)).toBe(false);
       expect(count(b.userId)).toBe(1);
       expect(a.markEmailVerified(now)).toBe(true);

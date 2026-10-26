@@ -86,10 +86,10 @@ export interface EmailVerificationInput {
   expiresAt: Date;
   /**
    * Password hash chosen by whoever asked for this token. Applied to the user only when the
-   * token is consumed while the user is still unverified. Optional here only for non-password
-   * callers (OIDC link tests); the register route always sets it.
+   * token is consumed while the user is still unverified. Required: a token without one cannot
+   * be consumed.
    */
-  pendingPasswordHash?: string;
+  pendingPasswordHash: string;
 }
 
 export interface OverwriteSnapshotInput {
@@ -109,12 +109,15 @@ export interface UserRepo {
   createEmailVerification(input: EmailVerificationInput): void;
   /**
    * Consumes a verification token owned by this user: deletes it when it matches and has not
-   * expired, and sets `email_verified_at` to `now` if unset, in one transaction. If the token
-   * carries a pending password hash and the user is unverified, that hash replaces the stored one. Returns false
-   * when no live token of this user matches. The token is looked up beforehand by
-   * `findEmailVerification` in lookup.ts, the only token-keyed read.
+   * expired, and sets `email_verified_at` to `now` if unset, in one transaction. If the user is
+   * unverified, the token's pending password hash replaces the stored one. Deletes all of this
+   * user's verification tokens. Returns false when no live token of this user matches, or when
+   * the matching token has no pending password hash (nothing is written then). The token is
+   * looked up beforehand by `findEmailVerification` in lookup.ts, the only token-keyed read.
    */
   consumeEmailVerification(idHash: string, now: Date): boolean;
+  /** Deletes one verification token of this user (burns it). Returns false when it is not this user's. */
+  deleteEmailVerification(idHash: string): boolean;
   /**
    * Marks an unverified user verified, in one transaction: sets `email_verified_at` to `now`,
    * nulls the password hash when `clearPasswordHash` is true, and deletes this user's
@@ -301,7 +304,7 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
             id: input.idHash,
             userId,
             expiresAt: input.expiresAt,
-            pendingPasswordHash: input.pendingPasswordHash ?? null,
+            pendingPasswordHash: input.pendingPasswordHash,
             createdAt: input.now,
           })
           .run();
@@ -320,19 +323,24 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
           .from(emailVerifications)
           .where(live)
           .get();
-        if (row === undefined) return false;
-        tx.delete(emailVerifications).where(live).run();
+        if (row?.pending == null) return false;
+        tx.delete(emailVerifications).where(eq(emailVerifications.userId, userId)).run();
         // The verifier's own hash wins; a token used after verification changes nothing.
         tx.update(users)
-          .set(
-            row.pending === null
-              ? { emailVerifiedAt: now }
-              : { emailVerifiedAt: now, passwordHash: row.pending },
-          )
+          .set({ emailVerifiedAt: now, passwordHash: row.pending })
           .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
           .run();
         return true;
       });
+    },
+
+    deleteEmailVerification(idHash) {
+      return (
+        db
+          .delete(emailVerifications)
+          .where(and(eq(emailVerifications.id, idHash), eq(emailVerifications.userId, userId)))
+          .run().changes > 0
+      );
     },
 
     markEmailVerified(now, opts) {

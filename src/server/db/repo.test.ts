@@ -166,7 +166,7 @@ describe('createUserRepo', () => {
 
     it('consume is single-use and marks the user verified', () => {
       const repo = createUserRepo(db, userId);
-      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live });
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'h' });
       expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(true);
       expect(verifiedAt(userId)).toBe(t0.getTime());
       expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(false);
@@ -175,14 +175,14 @@ describe('createUserRepo', () => {
 
     it('rejects an expired token and leaves the user unverified', () => {
       const repo = createUserRepo(db, userId);
-      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live });
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'h' });
       expect(repo.consumeEmailVerification(tok('a'), live)).toBe(false);
       expect(verifiedAt(userId)).toBeNull();
       expect(tokenCount(userId)).toBe(1);
     });
 
     it('rejects a token that belongs to another user', () => {
-      createUserRepo(db, userId).createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live });
+      createUserRepo(db, userId).createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'h' });
       expect(createUserRepo(db, otherId).consumeEmailVerification(tok('a'), t0)).toBe(false);
       expect(verifiedAt(otherId)).toBeNull();
       expect(tokenCount(userId)).toBe(1);
@@ -191,15 +191,15 @@ describe('createUserRepo', () => {
     it('createEmailVerification prunes only this user expired tokens', () => {
       const mine = createUserRepo(db, userId);
       const theirs = createUserRepo(db, otherId);
-      mine.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: new Date(t0.getTime() + 1_000) });
-      theirs.createEmailVerification({ idHash: tok('b'), now: t0, expiresAt: new Date(t0.getTime() + 1_000) });
+      mine.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: new Date(t0.getTime() + 1_000), pendingPasswordHash: 'h' });
+      theirs.createEmailVerification({ idHash: tok('b'), now: t0, expiresAt: new Date(t0.getTime() + 1_000), pendingPasswordHash: 'h' });
       const later = new Date(t0.getTime() + 5_000);
-      mine.createEmailVerification({ idHash: tok('c'), now: later, expiresAt: live });
+      mine.createEmailVerification({ idHash: tok('c'), now: later, expiresAt: live, pendingPasswordHash: 'h' });
       expect(tokenCount(userId)).toBe(1);
       expect(tokenCount(otherId)).toBe(1);
     });
 
-    it('consume applies the pending hash of the token used, only while the user is unverified', () => {
+    it('consume applies the pending hash of the token used, and drops the other tokens', () => {
       const repo = createUserRepo(db, userId);
       const hashOf = () =>
         (db.$client.prepare('SELECT password_hash AS h FROM users WHERE id = ?').get(userId) as { h: string | null }).h;
@@ -207,8 +207,37 @@ describe('createUserRepo', () => {
       repo.createEmailVerification({ idHash: tok('b'), now: t0, expiresAt: live, pendingPasswordHash: 'hash-second' });
       expect(repo.consumeEmailVerification(tok('b'), t0)).toBe(true);
       expect(hashOf()).toBe('hash-second');
-      expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(true);
+      // Consuming b deleted a too, so a can no longer change anything.
+      expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(false);
       expect(hashOf()).toBe('hash-second');
+    });
+
+    it('consume deletes all of the user tokens, and not another user tokens', () => {
+      const repo = createUserRepo(db, userId);
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'h1' });
+      repo.createEmailVerification({ idHash: tok('b'), now: t0, expiresAt: live, pendingPasswordHash: 'h2' });
+      createUserRepo(db, otherId).createEmailVerification({ idHash: tok('c'), now: t0, expiresAt: live, pendingPasswordHash: 'h3' });
+      expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(true);
+      expect(tokenCount(userId)).toBe(0);
+      expect(tokenCount(otherId)).toBe(1);
+    });
+
+    it('consume refuses a token whose pending hash is null and writes nothing', () => {
+      const repo = createUserRepo(db, userId);
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'h' });
+      db.$client.prepare('UPDATE email_verifications SET pending_password_hash = NULL').run();
+      expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(false);
+      expect(verifiedAt(userId)).toBeNull();
+      expect(tokenCount(userId)).toBe(1);
+    });
+
+    it('deleteEmailVerification burns only this user token', () => {
+      const repo = createUserRepo(db, userId);
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'h' });
+      expect(createUserRepo(db, otherId).deleteEmailVerification(tok('a'))).toBe(false);
+      expect(tokenCount(userId)).toBe(1);
+      expect(repo.deleteEmailVerification(tok('a'))).toBe(true);
+      expect(tokenCount(userId)).toBe(0);
     });
 
     it('markEmailVerified clears the hash on request and is a no-op for an already verified user', () => {
