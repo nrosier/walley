@@ -267,22 +267,20 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       }
       const repo = createUserRepo(db, found.userId);
       const wrongPassword = (): FastifyReply => reply.code(401).send({ error: 'invalid_password' });
-      // Every attempt counts against the token and its owner's email BEFORE any Argon2 await, so
-      // parallel guesses cannot all pass the lookup and then race the limit. Only the token key
-      // burns the token and answers like a wrong password; the email key belongs to verify-email
-      // alone, and when it alone refuses the owner gets 429 and keeps the token. Neither path
-      // runs Argon2.
-      const tokenTake = verifyLimiter.take(`token:${idHash}`);
+      // Every attempt counts against its owner's email, then the token, BEFORE any Argon2 await, so
+      // parallel guesses cannot all pass the lookup and then race the limit. The email key goes
+      // first: when it alone refuses, the owner gets 429, the token is not charged and is kept. Only
+      // the token key burns the token and answers like a wrong password. Neither path runs Argon2.
       const emailTake = verifyLimiter.take(`email:${found.email}`);
-      if (!tokenTake.allowed) {
-        repo.deleteEmailVerification(idHash);
-        return wrongPassword();
-      }
       if (!emailTake.allowed) {
         return reply
           .header('Retry-After', String(emailTake.retryAfterSeconds))
           .code(429)
           .send({ error: 'rate_limited' });
+      }
+      if (!verifyLimiter.take(`token:${idHash}`).allowed) {
+        repo.deleteEmailVerification(idHash);
+        return wrongPassword();
       }
       let ok = false;
       if (isWithinRawLimit(rawPassword)) {

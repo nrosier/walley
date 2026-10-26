@@ -418,23 +418,23 @@ describe('verify-email password check', () => {
 });
 
 describe('verify-email brute-force limits', () => {
-  it('(a) burns the token after repeated wrong passwords, so the correct one then fails', async () => {
+  it('(a) refuses the sixth wrong password with 429, keeps the token, and works after the window', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'burn@example.test');
     const token = lastToken(mailer);
-    for (let i = 0; i < 6; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       const res = await verify(t, token, `wrong passphrase number ${String(i)}`);
-      // verify-email has its own counters, so five misses are checked and the sixth burns the
-      // token and answers like a wrong password.
       expect(res.statusCode).toBe(401);
       expect(res.json()).toEqual({ error: 'invalid_password' });
     }
-    expect(tokenCount(t.db)).toBe(0);
-    const right = await verify(t, token);
-    expect(right.statusCode).toBe(400);
-    expect(right.json()).toEqual({ error: 'invalid_token' });
-    expect(userRow(t.db, 'burn@example.test')).toEqual({ hash: null, verifiedAt: null });
+    // The email key fills first and refuses; the token key is not charged and the token stays.
+    const sixth = await verify(t, token, 'wrong passphrase number 5');
+    expect(sixth.statusCode).toBe(429);
+    expect(sixth.json()).toEqual({ error: 'rate_limited' });
+    expect(tokenCount(t.db)).toBe(1);
+    t.clock.advance(15 * 60 * 1000 + 1);
+    expect((await verify(t, token)).statusCode).toBe(204);
   });
 
   it('keeps the token while the misses stay under the limit', async () => {
@@ -488,6 +488,31 @@ describe('verify-email brute-force limits', () => {
     expect((await verify(t, tokenA)).statusCode).toBe(204);
   });
 
+  it('does not charge the token while the email key refuses, and the correct password works after the window', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'held@example.test');
+    const tokenA = lastToken(mailer);
+    await register(t, 'held@example.test');
+    const tokenB = lastToken(mailer);
+    // Five misses fill the email key; the token key of A holds only two.
+    for (let i = 0; i < 2; i += 1) {
+      expect((await verify(t, tokenA, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
+    }
+    for (let i = 0; i < 3; i += 1) {
+      expect((await verify(t, tokenB, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
+    }
+    // More owner retries than the token limit: if they were charged, the token would be burned.
+    for (let i = 0; i < 7; i += 1) {
+      const res = await verify(t, tokenA);
+      expect(res.statusCode).toBe(429);
+      expect(res.json()).toEqual({ error: 'rate_limited' });
+    }
+    expect(tokenCount(t.db)).toBe(2);
+    t.clock.advance(15 * 60 * 1000 + 1);
+    expect((await verify(t, tokenA)).statusCode).toBe(204);
+  });
+
   it('(b) a correct verify deletes the other tokens, and an older link returns invalid_token', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
@@ -529,11 +554,11 @@ describe('verify-email brute-force limits', () => {
     const wrong = Array.from({ length: 6 }, (_v, i) => verify(t, token, `wrong passphrase number ${String(i)}`));
     const right = Array.from({ length: 4 }, () => verify(t, token));
     const results = await Promise.all([...wrong, ...right]);
-    // The token key burns the token (401). A request that looks the token up after the burn gets
-    // 400 invalid_token. None can succeed.
+    // The email key refuses the rest (429) and keeps the token. None can succeed.
     const bodies: Record<number, string> = {
       400: '{"error":"invalid_token"}',
       401: '{"error":"invalid_password"}',
+      429: '{"error":"rate_limited"}',
     };
     for (const res of results) {
       expect(Object.keys(bodies).map(Number)).toContain(res.statusCode);
@@ -541,7 +566,7 @@ describe('verify-email brute-force limits', () => {
     }
     expect(results.some((res) => res.statusCode === 204)).toBe(false);
     expect(userRow(t.db, 'race@example.test')).toEqual({ hash: null, verifiedAt: null });
-    expect(tokenCount(t.db)).toBe(0);
+    expect(tokenCount(t.db)).toBe(1);
   });
 
   it('(f) after the burn the correct password gets the same status and body as a wrong one', async () => {
