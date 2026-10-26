@@ -12,3 +12,6 @@ coverage
 data/
 .claude/worktrees/
 compose.yml
+
+# Local design mockups, not committed
+docs/ui/mockups/
