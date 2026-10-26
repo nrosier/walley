@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { AuthMode } from '../lib/auth-mode.js';
 
 export type { AuthMode };
@@ -13,10 +14,14 @@ interface BaseConfig {
   readonly appSecret: string;
   readonly databasePath: string;
   readonly allowRegistration: boolean;
+  /** The origin browsers use to reach Walley, e.g. https://walley.example.com. No trailing slash. */
+  readonly publicOrigin: string;
   readonly serveWeb: boolean;
   readonly secureCookies: boolean;
   readonly port: number;
   readonly host: string;
+  /** Addresses or CIDR ranges of the reverse proxies whose X-Forwarded-For Walley trusts. False trusts none. */
+  readonly trustProxy: string[] | false;
 }
 
 export type AppConfig = BaseConfig &
@@ -69,6 +74,167 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+const LOCAL_HTTP_HOSTNAMES: readonly string[] = ['localhost', '127.0.0.1', '[::1]'];
+const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
+
+const PUBLIC_ORIGIN_SHAPE_MESSAGE =
+  'PUBLIC_ORIGIN must be an absolute http or https origin with no path, query, fragment or credentials';
+
+type OriginResult = { readonly origin: string } | { readonly problem: string };
+
+/**
+ * True when the raw string has "?" or "#" anywhere, or "@" in the authority (the text after "://"
+ * and before the first "/", "?" or "#"). The URL parser reports an empty query, fragment or
+ * userinfo as '', so the parsed fields cannot catch them. An "@" in a path is legal and allowed.
+ */
+function hasRawUserinfoQueryOrFragment(value: string): boolean {
+  if (value.includes('?') || value.includes('#')) {
+    return true;
+  }
+  const schemeEnd = value.indexOf('://');
+  if (schemeEnd === -1) {
+    return false;
+  }
+  const rest = value.slice(schemeEnd + 3);
+  const authorityEnd = rest.search(/[/?#]/);
+  const authority = authorityEnd === -1 ? rest : rest.slice(0, authorityEnd);
+  return authority.includes('@');
+}
+
+/**
+ * Parses a bare http(s) origin. Unlike URL.origin on its own, this rejects a path, query,
+ * fragment or credentials instead of dropping them. Plain http is allowed only for loopback hosts.
+ */
+function parseOrigin(value: string): OriginResult {
+  const shape = { problem: PUBLIC_ORIGIN_SHAPE_MESSAGE };
+  if (hasRawUserinfoQueryOrFragment(value)) {
+    return shape;
+  }
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+      url.pathname !== '/' ||
+      url.search !== '' ||
+      url.hash !== '' ||
+      url.username !== '' ||
+      url.password !== ''
+    ) {
+      return shape;
+    }
+    if (url.hostname.endsWith('.')) {
+      return { problem: 'PUBLIC_ORIGIN host must not end with a dot' };
+    }
+    if (url.protocol === 'http:' && !LOCAL_HTTP_HOSTNAMES.includes(url.hostname)) {
+      return {
+        problem:
+          'PUBLIC_ORIGIN must use https (http is allowed only for localhost, 127.0.0.1 or [::1])',
+      };
+    }
+    return { origin: url.origin };
+  } catch {
+    return shape;
+  }
+}
+
+/** True when any character is above U+007F. The URL parser can map such characters into a different host. */
+function hasNonAscii(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) > 0x7f) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The issuer must start with "http(s)://" and hold no tab, CR, LF or backslash, which URL parsing would repair. */
+function hasStrictSchemeSeparator(value: string): boolean {
+  return /^https?:\/\//i.test(value) && !/[\t\r\n\\]/.test(value);
+}
+
+function hasCredentialsQueryOrFragment(url: URL): boolean {
+  return url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '';
+}
+
+const TRUST_PROXY_MESSAGE =
+  'TRUST_PROXY must be a comma-separated list of IP addresses or CIDR ranges';
+
+const MIN_IPV4_PREFIX = 8;
+const MIN_IPV6_PREFIX = 32;
+/** ::ffff:0:0, the start of the IPv4-mapped range ::ffff:0:0/96. */
+const IPV4_MAPPED_BASE = 0xffffn << 32n;
+const IPV4_MAPPED_PREFIX = 96;
+
+/** Parses a valid IPv4 or IPv6 address (net.isIP already accepted it) into an integer. */
+function addressToBigInt(address: string, version: 4 | 6): bigint {
+  const toBytes = (dotted: string): bigint =>
+    dotted.split('.').reduce((acc, part) => (acc << 8n) | BigInt(part), 0n);
+  if (version === 4) {
+    return toBytes(address);
+  }
+  let text = address;
+  const lastColon = text.lastIndexOf(':');
+  let tail: bigint[] = [];
+  if (text.slice(lastColon + 1).includes('.')) {
+    const v4 = toBytes(text.slice(lastColon + 1));
+    tail = [v4 >> 16n, v4 & 0xffffn];
+    text = text.slice(0, lastColon + 1) + '0:0';
+  }
+  const [head = '', rest] = text.split('::');
+  const toGroups = (part: string): bigint[] =>
+    part === '' ? [] : part.split(':').map((group) => BigInt(`0x${group}`));
+  let groups: bigint[];
+  if (rest === undefined) {
+    groups = toGroups(head);
+  } else {
+    const before = toGroups(head);
+    const after = toGroups(rest);
+    groups = [...before, ...new Array<bigint>(8 - before.length - after.length).fill(0n), ...after];
+  }
+  if (tail.length > 0) {
+    groups = [...groups.slice(0, 6), ...tail];
+  }
+  return groups.reduce((acc, group) => (acc << 16n) | group, 0n);
+}
+
+/**
+ * True for an IPv4 or IPv6 address, or a CIDR range. A range needs an in-range integer prefix of
+ * at least 8 (IPv4) or 32 (IPv6), an address equal to its network address, and no overlap with the
+ * IPv4-mapped IPv6 range. Zone IDs are refused.
+ */
+function isTrustedProxyEntry(entry: string): boolean {
+  if (entry.includes('%')) {
+    return false;
+  }
+  const slash = entry.indexOf('/');
+  if (slash === -1) {
+    return isIP(entry) !== 0;
+  }
+  const version = isIP(entry.slice(0, slash));
+  const prefixText = entry.slice(slash + 1);
+  if ((version !== 4 && version !== 6) || !/^\d{1,3}$/.test(prefixText)) {
+    return false;
+  }
+  const prefix = Number(prefixText);
+  const width = version === 4 ? 32 : 128;
+  const minimum = version === 4 ? MIN_IPV4_PREFIX : MIN_IPV6_PREFIX;
+  if (prefix < minimum || prefix > width) {
+    return false;
+  }
+  const value = addressToBigInt(entry.slice(0, slash), version);
+  const hostBits = BigInt(width - prefix);
+  if ((value >> hostBits) << hostBits !== value) {
+    return false;
+  }
+  if (version === 6) {
+    const shared = BigInt(128 - Math.min(prefix, IPV4_MAPPED_PREFIX));
+    if (value >> shared === IPV4_MAPPED_BASE >> shared) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Marks a property as non-enumerable so JSON.stringify and util.inspect skip it. */
 function hide(target: object, key: string): void {
   Object.defineProperty(target, key, { enumerable: false });
@@ -91,6 +257,19 @@ export function loadConfig(env: Env): AppConfig {
   const databasePath = present(env, 'DATABASE_PATH');
   if (databasePath === undefined) {
     problems.push('DATABASE_PATH is required');
+  }
+
+  let publicOrigin: string | undefined;
+  const rawPublicOrigin = present(env, 'PUBLIC_ORIGIN');
+  if (rawPublicOrigin === undefined) {
+    problems.push('PUBLIC_ORIGIN is required');
+  } else {
+    const parsedOrigin = parseOrigin(rawPublicOrigin.trim());
+    if ('problem' in parsedOrigin) {
+      problems.push(parsedOrigin.problem);
+    } else {
+      publicOrigin = parsedOrigin.origin;
+    }
   }
 
   let port = DEFAULT_PORT;
@@ -117,6 +296,20 @@ export function loadConfig(env: Env): AppConfig {
     }
   }
 
+  let trustProxy: string[] | false = false;
+  const rawTrustProxy = present(env, 'TRUST_PROXY');
+  if (rawTrustProxy !== undefined) {
+    const entries = rawTrustProxy
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== '');
+    if (entries.length === 0 || !entries.every(isTrustedProxyEntry)) {
+      problems.push(TRUST_PROXY_MESSAGE);
+    } else {
+      trustProxy = entries;
+    }
+  }
+
   const serveWeb = env['NODE_ENV'] === 'production';
   const secureCookies = env['NODE_ENV'] === 'production';
 
@@ -137,16 +330,52 @@ export function loadConfig(env: Env): AppConfig {
       clientSecret: clientSecret ?? '',
       callbackUrl: (callbackUrl ?? '').trim(),
     };
-    if (!isHttpUrl(candidate.issuer)) {
+    if (hasNonAscii(candidate.issuer)) {
+      problems.push('OIDC_ISSUER must use ASCII only (write an internationalised host in punycode)');
+    } else if (!hasStrictSchemeSeparator(candidate.issuer) || !isHttpUrl(candidate.issuer)) {
       problems.push('OIDC_ISSUER must be an absolute URL');
+    } else {
+      const issuerUrl = new URL(candidate.issuer);
+      if (issuerUrl.protocol === 'http:' && !LOCAL_HTTP_HOSTNAMES.includes(issuerUrl.hostname)) {
+        problems.push(
+          'OIDC_ISSUER must use https (http is allowed only for localhost, 127.0.0.1 or [::1])',
+        );
+      }
+      if (
+        hasRawUserinfoQueryOrFragment(candidate.issuer) ||
+        hasCredentialsQueryOrFragment(issuerUrl)
+      ) {
+        problems.push('OIDC_ISSUER must not contain credentials, a query or a fragment');
+      }
     }
+    let storedCallbackUrl = candidate.callbackUrl;
     if (!isHttpUrl(candidate.callbackUrl)) {
       problems.push('OIDC_CALLBACK_URL must be an absolute URL');
+    } else {
+      const callbackUrl = new URL(candidate.callbackUrl);
+      if (callbackUrl.pathname !== OIDC_CALLBACK_PATH) {
+        problems.push(`OIDC_CALLBACK_URL path must be ${OIDC_CALLBACK_PATH}`);
+      }
+      if (publicOrigin !== undefined && callbackUrl.origin !== publicOrigin) {
+        problems.push('OIDC_CALLBACK_URL origin must match PUBLIC_ORIGIN');
+      }
+      if (
+        hasRawUserinfoQueryOrFragment(candidate.callbackUrl) ||
+        hasCredentialsQueryOrFragment(callbackUrl)
+      ) {
+        problems.push('OIDC_CALLBACK_URL must not contain credentials, a query or a fragment');
+      }
+      storedCallbackUrl = callbackUrl.href;
     }
-    oidc = candidate;
+    oidc = { ...candidate, callbackUrl: storedCallbackUrl };
   }
 
-  if (problems.length > 0 || appSecret === undefined || databasePath === undefined) {
+  if (
+    problems.length > 0 ||
+    appSecret === undefined ||
+    databasePath === undefined ||
+    publicOrigin === undefined
+  ) {
     throw new ConfigError(problems);
   }
 
@@ -154,10 +383,12 @@ export function loadConfig(env: Env): AppConfig {
     appSecret,
     databasePath,
     allowRegistration,
+    publicOrigin,
     serveWeb,
     secureCookies,
     port,
     host,
+    trustProxy,
   };
   hide(base, 'appSecret');
 
