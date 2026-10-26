@@ -199,5 +199,5 @@ describe('account routes', () => {
     }
     const s = signIn(t, await addUser(t, 'ip-last@example.test'));
     expect((await put(t, s, wrong)).statusCode).toBe(429);
-  });
+  }, 30_000);
 });

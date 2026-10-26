@@ -451,6 +451,26 @@ describe('verify-email brute-force limits', () => {
     expect((await verify(t, token)).statusCode).toBe(204);
   });
 
+  it('refuses with 429 when only the shared email key is over its limit, keeps the token, and works after the window', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'flood@example.test');
+    const token = lastToken(mailer);
+    // Someone who knows only the email fills the key shared with login and register.
+    for (let i = 0; i < 5; i += 1) {
+      await login(t, 'flood@example.test', `wrong passphrase number ${String(i)}`);
+    }
+    const before = argon.calls;
+    const res = await verify(t, token);
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toEqual({ error: 'rate_limited' });
+    expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
+    expect(argon.calls).toBe(before);
+    expect(tokenCount(t.db)).toBe(1);
+    t.clock.advance(15 * 60 * 1000 + 1);
+    expect((await verify(t, token)).statusCode).toBe(204);
+  });
+
   it('(b) a correct verify deletes the other tokens, and an older link returns invalid_token', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
@@ -492,10 +512,16 @@ describe('verify-email brute-force limits', () => {
     const wrong = Array.from({ length: 6 }, (_v, i) => verify(t, token, `wrong passphrase number ${String(i)}`));
     const right = Array.from({ length: 4 }, () => verify(t, token));
     const results = await Promise.all([...wrong, ...right]);
-    // A request that looks the token up after the burn gets 400 invalid_token, as a wrong one would.
+    // The email key refuses first (429, token kept); the token key then burns the token (401). A
+    // request that looks the token up after the burn gets 400 invalid_token. None can succeed.
+    const bodies: Record<number, string> = {
+      400: '{"error":"invalid_token"}',
+      401: '{"error":"invalid_password"}',
+      429: '{"error":"rate_limited"}',
+    };
     for (const res of results) {
-      expect([400, 401]).toContain(res.statusCode);
-      expect(res.body).toBe(res.statusCode === 401 ? '{"error":"invalid_password"}' : '{"error":"invalid_token"}');
+      expect(Object.keys(bodies).map(Number)).toContain(res.statusCode);
+      expect(res.body).toBe(bodies[res.statusCode]);
     }
     expect(userRow(t.db, 'race@example.test')).toEqual({ hash: null, verifiedAt: null });
     expect(tokenCount(t.db)).toBe(0);

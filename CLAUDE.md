@@ -94,7 +94,7 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 - Explicitly translate Wallos interval types (`monthly`, `yearly`, `weekly`, `custom_days`) to/from Actual Budget recurrence rules (`rrule` / schedule frequency objects).
 
 ### 5. Matching & Diff Engine
-- All queries **must** be scoped to `where user_id = current_user_id`. The only exceptions are the read-only sign-in lookups in `src/server/db/lookup.ts` `createUser` in `src/server/db/accounts.ts`, which creates a user before any `user_id` exists, and `src/server/db/cleanup-unverified.ts`, an owner-run one-off cleanup with no request path.
+- All queries **must** be scoped to `where user_id = current_user_id`. The only exceptions are the read-only sign-in lookups in `src/server/db/lookup.ts`, and `createUser` in `src/server/db/accounts.ts`, which creates a user before any `user_id` exists, and `src/server/db/cleanup-unverified.ts`, an owner-run one-off cleanup with no request path.
 - **Heuristics:**
   - Auto-link existing pairs by saved `wallos_id` <-> `actual_schedule_id`.
   - Suggest candidates via normalized fuzzy name matching (Payee vs Subscription title) and approximate currency amounts (within configurable tolerance, e.g., ±5%).
