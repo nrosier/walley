@@ -3,6 +3,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { AppShell } from '@/components/AppShell';
 import { HealthStatus } from '@/components/HealthStatus';
+import { CreateActualForm } from '@/components/dashboard/CreateActualModal';
+import { CreateWallosForm } from '@/components/dashboard/CreateWallosModal';
+import { DiffModal } from '@/components/matches/DiffModal';
+import { diffModalMessages } from '@/components/matches/DiffModal.messages';
+import type { SyncMismatch } from '../../lib/sync-check-types';
+import { sample } from '@/lib/sync-check.test';
+import { MatchesView } from '@/pages/Matches';
+import { SyncDashboardView } from '@/pages/SyncDashboard';
 import { LoginForm } from '@/pages/LoginPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { VerifyEmailView } from '@/pages/VerifyEmailPage';
@@ -32,6 +40,23 @@ const shell = (
   <AppShell route="settings" theme="dark" email="a@b.c" onRefresh={() => undefined} onToggleTheme={() => undefined} onLogout={() => undefined} />
 );
 
+const result = sample();
+const mismatch: SyncMismatch = {
+  matchId: 'm1',
+  wallosId: 'w1',
+  actualScheduleId: 'a1',
+  wallosName: 'Netflix',
+  actualName: 'NETFLIX.COM',
+  wallosAmountCents: 1299,
+  actualAmountCents: 1499,
+  isRange: false,
+  wallosDrift: true,
+  actualDrift: false,
+  wallosFields: { frequency: 'monthly', interval: 1, startDate: '2026-01-01', currency: 'EUR', amount: { kind: 'single', cents: 1299 } },
+  actualFields: { frequency: 'yearly', interval: 1, startDate: '2026-01-01', currency: 'EUR', amount: { kind: 'single', cents: 1499 } },
+};
+const noop = () => undefined;
+
 const views: Record<string, ReactElement> = {
   navbar: shell,
   'login local': <LoginForm config={{ mode: 'local', registration: true }} errorCode={null} />,
@@ -39,6 +64,41 @@ const views: Record<string, ReactElement> = {
   'settings page': <SettingsPage />,
   'verify email': <VerifyEmailView state={{ kind: 'missing' }} />,
   'health status': <HealthStatus />,
+  'sync dashboard': (
+    <SyncDashboardView state={{ status: 'ready', result, errorCode: null }} query="" showIgnored={false} />
+  ),
+  matches: <MatchesView result={{ ...result, linked: [] }} showIgnored={false} />,
+  'create actual form': (
+    <CreateActualForm
+      wallosId="w1"
+      prefill={{
+        name: 'Netflix',
+        amountCents: -1299,
+        baseCurrency: 'EUR',
+        sourceCurrency: 'EUR',
+        wallosRate: '1',
+        overrideRate: null,
+        recurrence: { frequency: 'monthly', interval: 1 },
+        startDate: '2026-11-01',
+        accounts: [{ id: 'a1', name: 'Checking' }],
+        payees: [{ id: 'p1', name: 'NETFLIX.COM' }],
+        categories: [{ id: 'c1', name: 'Fun' }],
+      }}
+    />
+  ),
+  'create wallos form': (
+    <CreateWallosForm
+      scheduleId="s1"
+      prefill={{ name: 'Rent', price: '900.00', currencyCode: 'EUR', cycle: 3, frequency: 1, startDate: '2026-01-05', nextPayment: '2026-11-05' }}
+    />
+  ),
+};
+
+/** Main heading and primary button of each new view: present in en, absent in nl. */
+const headings: Record<string, string[]> = {
+  'sync dashboard': ['>Sync Dashboard<', '>Run Sync Check<'],
+  'create actual form': ['>Create<'],
+  'create wallos form': ['>Create<'],
 };
 
 describe('no hard-coded user-visible text', () => {
@@ -59,4 +119,31 @@ describe('no hard-coded user-visible text', () => {
       });
     });
   }
+
+  for (const [name, strings] of Object.entries(headings)) {
+    it(`${name}: main heading and primary button are Dutch`, () => {
+      const en = render('en', views[name] as ReactElement);
+      const nl = render('nl', views[name] as ReactElement);
+      for (const text of strings) {
+        expect(en, `en contains ${text}`).toContain(text);
+        expect(nl, `nl contains ${text}`).not.toContain(text);
+      }
+    });
+  }
+
+  // DiffModal and the create modal wrappers render inside a Radix portal, which static markup does not include.
+  // Their heading and primary button come from the catalogues, so check those, and check that the modal renders.
+  describe('diff modal', () => {
+    it('renders without throwing in nl', () => {
+      expect(() =>
+        render('nl', <DiffModal mismatch={mismatch} baseCurrency="EUR" onClose={noop} onIgnoreDiff={noop} onOverwrite={noop} onUnlink={noop} />),
+      ).not.toThrow();
+    });
+    it('has Dutch heading and buttons', () => {
+      const { en, nl } = diffModalMessages;
+      for (const key of ['title', 'overwriteWallos', 'overwriteActual', 'ignoreDiff', 'unlink'] as const) {
+        expect(nl[key], key).not.toBe(en[key]);
+      }
+    });
+  });
 });

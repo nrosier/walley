@@ -1,5 +1,5 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
-import { errorText, useT, type Locale } from '@/i18n';
+import { errorText, LanguageSelect, useT, type Locale } from '@/i18n';
 import { commonMessages } from '@/i18n/common.messages';
 import { apiRequest, ApiError } from '@/lib/api';
 import { navigate } from '@/lib/route';
@@ -78,6 +78,7 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
         <a href="/api/auth/oidc/login" className={buttonClass + ' block text-center'}>
           {t('sso')}
         </a>
+        <LanguageSelect />
       </div>
     );
   }
@@ -199,6 +200,7 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
           {registering ? t('backToSignIn') : t('showRegister')}
         </button>
       ) : null}
+      <LanguageSelect />
     </div>
   );
 }

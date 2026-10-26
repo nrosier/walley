@@ -9,9 +9,11 @@
 | `translate.ts` | Pure: `createT` (dotted, type-checked `MessageKey`, `{name}` params), `format`, `lookup`, `errorText(code, locale)` with generic fallback, `Catalogue` type | Lookup or formatting rules |
 | `common.messages.ts` | Shared catalogue: `genericError`, `errors.<server code>`, `language.*` | A new server error code reaches the web app |
 | `catalogues.ts` | Registry of every `*.messages.ts` catalogue; read by the parity test | Adding a catalogue (one line) |
-| `LanguageSelect.tsx` | Labelled `<select>` (English / Nederlands) with "This device" scope label | Language picker UI |
-| `no-literals.test.tsx` | Renders navbar, login (both modes), settings, verify-email and health views in en and nl; asserts nl differs and contains no English-only catalogue sentence | |
+| `LanguageSelect.tsx` | Labelled `<select>` (English / Nederlands) with "This device" scope label. Used on Settings and on the login page (both modes) | Language picker UI |
+| `no-literals.test.tsx` | Renders navbar, login (both modes), settings, verify-email, health, SyncDashboard, Matches and both create forms in en and nl; asserts nl differs, contains no English-only catalogue sentence, and drops the English heading and primary button. DiffModal sits in a Radix portal, so its catalogue is checked directly. Guards new hard-coded text together with the literal scan | |
 | `no-jsx-literals.test.ts` | TypeScript-AST scan of every non-test `src/web/**/*.tsx`: fails with `file:line` on JSX text, literal `{'...'}` children, or literal visible attributes (placeholder, aria-label, title, alt, label, ...) holding a word; `ALLOWED` lists exceptions with a reason | A visible string must stay literal (add to `ALLOWED` with a reason) |
 | `i18n.test.tsx` | Parity test over the registry (non-empty nl, same placeholders), translate, locale and picker tests | |
+
+The language is stored per device (`walley-locale` in localStorage), not per account. The login page has its own picker, because no session exists there. The literal scan (`no-jsx-literals.test.ts`) and the view tests (`no-literals.test.tsx`) guard new hard-coded text.
 
 Adding a catalogue: create `Feature.messages.ts` exporting `{ en, nl }` with `nl: typeof en`, then add it to `catalogues.ts`.
