@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walley redesign mockup (static, not the real app)</title>
+<style>
+/* ===== Tokens (names follow decision D-c; hex from CLAUDE.md; new tokens marked NEW) ===== */
+[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0c0f19; --surface:#182232; --surface-2:#111827; --line:#334155;
+  --text:#f8fafc; --muted:#94a3b8;            /* muted: NEW value, owner decision (was #cbd5e1 = body) */
+  --accent:#4f46e5; --on-accent:#fff; --accent-text:#818cf8; --focus:#6366f1;
+  --success:#86efac; --success-bg:rgb(34 197 94 / .15);
+  --warning:#fcd34d; --warning-bg:rgb(245 158 11 / .15);
+  --neutral:#cbd5e1; --neutral-bg:rgb(148 163 184 / .15);
+  --danger:#fca5a5; --danger-bg:rgb(239 68 68 / .15); --danger-line:#f87171;   /* NEW */
+  --info:#93c5fd; --info-bg:rgb(59 130 246 / .15);                              /* NEW */
+  --hover:rgb(148 163 184 / .12); --scrim:rgb(2 6 23 / .65); --shadow:0 12px 32px rgb(0 0 0 / .5);
+}
+[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f8fafc; --surface:#fff; --surface-2:#f1f5f9; --line:#e2e8f0;
+  --text:#0f172a; --muted:#64748b;            /* muted: NEW value, owner decision (was #334155 = body) */
+  --accent:#4f46e5; --on-accent:#fff; --accent-text:#4f46e5; --focus:#6366f1;
+  --success:#166534; --success-bg:#dcfce7;
+  --warning:#92400e; --warning-bg:#fef3c7;
+  --neutral:#475569; --neutral-bg:#f1f5f9;
+  --danger:#b91c1c; --danger-bg:#fee2e2; --danger-line:#dc2626;                 /* NEW */
+  --info:#1e40af; --info-bg:#dbeafe;                                            /* NEW */
+  --hover:rgb(15 23 42 / .06); --scrim:rgb(15 23 42 / .45); --shadow:0 12px 32px rgb(15 23 42 / .22);
+}
+:root{--radius:6px;--font:Inter,system-ui,-apple-system,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/20px var(--font)}
+h1,h2,h3,p{margin:0}
+button,input,select{font:inherit;color:inherit}
+
+/* ===== Mockup chrome (not part of the design) ===== */
+.mk-bar{position:sticky;top:0;z-index:30;display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.mk-bar a{color:var(--accent-text);text-decoration:none;padding:4px 8px;border-radius:var(--radius)}
+.mk-bar a:hover{background:var(--hover)}
+.mk-bar strong{margin-right:8px}
+.mk-wrap{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
+.mk-sec{margin-top:40px}
+.mk-sec>h2{font-size:18px;line-height:28px;margin-bottom:4px}
+.mk-sec>p{color:var(--muted);margin-bottom:12px;max-width:80ch}
+.mk-row{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+.mk-cap{font-size:12px;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+
+/* ===== Frames (container queries emulate viewport breakpoints) ===== */
+.frame{container-type:inline-size;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;overflow:hidden;width:100%}
+.frame.m{width:390px;max-width:100%}
+.app{--h:32px;--pad:12px;min-height:100%}
+@container (max-width:767px){.app{--h:44px}}
+@media (pointer:coarse){.app{--h:44px}}
+
+/* ===== Controls ===== */
+:where(.app) :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.focus-demo{outline:2px solid var(--focus);outline-offset:2px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:var(--h);padding:0 12px;border:1px solid var(--line);border-radius:var(--radius);background:transparent;cursor:pointer;white-space:nowrap;transition:background 120ms}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn.primary:hover{background:#4338ca}
+.btn.link{border-color:var(--accent-text);color:var(--accent-text)}
+.btn.danger{border-color:var(--danger-line);color:var(--danger)}
+.btn.danger:hover{background:var(--danger-bg)}
+.btn.ghost{border-color:transparent}
+.btn.icon{width:var(--h);padding:0}
+.btn[disabled]{opacity:.55;cursor:not-allowed}
+.btn.sm{padding:0 10px}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label,.field .lbl{font-weight:500}
+.field .help{font-size:12px;line-height:16px;color:var(--muted)}
+.field .err{font-size:12px;line-height:16px;color:var(--danger);display:flex;gap:4px;align-items:center}
+.in{min-height:var(--h);width:100%;padding:0 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-2);}
+.in[aria-invalid=true]{border-color:var(--danger-line)}
+.in.num{font-family:var(--mono);text-align:right}
+.in[readonly]{background:transparent;color:var(--muted)}
+.suffix{position:relative}.suffix .in{padding-right:44px}
+.suffix span{position:absolute;right:10px;top:0;bottom:0;display:flex;align-items:center;color:var(--muted);pointer-events:none}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.seg label{display:flex;align-items:center;padding:0 14px;min-height:calc(var(--h) - 2px);cursor:pointer}
+.seg input{position:absolute;opacity:0}
+.seg label:has(input:checked){background:var(--accent);color:var(--on-accent);font-weight:600}
+.seg label:has(input:focus-visible){outline:2px solid var(--focus);outline-offset:-2px}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:0 8px;border-radius:9999px;font-size:12px;line-height:20px;font-weight:500;white-space:nowrap}
+.pill.ok{background:var(--success-bg);color:var(--success)}
+.pill.warn{background:var(--warning-bg);color:var(--warning)}
+.pill.neu{background:var(--neutral-bg);color:var(--neutral)}
+.pill.info{background:var(--info-bg);color:var(--info)}
+.pill.orph{background:var(--neutral-bg);color:var(--neutral);border:1px solid var(--warning)}
+.pill.scope{border:1px solid var(--line);color:var(--muted);font-weight:500}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.muted{color:var(--muted)}
+.alert{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--danger-line);background:var(--danger-bg);color:var(--text);border-radius:var(--radius)}
+.alert>svg{color:var(--danger);margin-top:2px}
+.alert .acts{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.alert.info{border-color:var(--info);background:var(--info-bg)}.alert.info>svg{color:var(--info)}
+.alert.warn{border-color:var(--warning);background:var(--warning-bg)}.alert.warn>svg{color:var(--warning)}
+
+/* ===== Shell ===== */
+.hdr{display:flex;align-items:center;gap:16px;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--surface)}
+.hdr .brand{font-weight:700;font-size:18px;color:var(--text);text-decoration:none}
+.hdr nav{display:flex;gap:4px}
+.hdr nav a{display:flex;align-items:center;min-height:var(--h);padding:0 12px;color:var(--muted);text-decoration:none;border-radius:var(--radius);border-bottom:2px solid transparent}
+.hdr nav a:hover{background:var(--hover);color:var(--text)}
+.hdr nav a[aria-current=page]{color:var(--text);font-weight:600;border-bottom-color:var(--accent-text)}
+.hdr .sp{flex:1}
+.hdr .tools{display:flex;gap:4px;align-items:center}
+.hdr .acct{max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.hdr .lbl-wide{display:inline}
+@container (max-width:767px){
+  .hdr{flex-wrap:wrap;gap:4px 8px;padding:8px 12px}
+  .hdr nav{order:3;width:100%;border-top:1px solid var(--line);padding-top:4px}
+  .hdr nav a{flex:1;justify-content:center;padding:0 4px;font-size:13px}
+  .hdr .lbl-wide,.hdr .acct{display:none}
+}
+.page{padding:16px;max-width:1440px;margin:0 auto}
+.page h1{font-size:20px;line-height:28px;font-weight:600}
+.ctx{color:var(--muted);margin:2px 0 12px}
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.toolbar .search{flex:1 1 220px;max-width:340px;position:relative}
+.toolbar .search svg{position:absolute;left:10px;top:50%;margin-top:-8px;color:var(--muted)}
+.toolbar .search .in{padding-left:32px}
+.toolbar .spacer{flex:1}
+.check{display:inline-flex;align-items:center;gap:8px;min-height:var(--h)}
+.check input{width:16px;height:16px;accent-color:var(--accent)}
+@container (max-width:767px){.toolbar .search{flex-basis:100%;max-width:none}.toolbar .spacer{display:none}.toolbar .btn.primary{flex:1}.page{padding:12px}}
+
+/* ===== Dashboard ===== */
+.panes{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.pane-switch{display:none;margin-bottom:12px}
+.pane-switch .seg{display:flex}.pane-switch .seg label{flex:1;justify-content:center}
+@container (max-width:767px){.panes{grid-template-columns:1fr}.pane-switch{display:block}.panes[data-show=wallos] .pane.actual,.panes[data-show=actual] .pane.wallos{display:none}}
+.pane{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.pane>header{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;border-radius:var(--radius) var(--radius) 0 0}
+.pane>header h2{font-size:14px;font-weight:600}
+.pane>header .count{color:var(--muted)}
+.rows{list-style:none;margin:0;padding:0}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 84px 92px auto;grid-template-areas:"name cyc amt act";gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);min-height:44px}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--hover)}
+.row .name{grid-area:name;min-width:0}
+.row .name b{font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .name small{display:block;font-size:12px;line-height:16px;color:var(--muted)}
+.row .name small.bad{color:var(--danger)}
+.row .cyc{grid-area:cyc;color:var(--muted);font-size:12px}
+.row .amt{grid-area:amt}
+.row .act{grid-area:act;display:flex;gap:4px;justify-content:flex-end;min-width:150px}
+.row.busy{opacity:.6}
+.row.err{background:var(--danger-bg)}
+.row.dis .name b{color:var(--muted)}
+@container (max-width:767px){
+  .row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name amt" "cyc act";row-gap:4px;padding:8px 12px}
+  .row .act{min-width:0}
+  .row .cyc{align-self:center}
+}
+.disc{border-top:1px solid var(--line)}
+.disc summary{display:flex;align-items:center;gap:8px;min-height:var(--h);padding:0 12px;cursor:pointer;color:var(--muted)}
+.disc summary:hover{background:var(--hover)}
+.skel{height:12px;border-radius:4px;background:var(--neutral-bg)}
+.empty{padding:32px 16px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+.empty h3{font-size:18px;line-height:28px;font-weight:600}
+.empty p{color:var(--muted);max-width:52ch}
+.steps{list-style:none;margin:8px 0;padding:0;display:grid;gap:8px;width:min(100%,460px);text-align:left}
+.steps li{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-2)}
+.steps li span.n{margin-left:auto}
+
+/* ===== Table ===== */
+.tbl-wrap{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:separate;border-spacing:0;width:100%;min-width:760px}
+th,td{padding:6px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+thead th{position:sticky;background:var(--surface-2);font-weight:600;font-size:12px;z-index:2}
+thead tr:first-child th{top:0;text-align:center;color:var(--muted);font-weight:500}
+thead tr:nth-child(2) th{top:33px}
+th.num,td.num{text-align:right}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.sep,th.sep{border-left:1px solid var(--line)}
+tbody tr:hover{background:var(--hover)}
+tbody tr:last-child td{border-bottom:0}
+td.diff{font-weight:700}
+td.name{font-weight:500}
+tbody td:first-child{position:sticky;left:0;background:var(--surface)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ===== Dialogs ===== */
+.stage{position:relative;background:var(--scrim);padding:24px 12px;display:flex;justify-content:center;border-radius:10px;border:1px solid var(--line);min-height:200px}
+.dlg{width:min(100%,560px);background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;max-height:640px;color:var(--text)}
+.dlg>header{padding:16px 16px 12px;border-bottom:1px solid var(--line);display:flex;gap:12px}
+.dlg>header h2{font-size:18px;line-height:28px;font-weight:600}
+.dlg>header p{color:var(--muted)}
+.dlg>header .btn{margin-left:auto}
+.dlg .body{padding:16px;overflow:auto;display:grid;gap:16px}
+.dlg>footer{padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--surface);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dlg>footer .grow{flex:1;min-width:0;color:var(--muted);font-size:12px;line-height:16px}
+.dlg.sm{width:min(100%,440px)}
+.opts{display:grid;gap:8px}
+.opt{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center}
+.opt p{font-size:12px;line-height:16px;color:var(--muted)}
+@container (max-width:520px){.opt{grid-template-columns:1fr;gap:4px}}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.card-opt{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);cursor:pointer}
+.card-opt:has(input:checked){border-color:var(--accent-text);background:var(--hover)}
+.card-opt input{accent-color:var(--accent);margin-right:6px}
+.card-opt small{color:var(--muted);font-size:12px;line-height:16px}
+.mini{width:100%;border-collapse:collapse;min-width:0}
+.mini th,.mini td{padding:6px 12px}
+.mini thead th{position:static}
+.mini tbody td:first-child{position:static;background:none}
+@container (max-width:520px){.dlg{max-height:none;border-radius:0}.cards{grid-template-columns:1fr}}
+
+/* ===== Settings ===== */
+.set{display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px;align-items:start}
+.set nav{position:sticky;top:8px;display:grid;gap:2px}
+.set nav a{padding:6px 10px;border-radius:var(--radius);color:var(--muted);text-decoration:none;min-height:var(--h);display:flex;align-items:center}
+.set nav a:hover{background:var(--hover);color:var(--text)}
+.set nav a[aria-current=true]{color:var(--text);font-weight:600;background:var(--hover)}
+.set .navsel{display:none}
+@container (max-width:767px){.set{grid-template-columns:1fr}.set nav{display:none}.set .navsel{display:flex}}
+.cards-col{display:grid;gap:16px;max-width:40rem}
+.scard{border:1px solid var(--line);background:var(--surface);border-radius:10px}
+.scard>header{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.scard>header h2{font-size:16px;line-height:24px;font-weight:600}
+.scard>header .pill{margin-left:auto}
+.scard .body{padding:16px;display:grid;gap:12px}
+.scard>footer{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);flex-wrap:wrap}
+.scard>footer .st{color:var(--muted);display:flex;gap:6px;align-items:center}
+.scard>footer .st.ok{color:var(--success)}
+.scard>footer .btn.primary{margin-left:auto}
+.inl{display:flex;gap:8px;align-items:flex-end}
+.inl .field{flex:1}
+.saved{display:flex;align-items:center;gap:8px;min-height:var(--h)}
+
+/* ===== Login ===== */
+.login{min-height:560px;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.login .box{width:min(100%,24rem);border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:24px;display:grid;gap:16px;box-shadow:var(--shadow)}
+.login .logo{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700}
+.login .logo span.mk{width:28px;height:28px;border-radius:8px;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:16px}
+.login h1{font-size:16px;line-height:24px;font-weight:600}
+.login .btn{min-height:44px;width:100%}
+.login .in{min-height:44px}
+.login a{color:var(--accent-text)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<!-- inline SVG sprite (decision D-a: no icon library) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+  <symbol id="i-unlink" viewBox="0 0 24 24"><path d="M9 15 15 9"/><path d="M10 6.5 11.5 5a4 4 0 0 1 5.7 5.7L16 12M14 17.5 12.5 19a4 4 0 0 1-5.7-5.7L8 12"/><path d="M3 3l18 18"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+</svg>
+
+<div class="mk-bar">
+  <strong>Walley redesign mockup</strong>
+  <a href="#dash">Dashboard</a><a href="#states">Dashboard states</a><a href="#mobile">Mobile 390</a>
+  <a href="#matches">Matches</a><a href="#diff">Diff modal</a><a href="#create">Create modals</a>
+  <a href="#settings">Settings</a><a href="#login">Login</a>
+  <span style="flex:1"></span>
+  <button class="btn" id="mk-theme" type="button" aria-pressed="false">Toggle light / dark (unpinned frames)</button>
+</div>
+
+<div class="mk-wrap">
+<p class="muted" style="max-width:80ch">Static review mockup. Not wired to the app. Frames use container queries, so each frame behaves like a viewport of its own width (the 768px dual-pane breakpoint from spec section 7). Frames marked "pinned" always show one theme; all others follow the toggle above (dark by default).</p>
+
+<!-- ============ Dashboard template (cloned for desktop dark, desktop light, mobile dark/light) ============ -->
+<template id="t-header-sync">
+  <header class="hdr">
+    <a class="brand" href="#dash">Walley</a>
+    <nav aria-label="Main"><a href="#dash" aria-current="page">Sync Dashboard</a><a href="#matches">Matches</a><a href="#settings">Settings</a></nav>
+    <span class="sp"></span>
+    <div class="tools">
+      <button class="btn ghost" type="button" aria-label="Refresh"><svg class="i"><use href="#i-refresh"/></svg><span class="lbl-wide">Refresh</span></button>
+      <button class="btn ghost icon" type="button" aria-label="Switch to light theme"><svg class="i"><use href="#i-sun"/></svg></button>
+      <button class="btn ghost" type="button" aria-label="Account menu for nick@example.com"><svg class="i"><use href="#i-user"/></svg><span class="acct">nick@example.com</span><svg class="i"><use href="#i-chev"/></svg></button>
+    </div>
+  </header>
+</template>
+
+<template id="t-dash">
+  <main class="page">
+    <h1>Sync Dashboard</h1>
+    <p class="ctx">Last check 14:32 &middot; 5 Wallos unlinked &middot; 4 Actual Budget unlinked</p>
+    <div class="toolbar" role="group" aria-label="Sync controls">
+      <div class="search"><svg class="i"><use href="#i-search"/></svg><input class="in" type="search" placeholder="Search by name" aria-label="Search by name"></div>
+      <label class="check"><input type="checkbox"> Show Ignored Items</label>
+      <span class="spacer"></span>
+      <button class="btn primary" type="button"><svg class="i"><use href="#i-refresh"/></svg>Run Sync Check</button>
+    </div>
+    <div class="pane-switch"><div class="seg" role="radiogroup" aria-label="Show list">
+      <label><input type="radio" name="pane" value="wallos" checked> Wallos (5)</label>
+      <label><input type="radio" name="pane" value="actual"> Actual Budget (4)</label></div></div>
+    <div class="panes" data-show="wallos">
+      <section class="pane wallos" aria-label="Wallos subscriptions">
+        <header><h2>Wallos subscriptions</h2><span class="count">5</span></header>
+        <ul class="rows">
+          <li class="row"><div class="name"><b>Netflix Premium</b><small>Suggested match: Netflix</small></div><span class="cyc">Monthly</span><span class="mono amt">15.99 EUR</span>
+            <div class="act"><button class="btn sm link" type="button" aria-label="Link Netflix Premium to Netflix"><svg class="i"><use href="#i-link"/></svg>Link</button><button class="btn ghost icon" type="button" aria-label="More actions for Netflix Premium"><svg class="i"><use href="#i-more"/></svg></button></div></li>
+          <li class="row"><div class="name"><b>Spotify Family</b><small>Suggested match: Spotify AB</small></div><span class="cyc">Monthly</span><span class="mono amt">17.99 EUR</span>
+            <div class="act"><button class="btn sm link" type="button" aria-label="Link Spotify Family to Spotify AB"><svg class="i"><use href="#i-link"/></svg>Link</button><button class="btn ghost icon" type="button" aria-label="More actions for Spotify Family"><svg class="i"><use href="#i-more"/></svg></button></div></li>
+          <li class="row"><div class="name"><b>iCloud+ 2 TB</b></div><span class="cyc">Monthly</span><span class="mono amt">9.99 EUR</span>
+            <div class="act"><button class="btn sm" type="button" aria-label="Create iCloud+ 2 TB in Actual Budget"><svg class="i"><use href="#i-plus"/></svg>Create in Actual Budget</button><button class="btn ghost icon" type="button" aria-label="More actions for iCloud+ 2 TB"><svg class="i"><use href="#i-more"/></svg></button></div></li>
+          <li class="row"><div class="name"><b>Hetzner Storage Box</b><small>No match found</small></div><span class="cyc">Yearly</span><span class="mono amt"><span class="pill info" title="Amount is the midpoint of a range">range</span> 48.00 EUR</span>
+            <div class="act"><button class="btn sm" type="button" aria-label="Create Hetzner Storage Box in Actual Budget"><svg class="i"><use href="#i-plus"/></svg>Create in Actual Budget</button><button class="btn ghost icon" type="button" aria-label="More actions for Hetzner Storage Box"><svg class="i"><use href="#i-more"/></svg></button></div></li>
+          <li class="row dis"><div class="name"><b>Gym membership</b><small><svg class="i" style="width:12px;height:12px;vertical-align:-1px"><use href="#i-info"/></svg> Repeat pattern not supported</small></div><span class="cyc">Every 28 days</span><span class="mono amt">24.90 EUR</span>
+            <div class="act"><button class="btn sm" type="button" disabled>Create in Actual Budget</button><button class="btn ghost icon" type="button" aria-label="More actions for Gym membership"><svg class="i"><use href="#i-more"/></svg></button></div></li>
+        </ul>
+        <details class="disc"><summary><svg class="i"><use href="#i-chev"/></svg>Ignored items (1) &middot; Show details</summary>
+          <ul class="rows"><li class="row"><div class="name"><b>Amazon Prime</b></div><span class="cyc"><span class="pill neu">Ignored</span></span><span class="mono amt">8.99 EUR</span><div class="act"><button class="btn sm" type="button" aria-label="Restore Amazon Prime"><svg class="i"><use href="#i-undo"/></svg>Restore</button></div></li></ul></details>
+      </section>
+      <section class="pane actual" aria-label="Actual Budget schedules">
+        <header><h2>Actual Budget schedules</h2><span class="count">4</span></header>
+        <ul class="rows">
+          <li class="row"><div class="name"><b>Netflix</b><small>Suggested match: Netflix Premium</small></div><span class="cyc">Monthly</span><span class="mono amt">15.99 EUR</span>
+            <div class="act"><button class="btn sm link" type="button" aria-label="Link Netflix to Netflix Premium"><svg class="i"><use href="#i-link"/></svg>Link</button><button class="btn ghost icon" type="button" aria-label="More actions for Netflix"><svg class="i"><use href="#i-more"/></svg></button></div></li>
+          <li class="row"><div class="name"><b>Spotify AB</b><small>Suggested match: Spotify Family</small></div><span class="cyc">Monthly</span><span class="mono amt">17.99 EUR</span>
+            <div class="act"><button class="btn sm link" type="button" aria-label="Link Spotify AB to Spotify Family"><svg class="i"><use href="#i-link"/></svg>Link</button><button class="btn ghost icon" type="button" aria-label="More actions for Spotify AB"><svg class="i"><use href="#i-more"/></svg></button></div></li>
+          <li class="row"><div class="name"><b>Domain renewal</b></div><span class="cyc">Yearly</span><span class="mono amt">14.00 EUR</span>
+            <div class="act"><button class="btn sm" type="button" aria-label="Create Domain renewal in Wallos"><svg class="i"><use href="#i-plus"/></svg>Create in Wallos</button><button class="btn ghost icon" type="button" aria-label="More actions for Domain renewal"><svg class="i"><use href="#i-more"/></svg></button></div></li>
+          <li class="row dis"><div class="name"><b>Water board</b><small><svg class="i" style="width:12px;height:12px;vertical-align:-1px"><use href="#i-info"/></svg> Invalid recurrence</small></div><span class="cyc">&mdash;</span><span class="mono amt">31.20 EUR</span>
+            <div class="act"><button class="btn sm" type="button" disabled>Create in Wallos</button><button class="btn ghost icon" type="button" aria-label="More actions for Water board"><svg class="i"><use href="#i-more"/></svg></button></div></li>
+        </ul>
+      </section>
+    </div>
+  </main>
+</template>
+
+<!-- ============ (a) DASHBOARD ============ -->
+<section class="mk-sec" id="dash">
+  <h2>(a) Sync Dashboard</h2>
+  <p>One compact line per item: name, cycle, mono amount, one visible action. The action depends on the situation: <em>Link</em> (indigo outline) when a candidate exists, otherwise <em>Create in ...</em>. Ignore and Restore live in the "more" menu (reversible, so no confirm). Only Run Sync Check is a filled button. Dark and light shown, both pinned.</p>
+  <div class="mk-cap">Dark (pinned)</div>
+  <div class="frame" data-pin="dark" data-theme="dark"><div class="app mount" data-mount="sync"></div></div>
+  <div class="mk-cap">Light (pinned)</div>
+  <div class="frame" data-pin="light" data-theme="light"><div class="app mount" data-mount="sync"></div></div>
+</section>
+
+<!-- ============ DASHBOARD STATES ============ -->
+<section class="mk-sec" id="states">
+  <h2>(a) Dashboard states</h2>
+  <p>Sync failure names the side, offers Retry and a link to the matching Settings section, and keeps the last good result, marked stale. First use shows setup steps instead of an empty page. Danger red is used for errors only; amber is reserved for Mismatch.</p>
+  <div class="mk-cap">Error with Retry (last result kept, marked stale; one row in an action error)</div>
+  <div class="frame" data-theme="dark"><div class="app">
+    <header class="hdr"><a class="brand" href="#dash">Walley</a><nav aria-label="Main"><a href="#dash" aria-current="page">Sync Dashboard</a><a href="#matches">Matches</a><a href="#settings">Settings</a></nav><span class="sp"></span></header>
+    <main class="page">
+      <h1>Sync Dashboard</h1>
+      <p class="ctx">Last good check 14:32 (stale) &middot; 5 Wallos unlinked &middot; 4 Actual Budget unlinked</p>
+      <div role="alert" class="alert" style="margin-bottom:16px"><svg class="i"><use href="#i-alert"/></svg>
+        <div><strong>The sync check failed.</strong><br><span class="muted">Actual Budget could not be reached (timed out after 30 s). Your Wallos list below is from the last good check.</span></div>
+        <div class="acts"><button class="btn primary" type="button"><svg class="i"><use href="#i-refresh"/></svg>Retry</button><a class="btn" href="#settings">Check settings</a></div></div>
+      <section class="pane" aria-label="Wallos subscriptions" aria-busy="false" style="max-width:640px">
+        <header><h2>Wallos subscriptions</h2><span class="count">5</span><span class="pill neu" style="margin-left:auto">Stale</span></header>
+        <ul class="rows">
+          <li class="row err"><div class="name"><b>Spotify Family</b><small class="bad">Could not update Spotify Family. Nothing was changed.</small></div><span class="cyc">Monthly</span><span class="mono amt">17.99 EUR</span><div class="act"><button class="btn sm link" type="button" aria-label="Try again: link Spotify Family">Try again</button></div></li>
+          <li class="row busy"><div class="name"><b>Netflix Premium</b><small>Linking...</small></div><span class="cyc">Monthly</span><span class="mono amt">15.99 EUR</span><div class="act"><button class="btn sm link" type="button" disabled>Linking...</button></div></li>
+        </ul></section>
+    </main></div></div>
+
+  <div class="mk-row" style="margin-top:16px">
+    <div style="flex:1 1 420px;min-width:0">
+      <div class="mk-cap">First use (not configured)</div>
+      <div class="frame" data-theme="dark"><div class="app"><main class="page">
+        <h1>Sync Dashboard</h1>
+        <div class="empty pane" style="margin-top:12px">
+          <h3>Set up Wallos and Actual Budget to start</h3>
+          <p>Walley compares your Wallos subscriptions with your Actual Budget schedules. Connect both, then run a sync check.</p>
+          <ol class="steps"><li><svg class="i"><use href="#i-alert"/></svg>Connect Wallos<span class="n pill neu">Not set up</span></li><li><svg class="i"><use href="#i-alert"/></svg>Connect Actual Budget and pick a budget<span class="n pill neu">Not set up</span></li></ol>
+          <a class="btn primary" href="#settings">Go to Settings</a></div></main></div></div>
+    </div>
+    <div style="flex:1 1 420px;min-width:0">
+      <div class="mk-cap">Loading (skeleton, button reads "Checking...") and valid zero</div>
+      <div class="frame" data-theme="dark"><div class="app"><main class="page">
+        <div class="toolbar"><button class="btn primary" type="button" disabled>Checking...</button><span class="muted" role="status">Checking Wallos and Actual Budget...</span></div>
+        <section class="pane" aria-busy="true" aria-label="Wallos subscriptions"><header><h2>Wallos subscriptions</h2></header>
+          <ul class="rows"><li class="row"><div class="skel" style="width:60%"></div><span></span><div class="skel"></div><span></span></li><li class="row"><div class="skel" style="width:45%"></div><span></span><div class="skel"></div><span></span></li></ul></section>
+        <div class="empty" style="margin-top:8px"><h3 style="font-size:16px">Nothing to link here.</h3><p>Checked at 14:32. Every item is linked or ignored.</p></div>
+      </main></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ MOBILE ============ -->
+<section class="mk-sec" id="mobile">
+  <h2>Dashboard at 390px</h2>
+  <p>Below 768px the panes become a two-option segmented control (labelled radio group, not tabs), the toolbar wraps with Run Sync Check full width, tabs stay links in a second header row (they fit at 390; the fallback is a labelled Select, never a scrolling row), controls grow to 44px, rows wrap to two lines. Dark and light, both pinned.</p>
+  <div class="mk-row">
+    <div class="frame m" data-pin="dark" data-theme="dark"><div class="app mount" data-mount="sync"></div></div>
+    <div class="frame m" data-pin="light" data-theme="light"><div class="app mount" data-mount="sync"></div></div>
+  </div>
+</section>
+
+<!-- ============ (b) MATCHES ============ -->
+<section class="mk-sec" id="matches">
+  <h2>(b) Matches</h2>
+  <p>Columns pair each name with its amount. Sticky two-level header, first column sticky on narrow widths, search, counts, and a Run Sync Check on this page so it is never empty with no way forward. Review appears on Mismatch rows only. Ignored items live in their own section.</p>
+  <div class="frame" data-theme="dark"><div class="app">
+    <header class="hdr"><a class="brand" href="#dash">Walley</a><nav aria-label="Main"><a href="#dash">Sync Dashboard</a><a href="#matches" aria-current="page">Matches</a><a href="#settings">Settings</a></nav><span class="sp"></span>
+      <div class="tools"><button class="btn ghost" type="button"><svg class="i"><use href="#i-refresh"/></svg><span class="lbl-wide">Refresh</span></button><button class="btn ghost icon" type="button" aria-label="Switch to light theme"><svg class="i"><use href="#i-sun"/></svg></button></div></header>
+    <main class="page">
+      <h1>Matches</h1>
+      <p class="ctx">Last check 14:32 &middot; 8 linked &middot; 2 mismatch</p>
+      <div class="toolbar" role="group" aria-label="Match controls">
+        <div class="search"><svg class="i"><use href="#i-search"/></svg><input class="in" type="search" placeholder="Search by name" aria-label="Search by name"></div>
+        <label class="check"><input type="checkbox"> Show ignored items</label><span class="spacer"></span>
+        <button class="btn" type="button"><svg class="i"><use href="#i-refresh"/></svg>Run Sync Check</button></div>
+      <div class="tbl-wrap" tabindex="0" role="region" aria-label="Linked subscriptions">
+        <table><caption class="vh">Linked subscriptions</caption>
+          <thead>
+            <tr><th scope="col" rowspan="1" style="text-align:left">&nbsp;</th><th colspan="2" class="sep">Wallos</th><th colspan="2" class="sep">Actual Budget</th><th colspan="2" class="sep">&nbsp;</th></tr>
+            <tr><th scope="col">Wallos subscription</th><th scope="col" class="num sep">Wallos amount</th><th scope="col" class="sep">Actual Budget schedule</th><th scope="col" class="num">Actual amount</th><th scope="col" class="sep">Status</th><th scope="col"><span class="vh">Action</span></th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="name">Disney+</td><td class="num sep">11.99 EUR</td><td class="sep">Disney Plus</td><td class="num">11.99 EUR</td><td class="sep"><span class="pill ok"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg>Synced</span></td><td></td></tr>
+            <tr><td class="name">Netflix Premium</td><td class="num diff sep">17.99 EUR <span class="vh">differs</span></td><td class="sep">Netflix</td><td class="num diff">15.99 EUR <span class="vh">differs</span></td><td class="sep"><span class="pill warn"><svg class="i" style="width:12px;height:12px"><use href="#i-alert"/></svg>Mismatch</span></td><td><button class="btn sm link" type="button" aria-label="Review differences for Netflix Premium">Review</button></td></tr>
+            <tr><td class="name">Spotify Family</td><td class="num sep">17.99 EUR</td><td class="sep">Spotify AB</td><td class="num">17.99 EUR</td><td class="sep"><span class="pill ok"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg>Synced</span></td><td></td></tr>
+            <tr><td class="name">Hetzner Storage Box</td><td class="num sep">4.00 EUR</td><td class="sep">Hetzner</td><td class="num">4.00 EUR</td><td class="sep"><span class="pill ok"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg>Synced</span></td><td></td></tr>
+            <tr><td class="name">1Password</td><td class="num diff sep">3.00 EUR</td><td class="sep">1Password</td><td class="num diff">36.00 EUR</td><td class="sep"><span class="pill warn"><svg class="i" style="width:12px;height:12px"><use href="#i-alert"/></svg>Mismatch</span></td><td><button class="btn sm link" type="button" aria-label="Review differences for 1Password">Review</button></td></tr>
+            <tr><td class="name">YouTube Premium</td><td class="num sep">13.99 EUR</td><td class="sep">&mdash;</td><td class="num">&mdash;</td><td class="sep"><span class="pill orph"><svg class="i" style="width:12px;height:12px"><use href="#i-unlink"/></svg>Orphaned</span></td><td></td></tr>
+            <tr><td class="name">Dropbox</td><td class="num sep">11.99 EUR</td><td class="sep">Dropbox</td><td class="num">11.99 EUR</td><td class="sep"><span class="pill ok"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg>Synced</span></td><td></td></tr>
+          </tbody></table></div>
+      <h2 style="font-size:16px;line-height:24px;margin:20px 0 8px">Ignored items</h2>
+      <div class="tbl-wrap" style="max-height:none"><table style="min-width:0"><thead><tr><th scope="col">Item</th><th scope="col">Side</th><th scope="col" class="num">Amount</th><th scope="col">Status</th><th scope="col"><span class="vh">Action</span></th></tr></thead>
+        <tbody><tr><td class="name">Amazon Prime</td><td>Wallos</td><td class="num">8.99 EUR</td><td><span class="pill neu">Ignored</span></td><td class="num"><button class="btn sm" type="button" aria-label="Restore Amazon Prime"><svg class="i"><use href="#i-undo"/></svg>Restore</button></td></tr></tbody></table></div>
+    </main></div></div>
+  <div class="mk-cap" style="margin-top:16px">Empty (before any check)</div>
+  <div class="frame" data-theme="dark"><div class="app"><main class="page"><h1>Matches</h1>
+    <div class="empty pane" style="margin-top:12px"><h3>No linked pairs yet</h3><p>No linked pairs yet. Run Sync Check on the Sync Dashboard to load them.</p><div style="display:flex;gap:8px"><button class="btn primary" type="button">Run Sync Check</button><a class="btn" href="#dash">Go to Sync Dashboard</a></div></div></main></div></div>
+</section>
+
+<!-- ============ DIFF MODAL ============ -->
+<section class="mk-sec" id="diff">
+  <h2>(b) Diff modal</h2>
+  <p>Values are human readable (no raw "monthly" or ISO dates). Ignore Diff is the safe default focus (ring shown). Each option has a consequence line. The two overwrites are neutral, equal-weight buttons; Unlink sits alone on the opposite side, danger styled with an icon and text. The modal stays open and shows "Working..." until the server answers; the long dialog scrolls internally with a pinned footer.</p>
+  <div class="stage frame" data-theme="dark" style="padding:24px 12px"><div class="app" style="width:100%;display:flex;justify-content:center;--h:32px">
+    <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dd-t">
+      <header><div><h2 id="dd-t">Review differences</h2><p>Netflix Premium (Wallos) and Netflix (Actual Budget) no longer agree.</p></div><button class="btn ghost icon" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></header>
+      <div class="body">
+        <div class="tbl-wrap" style="max-height:none"><table class="mini"><caption class="vh">Drifted fields</caption>
+          <thead><tr><th scope="col">Field</th><th scope="col" class="num">Wallos</th><th scope="col" class="num">Actual Budget</th></tr></thead>
+          <tbody><tr><td>Amount</td><td class="num diff">17.99 EUR <span class="vh">differs</span></td><td class="num diff">15.99 EUR <span class="vh">differs</span></td></tr>
+          <tr><td>Frequency</td><td class="num diff">Every month <span class="vh">differs</span></td><td class="num diff">Every 2 months <span class="vh">differs</span></td></tr>
+          <tr><td>Start date</td><td class="num">12 Mar 2026</td><td class="num">12 Mar 2026</td></tr></tbody></table></div>
+        <div class="opts" role="group" aria-label="Choose what to do">
+          <div class="opt"><button class="btn focus-demo" type="button" autofocus>Ignore Diff</button><p>Keep both as they are and stop flagging this difference.</p></div>
+          <div class="opt"><button class="btn" type="button">Overwrite Wallos</button><p>Copies the Actual Budget values (15.99 EUR, every 2 months) into Wallos.</p></div>
+          <div class="opt"><button class="btn" type="button">Overwrite Actual</button><p>Copies the Wallos values (17.99 EUR, every month) into Actual Budget.</p></div>
+        </div>
+        <div role="status" class="muted" style="min-height:20px"></div>
+      </div>
+      <footer><button class="btn danger" type="button"><svg class="i"><use href="#i-unlink"/></svg>Unlink</button><span class="grow">Stop tracking this pair. Both items stay where they are.</span><button class="btn" type="button">Cancel</button></footer>
+    </div></div></div>
+
+  <div class="mk-row" style="margin-top:16px">
+    <div style="flex:1 1 440px;min-width:0"><div class="mk-cap">Confirm dialog (names object and consequence; replaces generic "Confirm")</div>
+      <div class="stage frame" data-theme="dark"><div class="app" style="display:flex;justify-content:center;width:100%"><div class="dlg sm" role="alertdialog" aria-modal="true" aria-labelledby="cf-t" style="max-height:none">
+        <header><div><h2 id="cf-t">Overwrite Wallos with the Actual Budget values?</h2></div></header>
+        <div class="body"><p>Netflix Premium in Wallos will change from 17.99 EUR every month to 15.99 EUR every 2 months. This changes data in the other system and cannot be undone from Walley.</p></div>
+        <footer style="justify-content:flex-end"><button class="btn focus-demo" type="button">Cancel</button><button class="btn primary" type="button">Overwrite Wallos</button></footer></div></div></div></div>
+    <div style="flex:1 1 440px;min-width:0"><div class="mk-cap">Unlink confirm (danger) and error kept inside the modal</div>
+      <div class="stage frame" data-theme="dark"><div class="app" style="display:flex;justify-content:center;width:100%"><div class="dlg sm" role="alertdialog" aria-modal="true" aria-labelledby="ul-t" style="max-height:none">
+        <header><div><h2 id="ul-t">Unlink Netflix Premium and Netflix?</h2></div></header>
+        <div class="body"><p>The subscription and the schedule stay where they are, but Walley stops tracking them as a pair.</p>
+          <div role="alert" class="alert"><svg class="i"><use href="#i-alert"/></svg><span>This pair no longer exists. Run the sync check again.</span></div></div>
+        <footer style="justify-content:flex-end"><button class="btn focus-demo" type="button">Cancel</button><button class="btn danger" type="button"><svg class="i"><use href="#i-unlink"/></svg>Unlink pair</button></footer></div></div></div></div>
+  </div>
+</section>
+
+<!-- ============ (c) CREATE MODAL ============ -->
+<section class="mk-sec" id="create">
+  <h2>(c) Create modals</h2>
+  <p>One shell: pinned header and footer, scrolling body (max-height), Cancel and Create together in the footer, the reason Create is disabled shown in the footer and beside the field. <strong>Fields are drawn editable as a proposal; this is an owner decision (see note).</strong> Below 768px the dialog becomes a full-screen sheet with safe-area padding.</p>
+  <div class="mk-row">
+    <div style="flex:1 1 520px;min-width:0"><div class="mk-cap">Create Actual Budget schedule (from Wallos)</div>
+    <div class="stage frame" data-theme="dark" style="min-height:0"><div class="app" style="width:100%;display:flex;justify-content:center"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="ca-t" style="max-height:560px">
+      <header><div><h2 id="ca-t">Create Actual Budget schedule</h2><p>Pre-filled from the Wallos subscription iCloud+ 2 TB.</p></div><button class="btn ghost icon" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></header>
+      <div class="body">
+        <div class="field"><label for="ca-n">Name</label><input id="ca-n" class="in" value="iCloud+ 2 TB"></div>
+        <div class="field"><label for="ca-a">Amount (converted)</label><div class="suffix"><input id="ca-a" class="in num" value="9.99" inputmode="decimal"><span>EUR</span></div><span class="help">Converted from 10.99 USD at the Wallos rate.</span></div>
+        <div class="field"><span class="lbl">Frequency</span><input class="in" value="Every 1 month" readonly aria-label="Frequency"><span class="help">Mapped from the Wallos billing cycle "Monthly".</span></div>
+        <div class="field"><label for="ca-d">Start date</label><input id="ca-d" class="in" value="2026-11-03" aria-describedby="ca-dh"><span class="help" id="ca-dh">Format YYYY-MM-DD.</span></div>
+        <fieldset style="border:0;padding:0;margin:0"><legend class="lbl" style="font-weight:500;margin-bottom:4px">Payee</legend>
+          <div class="cards"><label class="card-opt"><span><input type="radio" name="py" checked>Existing payee</span><small>Use a payee already in Actual Budget.</small></label><label class="card-opt"><span><input type="radio" name="py">Create new payee</span><small>A new payee named iCloud+ 2 TB is added.</small></label></div></fieldset>
+        <div class="field"><label for="ca-ac">Account <span class="muted">(required)</span></label><select id="ca-ac" class="in" aria-invalid="true" aria-describedby="ca-ace"><option>Choose an account</option></select><span class="err" id="ca-ace"><svg class="i" style="width:12px;height:12px"><use href="#i-alert"/></svg>An account is required.</span></div>
+        <div class="field"><label for="ca-c">Category</label><select id="ca-c" class="in"><option>No category</option></select></div>
+      </div>
+      <footer><span class="grow" role="status">Choose an account to continue.</span><button class="btn" type="button">Cancel</button><button class="btn primary" type="button" disabled>Create</button></footer>
+    </div></div></div></div>
+
+    <div style="flex:1 1 380px;min-width:0"><div class="mk-cap">Create Wallos subscription (from AB schedule) - fields are an owner decision</div>
+    <div class="stage frame" data-theme="dark" style="min-height:0"><div class="app" style="width:100%;display:flex;justify-content:center"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="cw-t" style="max-height:560px">
+      <header><div><h2 id="cw-t">Create Wallos subscription</h2><p>Pre-filled from the Actual Budget schedule Domain renewal.</p></div><button class="btn ghost icon" type="button" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></header>
+      <div class="body">
+        <div class="field"><label for="cw-n">Title</label><input id="cw-n" class="in" value="Domain renewal"></div>
+        <div class="field"><label for="cw-p">Price</label><div class="suffix"><input id="cw-p" class="in num" value="14.00"><span>EUR</span></div></div>
+        <div class="field"><span class="lbl" id="cw-cy">Billing cycle</span><div class="seg" role="radiogroup" aria-labelledby="cw-cy"><label><input type="radio" name="cy">Monthly</label><label><input type="radio" name="cy" checked>Yearly</label><label><input type="radio" name="cy">Custom days</label></div></div>
+        <div class="field"><label for="cw-d">Start date</label><input id="cw-d" class="in" value="2026-02-14"></div>
+      </div>
+      <footer><span class="grow" role="status"></span><button class="btn" type="button">Cancel</button><button class="btn primary" type="button">Create</button></footer>
+    </div></div></div></div>
+  </div>
+</section>
+
+<!-- ============ (d) SETTINGS ============ -->
+<section class="mk-sec" id="settings">
+  <h2>(d) Settings</h2>
+  <p>Section cards with in-page anchor nav (a labelled Select below 768px). Each card carries a scope label. Save models: General (This device) saves instantly with an inline "Saved" status; every Your-account card has one footer Save that commits everything in that card, including the budget pick and tolerance. Test connection and Load budgets use the values currently typed (needs backend confirmation, see note). Secrets are write-only.</p>
+  <div class="frame" data-theme="dark"><div class="app">
+    <header class="hdr"><a class="brand" href="#dash">Walley</a><nav aria-label="Main"><a href="#dash">Sync Dashboard</a><a href="#matches">Matches</a><a href="#settings" aria-current="page">Settings</a></nav><span class="sp"></span></header>
+    <main class="page">
+      <h1>Settings</h1><p class="ctx">Language and theme apply to this browser. The rest belongs to your account.</p>
+      <div class="set">
+        <nav aria-label="Settings sections"><a href="#s-gen" aria-current="true">General</a><a href="#s-wal">Wallos</a><a href="#s-act">Actual Budget</a><a href="#s-mat">Matching</a><a href="#s-acc">Account</a></nav>
+        <div class="field navsel"><label for="sn">Section</label><select id="sn" class="in"><option>General</option><option>Wallos</option><option>Actual Budget</option><option>Matching</option><option>Account</option></select></div>
+        <div class="cards-col">
+          <section class="scard" id="s-gen" aria-labelledby="h-gen"><header><h2 id="h-gen">General</h2><span class="pill scope">This device</span></header>
+            <div class="body"><div class="field"><label for="lg">Language</label><select id="lg" class="in" style="max-width:240px"><option>English</option><option>Nederlands</option></select></div>
+              <div class="field"><span class="lbl" id="th-l">Theme</span><div class="seg" role="radiogroup" aria-labelledby="th-l" style="width:max-content"><label><input type="radio" name="th" checked>Dark</label><label><input type="radio" name="th">Light</label></div></div></div>
+            <footer><span class="st ok" role="status"><svg class="i"><use href="#i-check"/></svg>Saved</span><span class="muted" style="margin-left:auto">Changes apply immediately.</span></footer></section>
+
+          <section class="scard" id="s-wal" aria-labelledby="h-wal"><header><h2 id="h-wal">Wallos</h2><span class="pill scope">Your account</span></header>
+            <div class="body"><div class="field"><label for="wu">Wallos URL</label><input id="wu" class="in" value="https://wallos.example.com"></div>
+              <div class="field"><label for="wk">Wallos API key</label><div class="inl"><div class="saved field"><span><span class="pill ok">Saved</span> <span class="mono" style="text-align:left">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</span></span></div><button class="btn" type="button">Replace key</button></div><span class="help">The key is never shown again after saving.</span></div>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button class="btn" type="button">Test connection</button><span role="status" style="color:var(--success);display:flex;gap:6px;align-items:center"><svg class="i"><use href="#i-check"/></svg>Connection OK.</span></div></div>
+            <footer><span class="st">No unsaved changes</span><button class="btn primary" type="button">Save Wallos</button></footer></section>
+
+          <section class="scard" id="s-act" aria-labelledby="h-act"><header><h2 id="h-act">Actual Budget</h2><span class="pill scope">Your account</span></header>
+            <div class="body"><div class="field"><label for="au">Server URL</label><input id="au" class="in" value="https://actual.example.com"></div>
+              <div class="field"><label for="ap">Password</label><input id="ap" class="in" type="password" placeholder="Saved - leave blank to keep"></div>
+              <div class="field"><label for="as">Sync key</label><div class="inl"><input id="as" class="in" placeholder="Saved - leave blank to keep"><button class="btn" type="button">Remove sync key</button></div></div>
+              <div class="field"><label for="ab">Budget</label><div class="inl"><select id="ab" class="in"><option>Household 2026</option></select><button class="btn" type="button">Load budgets</button></div></div>
+              <p>Base currency: <strong>EUR</strong> <span class="muted">(detected from the budget)</span></p></div>
+            <footer><span class="st" style="color:var(--warning)"><svg class="i"><use href="#i-alert"/></svg>Unsaved changes</span><button class="btn primary" type="button">Save Actual Budget</button></footer></section>
+
+          <section class="scard" id="s-mat" aria-labelledby="h-mat"><header><h2 id="h-mat">Matching</h2><span class="pill scope">Your account</span></header>
+            <div class="body"><div class="field" style="max-width:220px"><label for="mt">Amount tolerance</label><div class="suffix"><input id="mt" class="in num" value="5" inputmode="numeric" aria-describedby="mt-h"><span>%</span></div><span class="help" id="mt-h">Largest allowed difference between a Wallos amount and an Actual Budget amount, in percent. Enter a value from 0 to 100.</span></div></div>
+            <footer><span class="st">No unsaved changes</span><button class="btn primary" type="button">Save Matching</button></footer></section>
+
+          <section class="scard" id="s-acc" aria-labelledby="h-acc"><header><h2 id="h-acc">Account</h2><span class="pill scope">Your account</span></header>
+            <div class="body"><div class="field"><label for="p1">Current password</label><input id="p1" class="in" type="password"></div><div class="field"><label for="p2">New password</label><input id="p2" class="in" type="password"><span class="help">At least 12 characters.</span></div>
+              <div class="alert info"><svg class="i"><use href="#i-info"/></svg><span>OIDC mode instead shows: "Your password is managed by your identity provider." with the linked issuer and subject, and no form.</span></div></div>
+            <footer><span class="st">No unsaved changes</span><button class="btn primary" type="button" disabled>Change password</button></footer></section>
+        </div></div>
+    </main></div></div>
+</section>
+
+<!-- ============ (e) LOGIN ============ -->
+<section class="mk-sec" id="login">
+  <h2>(e) Login</h2>
+  <p>Centred card, brand mark, 44px controls, error alert above the button, email kept and password cleared, busy label on the button. Light shown pinned next to dark.</p>
+  <div class="mk-row">
+    <div class="frame" data-pin="dark" data-theme="dark" style="flex:1 1 380px;min-width:0"><div class="app"><div class="login"><form class="box" onsubmit="return false">
+      <div class="logo"><span class="mk" aria-hidden="true">W</span>Walley</div><h1>Sign in to Walley</h1>
+      <div role="alert" class="alert"><svg class="i"><use href="#i-alert"/></svg><span>Sign-in failed. Check your email and password.</span></div>
+      <div class="field"><label for="le">Email</label><input id="le" class="in" type="email" value="nick@example.com"></div>
+      <div class="field"><label for="lp">Password</label><input id="lp" class="in" type="password"></div>
+      <button class="btn primary" type="submit">Sign in</button>
+      <a href="#login" style="text-align:center">Create an account</a></form></div></div></div>
+    <div class="frame" data-pin="light" data-theme="light" style="flex:1 1 380px;min-width:0"><div class="app"><div class="login"><form class="box" onsubmit="return false">
+      <div class="logo"><span class="mk" aria-hidden="true">W</span>Walley</div><h1>Sign in to Walley</h1>
+      <div class="field"><label for="le2">Email</label><input id="le2" class="in" type="email" value="nick@example.com"></div>
+      <div class="field"><label for="lp2">Password</label><input id="lp2" class="in" type="password" value="secret"></div>
+      <button class="btn primary" type="submit" disabled>Signing in...</button>
+      <a href="#login" style="text-align:center">Create an account</a></form></div></div></div>
+  </div>
+</section>
+</div>
+
+<script>
+(function(){
+  // Clone the dashboard template into every mount point.
+  function build(el){
+    var h=document.getElementById('t-header-sync').content.cloneNode(true);
+    var d=document.getElementById('t-dash').content.cloneNode(true);
+    el.appendChild(h);el.appendChild(d);
+    var panes=el.querySelector('.panes');
+    el.querySelectorAll('input[name=pane]').forEach(function(r,i){
+      r.name='pane-'+Math.random().toString(36).slice(2);
+    });
+    el.querySelectorAll('.pane-switch input').forEach(function(r){
+      r.addEventListener('change',function(){panes.setAttribute('data-show',r.value);});
+    });
+  }
+  document.querySelectorAll('.mount').forEach(build);
+  // Radio groups in the mobile mount share one random name per group; re-group them.
+  document.querySelectorAll('.mount').forEach(function(m){
+    var n='pane-'+Math.random().toString(36).slice(2);
+    m.querySelectorAll('.pane-switch input').forEach(function(r){r.name=n;});
+  });
+  // Theme toggle for unpinned frames and the page chrome.
+  var root=document.documentElement,btn=document.getElementById('mk-theme');
+  btn.addEventListener('click',function(){
+    var next=root.getAttribute('data-theme')==='dark'?'light':'dark';
+    root.setAttribute('data-theme',next);
+    document.querySelectorAll('.frame:not([data-pin])').forEach(function(f){f.setAttribute('data-theme',next);});
+    btn.setAttribute('aria-pressed',next==='light');
+  });
+})();
+</script>
+</body>
+</html>

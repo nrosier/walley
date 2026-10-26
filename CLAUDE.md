@@ -31,10 +31,12 @@ Walley is a multi-user web application with a Node.js backend and React frontend
   - Cards/Panels: Pure white (`#ffffff`) with subtle 1px borders (`#e2e8f0`).
   - Primary Accent: Actual Budget Purple/Indigo (`#6366f1` / `#4f46e5`).
   - Text: Dark charcoal (`#0f172a` for headers, `#334155` for body).
+  - Muted (secondary) text: `#556478`, replacing `#64748b`. The change was approved on issue 113 so muted text reaches 4.5:1 on every light surface.
 - **Dark Theme (Default):**
   - Background: Dark charcoal/slate (`#0c0f19` / `#111827`).
   - Cards/Panels: Dark slate (`#1e293b` / `#182232`) with muted borders (`#334155`).
   - Text: Soft white/light gray (`#f8fafc` / `#cbd5e1`).
+  - Muted (secondary) text: `#94a3b8`.
 - **Status Badges:**
   - Matched/Linked: Soft muted green pill badge.
   - Mismatch: Soft muted amber/orange pill badge.
