@@ -2,8 +2,8 @@
 
 | File | What it holds | Touch when |
 | --- | --- | --- |
-| `App.tsx` | Path router via `useRoute`; `/login` and `/verify-email` render without the shell or session check; other routes run the session gate (`GET /api/auth/me`, 401 goes to `/login` keeping the query), then `AppShell` with theme, logout, refresh (bumps the page key, except on `/sync` where it runs `syncStore.run()`); `SyncDashboard`, `Matches`, `SettingsPage` | Adding pages or routes |
-| `App.messages.ts` | App-level strings (loading, session error, verify-email title) | |
+| `App.tsx` | Path router via `useRoute`; `useDocumentTitle(route)` sets the per-route title; `/login` and `/verify-email` render without the shell or session check; other routes run the session gate (`GET /api/auth/me`, 401 goes to `/login` keeping the query), then `AppShell` with theme, logout, refresh (bumps the page key, except on `/sync` where it runs `syncStore.run()`); `SyncDashboard`, `Matches`, `SettingsPage` | Adding pages or routes |
+| `App.messages.ts` | App-level strings (loading, session error, verify-email title, per-route document titles) | |
 | `main.tsx` | Mounts `I18nProvider` > `App` | |
 | `pages/Matches.tsx` | Matches: `Matches` (reads `useSyncCheck` result, holds the ignored-switch state) and `MatchesView({result, showIgnored, onShowIgnoredChange, onRestore, busyId, errorId, errorMessage})`, a table of `linked[]` (names, `font-mono` amounts, range flag, `StatusBadge` from `pairBadge`, em dash for missing sides) plus an optional "Ignored items" section from `ignored[]` with a Restore button per row (`onRestore(matchId)` through `performAction`; `busyId` disables it, `errorId`/`errorMessage` show a failure). Restore is the only write action. `Matches` re-checks via `requestRun` after a successful Restore or resolve and once on open when no result exists; props `checking` (status line, `role=status`) and `checkErrorMessage`/`onRetryCheck` (non-blocking error line with Retry) | Matches table |
 | `pages/Matches.messages.ts` | Matches page en/nl strings | |
@@ -23,7 +23,7 @@
 | `pages/*.messages.ts` | Co-located en/nl catalogues for each page above | |
 | `pages/SettingsPage.messages.ts` | Settings page title, scope label and section headings | |
 | `index.css` | Tailwind theme mapping and dark (default) / light palette variables keyed on `data-theme` | Changing colours |
-| `components/AppShell.tsx` | Navbar: title, three real `<a href>` tab links (clicks go through `navigate`, `aria-current`), Refresh, theme toggle, Radix `DropdownMenu` user menu (email trigger, Log out) | Changing navigation or header actions |
+| `components/AppShell.tsx` | Skip link (first focusable, targets `main#main`), navbar: title link to `/sync`, three real `<a href>` tab links (clicks go through `navigate`, `aria-current`; wraps to a full-width second row and goes icon-only below 768px, 44px targets via `--control-h`), Refresh, theme toggle, Radix `DropdownMenu` user menu (email trigger, Log out) | Changing navigation or header actions |
 | `components/AppShell.messages.ts` | Shell strings | |
 | `components/HealthStatus.tsx`, `components/HealthStatus.messages.ts` | `/api/health` indicator and its en/nl labels | |
 | `components/ui/button.tsx` | Shadcn button | |
@@ -31,6 +31,7 @@
 | `components/StatusBadge.tsx`, `components/StatusBadge.messages.ts` | `StatusBadge({kind})` for `PairBadgeKind` (`synced`, `mismatch`, `ignored`, `orphaned`): en/nl label, badge variant, Lucide `Unlink` icon (aria-hidden) on orphaned | Pair status pills |
 | `lib/theme.ts` | Pure theme helpers: read/write `walley-theme` in localStorage (dark on any failure), toggle, `applyTheme` | Theme storage |
 | `lib/route.ts` | History API router: `parseRoute(pathname)` (`/` and unknown go to sync), `navigate(path)`, `useRoute()`, `TABS` | Adding tabs |
+| `lib/document-title.ts` | `documentTitle(route, locale)` ("Matches - Walley") and `useDocumentTitle(route)`, text from `App.messages.ts` | Adding a route |
 | `lib/session.ts` | `checkSession`: `GET /api/auth/me`; 401 navigates to `/login` + query | Session gate |
 | `lib/api.ts` | `apiRequest` (sends `x-csrf-token` from the `walley_csrf` cookie on unsafe methods), `ApiError` | Calling the API |
 | `lib/utils.ts` | `cn` | |

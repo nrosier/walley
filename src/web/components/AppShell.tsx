@@ -1,9 +1,9 @@
 import type { MouseEvent, ReactNode } from 'react';
 import { DropdownMenu } from 'radix-ui';
-import { ChevronDown, LogOut, Moon, RefreshCw, Sun } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, Link2, LogOut, Moon, RefreshCw, Settings, Sun, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
-import { navigate, TABS, type Route } from '@/lib/route';
+import { navigate, TABS, type Route, type TabRoute } from '@/lib/route';
 import type { Theme } from '@/lib/theme';
 import { appShellMessages } from './AppShell.messages';
 
@@ -19,6 +19,12 @@ export interface AppShellProps {
   children?: ReactNode;
 }
 
+const TAB_ICONS: Record<TabRoute, LucideIcon> = { sync: ArrowLeftRight, matches: Link2, settings: Settings };
+
+/** 44px tap targets on narrow or coarse-pointer screens (--control-h), 32px otherwise. */
+const TARGET = 'min-h-(--control-h)';
+const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+
 /** Plain left clicks go through the in-app router; modified clicks keep browser behaviour. */
 function onTabClick(event: MouseEvent<HTMLAnchorElement>, path: string) {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
@@ -32,11 +38,31 @@ export function AppShell({ route, theme, email, onRefresh, onToggleTheme, onLogo
   const { t } = useT(appShellMessages);
   return (
     <div className="min-h-screen">
-      <header className="flex items-center gap-4 border-b bg-card px-3 py-1.5">
-        <span className="text-xl font-bold text-accent-text">{t('title')}</span>
-        <nav aria-label={t('nav.label')} className="flex flex-1 gap-1">
+      <a
+        href="#main"
+        onClick={(e) => {
+          e.preventDefault();
+          document.getElementById('main')?.focus();
+        }}
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:text-primary-foreground"
+      >
+        {t('skipLink')}
+      </a>
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-card px-3 py-1.5">
+        <a
+          href="/sync"
+          aria-label={t('homeLink')}
+          onClick={(e) => {
+            onTabClick(e, '/sync');
+          }}
+          className={`inline-flex items-center rounded-md text-xl font-bold text-accent-text ${TARGET} ${FOCUS}`}
+        >
+          {t('title')}
+        </a>
+        <nav aria-label={t('nav.label')} className="order-last flex w-full gap-1 md:order-none md:w-auto md:flex-1">
           {TABS.map((tab) => {
             const active = tab.route === route;
+            const Icon = TAB_ICONS[tab.route];
             return (
               <a
                 key={tab.route}
@@ -46,23 +72,25 @@ export function AppShell({ route, theme, email, onRefresh, onToggleTheme, onLogo
                 }}
                 aria-current={active ? 'page' : undefined}
                 className={
-                  'rounded-md px-3 py-1.5 text-sm ' +
+                  `inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm md:flex-none ${TARGET} ${FOCUS} ` +
                   (active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground')
                 }
               >
-                {t(`nav.${tab.route}`)}
+                <Icon className="size-4 md:hidden" aria-hidden="true" />
+                <span className="sr-only md:not-sr-only">{t(`nav.${tab.route}`)}</span>
               </a>
             );
           })}
         </nav>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={onRefresh} aria-label={t('refresh')}>
+        <div className="ml-auto flex items-center gap-1 md:ml-0">
+          <Button variant="ghost" size="sm" className={`h-auto ${TARGET} min-w-(--control-h)`} onClick={onRefresh} aria-label={t('refresh')}>
             <RefreshCw />
-            {t('refresh')}
+            <span className="hidden md:inline">{t('refresh')}</span>
           </Button>
           <Button
             variant="ghost"
             size="icon-sm"
+            className={`h-auto ${TARGET} min-w-(--control-h)`}
             onClick={onToggleTheme}
             aria-label={theme === 'dark' ? t('theme.toLight') : t('theme.toDark')}
           >
@@ -70,8 +98,8 @@ export function AppShell({ route, theme, email, onRefresh, onToggleTheme, onLogo
           </Button>
           <DropdownMenu.Root defaultOpen={menuDefaultOpen} modal={false}>
             <DropdownMenu.Trigger asChild>
-              <Button variant="ghost" size="sm" aria-label={t('userMenu', { email })}>
-                <span className="max-w-48 truncate">{email}</span>
+              <Button variant="ghost" size="sm" className={`h-auto ${TARGET} min-w-(--control-h)`} aria-label={t('userMenu', { email })}>
+                <span className="hidden max-w-48 truncate md:inline">{email}</span>
                 <ChevronDown />
               </Button>
             </DropdownMenu.Trigger>
@@ -91,7 +119,7 @@ export function AppShell({ route, theme, email, onRefresh, onToggleTheme, onLogo
           </DropdownMenu.Root>
         </div>
       </header>
-      <main className="p-3">{children}</main>
+      <main id="main" tabIndex={-1} className="p-3 outline-none">{children}</main>
     </div>
   );
 }

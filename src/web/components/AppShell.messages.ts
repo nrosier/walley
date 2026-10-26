@@ -13,6 +13,8 @@ const en = {
   },
   userMenu: 'Account menu for {email}',
   logout: 'Log out',
+  skipLink: 'Skip to main content',
+  homeLink: 'Walley, go to Sync Dashboard',
 };
 
 const nl: typeof en = {
@@ -30,6 +32,8 @@ const nl: typeof en = {
   },
   userMenu: 'Accountmenu voor {email}',
   logout: 'Uitloggen',
+  skipLink: 'Naar hoofdinhoud springen',
+  homeLink: 'Walley, naar Synchronisatie',
 };
 
 export const appShellMessages = { en, nl };

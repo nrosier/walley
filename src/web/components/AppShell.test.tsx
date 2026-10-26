@@ -30,7 +30,7 @@ describe('AppShell', () => {
     expect(html).toContain('href="/sync"');
     expect(html).toContain('href="/matches"');
     expect(html).toContain('href="/settings"');
-    expect(html).not.toContain('href="#');
+    expect(html).not.toContain('href="#/');
     expect(html).toContain('aria-label="Refresh"');
     expect(html).toContain('aria-label="Switch to light theme"');
     expect(html).toContain('body');
@@ -38,7 +38,7 @@ describe('AppShell', () => {
   it('marks only the active tab with aria-current', () => {
     const html = render('matches');
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
-    expect(html).toMatch(/aria-current="page"[^>]*>Matches/);
+    expect(html).toMatch(/aria-current="page"[^>]*>.*?<span[^>]*>Matches<\/span>/);
   });
   it('offers dark when light is active', () => {
     expect(render('sync', { theme: 'light' })).toContain('Switch to dark theme');
@@ -58,5 +58,25 @@ describe('AppShell', () => {
   it('translates to Dutch', () => {
     const html = render('settings', { locale: 'nl', open: true });
     for (const label of ['Synchronisatie', 'Koppelingen', 'Instellingen', 'Vernieuwen', 'Uitloggen']) expect(html).toContain(label);
+  });
+  it('puts the skip link first, targeting the main content', () => {
+    const html = render('sync');
+    const firstHref = /<a\b[^>]*href="([^"]*)"/.exec(html)?.[1];
+    expect(firstHref).toBe('#main');
+    expect(html).toContain('Skip to main content');
+    expect(html).toMatch(/<main[^>]*id="main"/);
+    expect(render('sync', { locale: 'nl' })).toContain('Naar hoofdinhoud springen');
+  });
+  it('links the title to /sync from every route', () => {
+    for (const route of ['sync', 'matches', 'settings'] as const) {
+      expect(render(route)).toMatch(/<a href="\/sync"[^>]*aria-label="Walley, go to Sync Dashboard"[^>]*>Walley<\/a>/);
+    }
+  });
+  it('wraps the header and keeps tab names when icon-only', () => {
+    const html = render('sync');
+    expect(html).toContain('flex-wrap');
+    expect(html).toContain('w-full');
+    expect(html).toContain('min-h-(--control-h)');
+    expect(html).toMatch(/<span class="sr-only md:not-sr-only">Matches<\/span>/);
   });
 });

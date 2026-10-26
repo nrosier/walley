@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { useT } from '@/i18n';
 import { apiRequest } from '@/lib/api';
+import { useDocumentTitle } from '@/lib/document-title';
 import { navigate, useRoute, type Route } from '@/lib/route';
 import { syncStore } from '@/lib/sync-check';
 import { checkSession, type SessionUser } from '@/lib/session';
@@ -114,6 +115,7 @@ function Shell({ route }: { route: ShellRoute }) {
 
 export function App() {
   const route = useRoute();
+  useDocumentTitle(route);
   if (route === 'login') return <LoginPage />;
   if (route === 'verify-email') return <VerifyEmailPage />;
   return <Shell route={route} />;
