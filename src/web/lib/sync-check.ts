@@ -28,6 +28,12 @@ export interface SyncStore {
   getState: () => SyncStoreState;
   subscribe: (listener: () => void) => () => void;
   run: () => Promise<void>;
+  /**
+   * Ask for a fresh check after a change. Idle: starts one. Loading: the in-flight result is
+   * discarded and exactly one trailing check runs when it settles, however many calls arrive.
+   * Resolves when the store has settled.
+   */
+  requestRun: () => Promise<void>;
   setResult: (result: SyncCheckResult) => void;
 }
 
@@ -41,6 +47,38 @@ export function createSyncStore(fetchImpl?: typeof fetch): SyncStore {
       l();
     });
   };
+  let rerun = false;
+  const wantsRerun = () => rerun;
+  let inflight = null as Promise<void> | null;
+  const loop = async (): Promise<void> => {
+    try {
+      do {
+        rerun = false;
+        const id = ++runId;
+        set({ ...state, status: 'loading', errorCode: null });
+        try {
+          const result = await runSyncCheck(fetchImpl);
+          if (id === runId) set({ status: 'ready', result, errorCode: null });
+          else if (!wantsRerun()) set({ ...state, status: 'ready', errorCode: null }); // discarded, nothing queued
+        } catch (error: unknown) {
+          // A failed check keeps the last result; it never rolls anything back.
+          if (id === runId) {
+            set({ ...state, status: 'error', errorCode: error instanceof ApiError ? error.code : 'request_failed' });
+          } else if (!wantsRerun()) {
+            set({ ...state, status: 'ready', errorCode: null });
+          }
+        }
+      } while (wantsRerun());
+    } finally {
+      // Cleared in the same tick as the last wantsRerun() check, so a requestRun that arrives
+      // afterwards starts a new check instead of joining a finished one.
+      inflight = null;
+    }
+  };
+  const start = (): Promise<void> => {
+    inflight = loop();
+    return inflight;
+  };
   return {
     getState: () => state,
     subscribe: (listener) => {
@@ -50,29 +88,27 @@ export function createSyncStore(fetchImpl?: typeof fetch): SyncStore {
       };
     },
     setResult: (result) => {
-      set({ status: 'ready', result, errorCode: null });
+      // Any write while a check runs may be optimistic: that check's answer predates it, so drop it.
+      if (inflight !== null) runId += 1;
+      set({ status: inflight !== null ? 'loading' : 'ready', result, errorCode: null });
     },
-    run: async () => {
-      if (state.status === 'loading') return;
-      const id = ++runId;
-      set({ ...state, status: 'loading', errorCode: null });
-      try {
-        const result = await runSyncCheck(fetchImpl);
-        if (id === runId) set({ status: 'ready', result, errorCode: null });
-      } catch (error: unknown) {
-        if (id === runId) {
-          set({ ...state, status: 'error', errorCode: error instanceof ApiError ? error.code : 'request_failed' });
-        }
+    run: () => inflight ?? start(),
+    requestRun: () => {
+      if (inflight !== null) {
+        rerun = true;
+        runId += 1; // the in-flight result is stale now
+        return inflight;
       }
+      return start();
     },
   };
 }
 
 export const syncStore: SyncStore = createSyncStore();
 
-export function useSyncCheck(store: SyncStore = syncStore): SyncStoreState & Pick<SyncStore, 'run' | 'setResult'> {
+export function useSyncCheck(store: SyncStore = syncStore): SyncStoreState & Pick<SyncStore, 'run' | 'requestRun' | 'setResult'> {
   const state = useSyncExternalStore(store.subscribe, store.getState);
-  return { ...state, run: store.run, setResult: store.setResult };
+  return { ...state, run: store.run, requestRun: store.requestRun, setResult: store.setResult };
 }
 
 // ---- pure list logic ----
@@ -314,4 +350,24 @@ export async function performAction(
     set(rollbackAction(get() ?? snapshot, snapshot, action));
     return { ok: false, code: error instanceof ApiError ? error.code : 'request_failed' };
   }
+}
+
+/**
+ * Restore on the store, then re-check once if it succeeded. A failure triggers no check.
+ * The optimistic write goes through `store.setResult`, which discards any check still running.
+ */
+export async function restoreAndRecheck(
+  store: SyncStore,
+  matchId: string,
+  fetchImpl?: typeof fetch,
+): Promise<ActionOutcome> {
+  const outcome = await performAction(() => store.getState().result, store.setResult, { kind: 'restore', matchId }, fetchImpl);
+  if (outcome.ok) void store.requestRun();
+  return outcome;
+}
+
+/** Start a check when there is no result yet and none is running. */
+export function checkIfEmpty(store: SyncStore): void {
+  const { result, status } = store.getState();
+  if (result === null && status !== 'loading') void store.requestRun();
 }

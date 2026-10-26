@@ -1,11 +1,11 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { SyncCheckResult, SyncIgnored, SyncLinked } from '../../lib/sync-check-types';
 import { formatMoney } from '../../lib/format-money';
 import { pairBadge } from '../../lib/match-badge';
 import { useT } from '@/i18n';
 import type { ResolveAction } from '@/lib/matches.api';
 import { performResolve } from '@/lib/resolve-mismatch';
-import { nextRowId, performAction, syncStore, useSyncCheck } from '@/lib/sync-check';
+import { checkIfEmpty, nextRowId, restoreAndRecheck, syncStore, useSyncCheck } from '@/lib/sync-check';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
 import { Badge } from '../components/ui/badge';
@@ -32,6 +32,11 @@ export interface MatchesViewProps {
   /** Match id of the mismatch row whose resolve failed, and its resolved text. */
   resolveErrorId?: string | null;
   resolveErrorMessage?: string | null;
+  /** A sync check is running: shows the "Updating sync status" line. */
+  checking?: boolean;
+  /** Resolved text of the failed check, and the Retry handler. */
+  checkErrorMessage?: string | null;
+  onRetryCheck?: () => void;
 }
 
 const CELL = 'px-3 py-1.5 text-sm';
@@ -55,6 +60,9 @@ export function MatchesView({
   onReview,
   resolveErrorId,
   resolveErrorMessage,
+  checking = false,
+  checkErrorMessage,
+  onRetryCheck,
 }: MatchesViewProps) {
   const { t, locale } = useT(matchesMessages);
   const money = (cents: number | null, currency: string): string =>
@@ -158,6 +166,17 @@ export function MatchesView({
           <span>{t('ignored.toggle')}</span>
         </label>
       </div>
+      <div role="status" aria-live="polite" className="mb-2 text-xs text-muted-foreground">
+        {checking ? t('checking') : null}
+      </div>
+      {checkErrorMessage != null && !checking ? (
+        <p role="alert" className="mb-2 flex flex-wrap items-center gap-2 text-xs text-warning">
+          <span>{checkErrorMessage}</span>
+          <Button type="button" size="xs" variant="outline" onClick={() => onRetryCheck?.()}>
+            {t('retry')}
+          </Button>
+        </p>
+      ) : null}
       {body}
       {showIgnored && result !== null ? (
         <section aria-labelledby="matches-ignored-title" className="mt-6">
@@ -238,11 +257,16 @@ export function Matches() {
   const [resolveFailed, setResolveFailed] = useState<{ id: string; text: string } | null>(null);
   const modalT = useT(diffModalMessages).t;
 
+  // Opening Matches with no result starts a check; the Dashboard never does this.
+  useEffect(() => {
+    checkIfEmpty(syncStore);
+  }, []);
+
   const resolve = (matchId: string, action: ResolveAction) => {
     const name = sync.result?.mismatches.find((m) => m.matchId === matchId)?.wallosName ?? matchId;
     setReviewId(null);
     setResolveFailed(null);
-    void performResolve(() => syncStore.getState().result, syncStore.setResult, matchId, action, syncStore.run).then((outcome) => {
+    void performResolve(() => syncStore.getState().result, syncStore.setResult, matchId, action, syncStore.requestRun).then((outcome) => {
       if (!outcome.ok) {
         const reason =
           action.startsWith('overwrite_') && isOverwriteErrorCode(outcome.code)
@@ -263,7 +287,7 @@ export function Matches() {
     const name = result.ignored.find((r) => r.matchId === matchId)?.name ?? matchId;
     setBusyId(matchId);
     setFailed(null);
-    void performAction(() => syncStore.getState().result, syncStore.setResult, { kind: 'restore', matchId }).then((outcome) => {
+    void restoreAndRecheck(syncStore, matchId).then((outcome) => {
       setBusyId(null);
       if (outcome.ok) {
         focusAfter(next);
@@ -287,6 +311,13 @@ export function Matches() {
       onReview={setReviewId}
       resolveErrorId={resolveFailed?.id ?? null}
       resolveErrorMessage={resolveFailed?.text ?? null}
+      checking={sync.status === 'loading'}
+      checkErrorMessage={
+        sync.status === 'error'
+          ? t(sync.result === null ? 'loadFailed' : 'refreshFailed', { reason: errorText(sync.errorCode ?? 'request_failed') })
+          : null
+      }
+      onRetryCheck={() => { void syncStore.requestRun(); }}
     />
     <DiffModal
       mismatch={sync.result?.mismatches.find((m) => m.matchId === reviewId) ?? null}
