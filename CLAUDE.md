@@ -13,7 +13,7 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 
 ## Tech Stack & Project Architecture
 - **Language & Runtime:** TypeScript (strict mode), Node.js backend, React (Vite) frontend.
-- **UI System:** Tailwind CSS, Radix UI / Shadcn UI primitives, Lucide React icons.
+- **UI System:** Radix UI / Shadcn UI primitives, inline SVG icons.
 - **Database:** SQLite (`walley.db`) via `better-sqlite3` and Drizzle ORM.
 - **Integrations:**
   - `@actual-app/api` (runs **strictly** on the Node.js backend, isolated per user sync execution).
