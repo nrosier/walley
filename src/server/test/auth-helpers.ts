@@ -84,11 +84,24 @@ export function makeUser(db: AppDatabase, email?: string): string {
     .id;
 }
 
-/** Marks the user with this email as verified, as the verification link would. */
+/**
+ * Marks the user with this email as verified and, as consuming the link does, applies the newest
+ * pending password hash from its verification tokens (if any), then drops the tokens.
+ */
 export function verifyEmail(db: AppDatabase, email: string, at = Date.now()): void {
+  const e = email.trim().toLowerCase();
+  const pending = db.$client
+    .prepare(
+      `select v.pending_password_hash as h from email_verifications v join users u on u.id = v.user_id
+       where u.email = ? and v.pending_password_hash is not null order by v.created_at desc limit 1`,
+    )
+    .get(e) as { h: string } | undefined;
   db.$client
-    .prepare('update users set email_verified_at = ? where email = ?')
-    .run(at, email.trim().toLowerCase());
+    .prepare('update users set email_verified_at = ?, password_hash = coalesce(?, password_hash) where email = ?')
+    .run(at, pending?.h ?? null, e);
+  db.$client
+    .prepare('delete from email_verifications where user_id in (select id from users where email = ?)')
+    .run(e);
 }
 
 /** Creates a session for the user at the clock's current time. */

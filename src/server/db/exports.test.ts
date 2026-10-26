@@ -14,7 +14,7 @@ describe('data layer exports', () => {
 
   it('lookup.ts exports only the five pre-sign-in reads', () => {
     expect(Object.keys(lookup).sort()).toEqual([
-      'findEmailVerificationUserId',
+      'findEmailVerification',
       'findLinkCandidate',
       'findLoginByEmail',
       'findSessionByIdHash',

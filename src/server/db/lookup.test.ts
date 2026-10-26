@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createUser } from './accounts.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './client.js';
 import {
-  findEmailVerificationUserId,
+  findEmailVerification,
   findLinkCandidate,
   findLoginByEmail,
   findSessionByIdHash,
@@ -109,7 +109,7 @@ describe('lookup', () => {
     });
   });
 
-  describe('findEmailVerificationUserId', () => {
+  describe('findEmailVerification', () => {
     it('returns the owner of a live token only', () => {
       const now = new Date(10_000);
       createUserRepo(db, aliceId).createEmailVerification({
@@ -117,9 +117,9 @@ describe('lookup', () => {
         now,
         expiresAt: new Date(20_000),
       });
-      expect(findEmailVerificationUserId(db, 'e'.repeat(64), now)).toBe(aliceId);
-      expect(findEmailVerificationUserId(db, 'e'.repeat(64), new Date(20_000))).toBeUndefined();
-      expect(findEmailVerificationUserId(db, 'f'.repeat(64), now)).toBeUndefined();
+      expect(findEmailVerification(db, 'e'.repeat(64), now)?.userId).toBe(aliceId);
+      expect(findEmailVerification(db, 'e'.repeat(64), new Date(20_000))).toBeUndefined();
+      expect(findEmailVerification(db, 'f'.repeat(64), now)).toBeUndefined();
     });
   });
 
@@ -129,7 +129,7 @@ describe('lookup', () => {
     findSessionByIdHash(db, 'a'.repeat(64));
     findUserIdByIdentity(db, 'https://idp', 's1');
     findLinkCandidate(db, 'alice@example.com', 'https://idp');
-    findEmailVerificationUserId(db, 'e'.repeat(64), new Date());
+    findEmailVerification(db, 'e'.repeat(64), new Date());
     const after = db.$client.prepare('select total_changes() as n').get() as { n: number };
     expect(after.n).toBe(before.n);
   });

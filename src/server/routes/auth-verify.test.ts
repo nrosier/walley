@@ -16,7 +16,7 @@ import {
   type CapturingMailer,
   type Mailer,
 } from '../mail/index.js';
-import { makeAuthApp, signIn, verifyEmail, type AuthApp } from '../test/auth-helpers.js';
+import { makeAuthApp, signIn, type AuthApp } from '../test/auth-helpers.js';
 
 // Counts every Argon2 derivation (hash or verify), as auth-local.test.ts does.
 const argon = vi.hoisted(() => ({ calls: 0 }));
@@ -89,7 +89,8 @@ const register = (t: AuthApp, email: string, password = PASSWORD) =>
   post(t, '/api/auth/register', { email, password });
 const login = (t: AuthApp, email: string, password = PASSWORD) =>
   post(t, '/api/auth/login', { email, password });
-const verify = (t: AuthApp, token: unknown) => post(t, '/api/auth/verify-email', { token });
+const verify = (t: AuthApp, token: unknown, password: unknown = PASSWORD) =>
+  post(t, '/api/auth/verify-email', { token, password });
 
 /** The token in the most recent verification mail, read from the link in its body. */
 function lastToken(mailer: CapturingMailer): string {
@@ -241,6 +242,8 @@ describe('POST /api/auth/verify-email', () => {
   it.each([
     ['no body', undefined],
     ['missing token', {}],
+    ['missing password', { token: 'abc' }],
+    ['non-string password', { token: 'abc', password: 5 }],
     ['number', { token: 5 }],
     ['null', { token: null }],
     ['array', { token: ['a'] }],
@@ -293,40 +296,148 @@ describe('login before and after verification', () => {
   });
 });
 
+describe('registration keeps the password off the user until verified', () => {
+  it('stores no password hash on the user and puts the hash on the token', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'fresh@example.test');
+    expect(userRow(t.db, 'fresh@example.test')).toEqual({ hash: null, verifiedAt: null });
+    const pending = t.db.$client.prepare('select pending_password_hash as h from email_verifications').get() as { h: string };
+    expect(pending.h.startsWith('$argon2id$')).toBe(true);
+  });
+
+  it('refuses login of an unverified account, even with the registered password', async () => {
+    const t = setup();
+    await register(t, 'unv@example.test');
+    const res = await login(t, 'unv@example.test');
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'invalid_credentials' });
+    expect(res.cookies).toHaveLength(0);
+  });
+
+  it('refuses login of a legacy unverified row that still holds a hash', async () => {
+    const t = setup();
+    createUser(t.db, { email: 'legacy@example.test', passwordHash: await hashPassword(PASSWORD) });
+    expect((await login(t, 'legacy@example.test')).statusCode).toBe(401);
+  });
+});
+
+describe('verify-email password check', () => {
+  const ATTACKER = 'attacker chosen passphrase';
+  const VICTIM = 'victim chosen passphrase';
+
+  it('(a) refuses the attacker older mail with the wrong password, keeps the token, verifies nothing', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'victim@example.test', ATTACKER);
+    const attackerToken = lastToken(mailer);
+    await register(t, 'victim@example.test', VICTIM);
+    const res = await verify(t, attackerToken, VICTIM);
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'invalid_password' });
+    expect(userRow(t.db, 'victim@example.test')).toEqual({ hash: null, verifiedAt: null });
+    expect(tokenCount(t.db)).toBe(2);
+    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(401);
+  });
+
+  it('(b) lets the victim verify with their own password and then log in; the attacker cannot', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'victim@example.test', ATTACKER);
+    await register(t, 'victim@example.test', VICTIM);
+    const victimToken = lastToken(mailer);
+    // A wrong try does not burn the token, so the owner can retry.
+    expect((await verify(t, victimToken, 'a wrong passphrase here')).statusCode).toBe(401);
+    expect((await verify(t, victimToken, VICTIM)).statusCode).toBe(204);
+    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(200);
+    expect((await login(t, 'victim@example.test', ATTACKER)).statusCode).toBe(401);
+  });
+
+  it('(c) the attacker newer mail with the attacker password cannot take over a verified account', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'victim@example.test', VICTIM);
+    const victimToken = lastToken(mailer);
+    await register(t, 'victim@example.test', ATTACKER);
+    const attackerToken = lastToken(mailer);
+    expect((await verify(t, victimToken, VICTIM)).statusCode).toBe(204);
+    // The attacker's token still holds a hash, but the user is already verified: nothing changes.
+    await verify(t, attackerToken, ATTACKER);
+    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(200);
+    expect((await login(t, 'victim@example.test', ATTACKER)).statusCode).toBe(401);
+  });
+
+  it('(c) the attacker cannot take over while the victim is still verifying', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'victim@example.test', VICTIM);
+    const victimToken = lastToken(mailer);
+    await register(t, 'victim@example.test', ATTACKER);
+    // The attacker never saw the victim's token: only the victim's password opens it.
+    expect((await verify(t, victimToken, ATTACKER)).statusCode).toBe(401);
+    expect(userRow(t.db, 'victim@example.test')?.verifiedAt).toBeNull();
+    expect((await verify(t, victimToken, VICTIM)).statusCode).toBe(204);
+    expect((await login(t, 'victim@example.test', ATTACKER)).statusCode).toBe(401);
+    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(200);
+  });
+
+  it('(e) a consumed token cannot be used again', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'once@example.test');
+    const token = lastToken(mailer);
+    expect((await verify(t, token)).statusCode).toBe(204);
+    const again = await verify(t, token);
+    expect(again.statusCode).toBe(400);
+    expect(again.json()).toEqual({ error: 'invalid_token' });
+  });
+
+  it('refuses a token that carries no pending hash with 400 token_without_password and keeps it', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'old@example.test');
+    t.db.$client.prepare('update email_verifications set pending_password_hash = null').run();
+    const res = await verify(t, lastToken(mailer));
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'token_without_password' });
+    expect(userRow(t.db, 'old@example.test')?.verifiedAt).toBeNull();
+    expect(tokenCount(t.db)).toBe(1);
+  });
+
+  it('refuses an over-long or too-short password with 401 invalid_password', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'len@example.test');
+    const token = lastToken(mailer);
+    for (const bad of ['short', 'x'.repeat(100_000)]) {
+      const res = await verify(t, token, bad);
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: 'invalid_password' });
+    }
+  });
+});
+
 describe('re-registering', () => {
-  it('leaves the stored hash alone, sends a new link, and leaves the old token valid', async () => {
+  it('sends a new link with its own pending hash and leaves the old token valid', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'again@example.test');
     const oldToken = lastToken(mailer);
-    const oldHash = userRow(t.db, 'again@example.test')?.hash;
     await register(t, 'again@example.test', NEW_PASSWORD);
     const newToken = lastToken(mailer);
     expect(newToken).not.toBe(oldToken);
     // Nothing changes on the user until a token is used.
-    expect(userRow(t.db, 'again@example.test')?.hash).toBe(oldHash);
+    expect(userRow(t.db, 'again@example.test')).toEqual({ hash: null, verifiedAt: null });
     expect(tokenCount(t.db)).toBe(2);
 
     // The newest registrant verifies: their password is the one that works.
-    expect((await verify(t, newToken)).statusCode).toBe(204);
+    expect((await verify(t, newToken, NEW_PASSWORD)).statusCode).toBe(204);
     expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(200);
     expect((await login(t, 'again@example.test')).statusCode).toBe(401);
     // A token used after verification changes nothing.
     expect((await verify(t, oldToken)).statusCode).toBe(204);
     expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(200);
     expect((await login(t, 'again@example.test')).statusCode).toBe(401);
-  });
-
-  it('does not leave the first registrant hash in place after a second registration', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    // An attacker registers an address they do not own, then the owner registers it.
-    await register(t, 'victim@example.test', 'attacker password one');
-    await register(t, 'victim@example.test', 'owner chosen password');
-    const ownerToken = lastToken(mailer);
-    expect((await verify(t, ownerToken)).statusCode).toBe(204);
-    expect((await login(t, 'victim@example.test', 'owner chosen password')).statusCode).toBe(200);
-    expect((await login(t, 'victim@example.test', 'attacker password one')).statusCode).toBe(401);
   });
 
   it('keeps the old token valid until it expires after a repeat registration', async () => {
@@ -343,8 +454,7 @@ describe('re-registering', () => {
   it('leaves the hash of a verified email unchanged and verifies nothing', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
-    await register(t, 'done@example.test');
-    verifyEmail(t.db, 'done@example.test', 1234);
+    createUser(t.db, { email: 'done@example.test', passwordHash: await hashPassword(PASSWORD), verifiedAt: new Date(1234) });
     const before = userRow(t.db, 'done@example.test');
     const tokensBefore = tokenCount(t.db);
     await register(t, 'done@example.test', NEW_PASSWORD);
@@ -437,8 +547,8 @@ describe('logs', () => {
     await register(t, email, secretPassword);
     const token = lastToken(mailer);
     await register(t, email, secretPassword);
-    await verify(t, token);
-    await verify(t, 'SECRETGARBAGETOKEN');
+    await verify(t, token, secretPassword);
+    await verify(t, 'SECRETGARBAGETOKEN', secretPassword);
     await login(t, email, secretPassword);
     const output = chunks.join('');
     expect(output).toContain('/api/auth/register');

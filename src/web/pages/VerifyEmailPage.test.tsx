@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
-import { runVerification, VerifyEmailView, type VerifyState } from './VerifyEmailPage';
+import { runVerification, takeToken, VerifyEmailView, type VerifyState } from './VerifyEmailPage';
 
 const TOKEN = 'abc123SECRETtoken';
 
@@ -26,64 +26,80 @@ const render = (state: VerifyState, locale: Locale = 'en') =>
     </I18nProvider>,
   );
 
-describe('runVerification', () => {
-  it('clears the hash before the request is made, then reports success on 204', async () => {
-    const events: string[] = [];
-    const { impl, calls } = fakeFetch(204, undefined, () => events.push('fetch'));
-    const state = await runVerification({
-      hash: `#token=${TOKEN}`,
-      clearHash: () => events.push('clear'),
-      fetchImpl: impl,
-    });
-    expect(events).toEqual(['clear', 'fetch']);
-    expect(state).toEqual({ kind: 'success' });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.url).toBe('/api/auth/verify-email');
-    expect(calls[0]?.init?.method).toBe('POST');
-    expect(calls[0]?.init?.body).toBe(JSON.stringify({ token: TOKEN }));
-    expect(JSON.stringify(state)).not.toContain(TOKEN);
+const PASSWORD = 'correct horse battery staple';
+const run = (impl: typeof fetch) => runVerification({ token: TOKEN, password: PASSWORD, fetchImpl: impl });
+
+describe('takeToken', () => {
+  it('returns the token and clears the hash', () => {
+    let cleared = 0;
+    expect(takeToken(`#token=${TOKEN}`, () => cleared++)).toBe(TOKEN);
+    expect(cleared).toBe(1);
   });
 
-  it('reports an expired link on 400 invalid_token', async () => {
-    const { impl } = fakeFetch(400, { error: 'invalid_token' });
-    expect(await runVerification({ hash: `#token=${TOKEN}`, clearHash: () => undefined, fetchImpl: impl })).toEqual({
-      kind: 'invalid',
-    });
-  });
-
-  it('reports disabled sign-in on 403 local_auth_disabled', async () => {
-    const { impl } = fakeFetch(403, { error: 'local_auth_disabled' });
-    expect(await runVerification({ hash: `#token=${TOKEN}`, clearHash: () => undefined, fetchImpl: impl })).toEqual({
-      kind: 'disabled',
-    });
-  });
-
-  it('maps 429 to rate_limited and other failures to their code', async () => {
-    const limited = fakeFetch(429, { error: 'rate_limited' });
-    expect(await runVerification({ hash: `#token=${TOKEN}`, clearHash: () => undefined, fetchImpl: limited.impl })).toEqual({
-      kind: 'error',
-      code: 'rate_limited',
-    });
-    const broken = fakeFetch(500, { error: 'internal' });
-    expect(await runVerification({ hash: `#token=${TOKEN}`, clearHash: () => undefined, fetchImpl: broken.impl })).toEqual({
-      kind: 'error',
-      code: 'internal',
-    });
-  });
-
-  it('sends no request without a token but still clears the hash', async () => {
+  it('returns null for a missing token but still clears the hash', () => {
     for (const hash of ['', '#', '#token=', '#other=1']) {
       let cleared = 0;
-      const { impl, calls } = fakeFetch(204);
-      const state = await runVerification({ hash, clearHash: () => cleared++, fetchImpl: impl });
-      expect(state).toEqual({ kind: 'missing' });
-      expect(calls).toHaveLength(0);
+      expect(takeToken(hash, () => cleared++)).toBeNull();
       expect(cleared).toBe(1);
     }
   });
 });
 
+describe('runVerification', () => {
+  it('posts the token and password once, then reports success on 204', async () => {
+    const { impl, calls } = fakeFetch(204);
+    const state = await run(impl);
+    expect(state).toEqual({ kind: 'success' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('/api/auth/verify-email');
+    expect(calls[0]?.init?.method).toBe('POST');
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ token: TOKEN, password: PASSWORD }));
+    expect(JSON.stringify(state)).not.toContain(TOKEN);
+    expect(JSON.stringify(state)).not.toContain(PASSWORD);
+  });
+
+  it('keeps the form with a wrong-password flag on 401 invalid_password', async () => {
+    const { impl } = fakeFetch(401, { error: 'invalid_password' });
+    expect(await run(impl)).toEqual({ kind: 'form', wrongPassword: true });
+  });
+
+  it('reports an expired link on 400 invalid_token', async () => {
+    const { impl } = fakeFetch(400, { error: 'invalid_token' });
+    expect(await run(impl)).toEqual({ kind: 'invalid' });
+  });
+
+  it('reports a legacy link on 400 token_without_password', async () => {
+    const { impl } = fakeFetch(400, { error: 'token_without_password' });
+    expect(await run(impl)).toEqual({ kind: 'legacy' });
+  });
+
+  it('reports disabled sign-in on 403 local_auth_disabled', async () => {
+    const { impl } = fakeFetch(403, { error: 'local_auth_disabled' });
+    expect(await run(impl)).toEqual({ kind: 'disabled' });
+  });
+
+  it('maps 429 to rate_limited and other failures to their code', async () => {
+    expect(await run(fakeFetch(429, { error: 'rate_limited' }).impl)).toEqual({ kind: 'error', code: 'rate_limited' });
+    expect(await run(fakeFetch(500, { error: 'internal' }).impl)).toEqual({ kind: 'error', code: 'internal' });
+  });
+});
+
 describe('VerifyEmailView', () => {
+  it('asks for the password with a password input', () => {
+    const html = render({ kind: 'form' });
+    expect(html).toContain('type="password"');
+    expect(html).toContain('Enter the password you chose');
+    expect(html).not.toContain('role="alert"');
+  });
+  it('shows the wrong-password message and keeps the form', () => {
+    const html = render({ kind: 'form', wrongPassword: true });
+    expect(html).toContain('type="password"');
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('not the password this link was requested with');
+  });
+  it('shows the legacy-link message', () => {
+    expect(render({ kind: 'legacy' })).toContain('older version');
+  });
   it('shows success with a sign-in link', () => {
     const html = render({ kind: 'success' });
     expect(html).toContain('Your email address is confirmed.');
@@ -105,6 +121,7 @@ describe('VerifyEmailView', () => {
     expect(render({ kind: 'verifying' })).not.toContain('href=');
   });
   it('renders in Dutch', () => {
+    expect(render({ kind: 'form' }, 'nl')).toContain('Voer het wachtwoord in');
     expect(render({ kind: 'success' }, 'nl')).toContain('Uw e-mailadres is bevestigd.');
     expect(render({ kind: 'invalid' }, 'nl')).toContain('24 uur');
   });

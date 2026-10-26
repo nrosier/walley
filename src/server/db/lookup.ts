@@ -3,7 +3,7 @@
  *
  * At sign-in there is no user id yet: finding it is the point of the query. These five
  * functions are the only unscoped reads in the data layer: `findSessionByIdHash`,
- * `findEmailVerificationUserId` (the only token-keyed read), `findLoginByEmail`,
+ * `findEmailVerification` (the only token-keyed read), `findLoginByEmail`,
  * `findUserIdByIdentity` and `findLinkCandidate`. They are read-only; every session,
  * identity and verification write goes through `createUserRepo`, scoped to a user.
  * Nothing else may be exported from this module.
@@ -24,20 +24,24 @@ export function findSessionByIdHash(db: AppDatabase, idHash: string): SessionRow
 }
 
 /**
- * Returns the owner of an unexpired email verification token, given the hex SHA-256 of the
- * token. This is the only token-keyed read: the caller then consumes the token through
- * `createUserRepo(db, owner)`, whose delete is also bound to that owner.
+ * Returns the owner and the pending password hash of an unexpired email verification token,
+ * given the hex SHA-256 of the token. The hash is null only on tokens issued before the
+ * password moved onto the token. This is the only token-keyed read: the caller then consumes
+ * the token through `createUserRepo(db, owner)`, whose delete is also bound to that owner.
  */
-export function findEmailVerificationUserId(
+export function findEmailVerification(
   db: AppDatabase,
   idHash: string,
   now: Date,
-): string | undefined {
+): { userId: string; pendingPasswordHash: string | null } | undefined {
   return db
-    .select({ userId: emailVerifications.userId })
+    .select({
+      userId: emailVerifications.userId,
+      pendingPasswordHash: emailVerifications.pendingPasswordHash,
+    })
     .from(emailVerifications)
     .where(and(eq(emailVerifications.id, idHash), gt(emailVerifications.expiresAt, now)))
-    .get()?.userId;
+    .get();
 }
 
 /** Looks a user up by email for local sign-in. Trims and lowercases, as stored. */

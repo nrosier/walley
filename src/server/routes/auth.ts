@@ -28,7 +28,7 @@ import {
 } from '../auth/passwords.js';
 import { createUser } from '../db/accounts.js';
 import type { AppDatabase } from '../db/client.js';
-import { findEmailVerificationUserId, findLoginByEmail } from '../db/lookup.js';
+import { findEmailVerification, findLoginByEmail } from '../db/lookup.js';
 import { createUserRepo } from '../db/repo.js';
 import {
   VERIFICATION_TOKEN_TTL_MS,
@@ -203,26 +203,28 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
         const content = alreadyRegisteredEmail(publicOrigin);
         mailer.send({ to: email, subject: content.subject, text: content.text });
       };
-      // Stores only the hash of a fresh token and mails the link. Older tokens stay valid.
-      const issueVerification = (userId: string, pendingPasswordHash?: string): void => {
+      // Stores only the hash of a fresh token and mails the link. Older tokens stay valid. The
+      // registrant's password hash rides on the token, never on the user, until the token is used
+      // with that password.
+      const issueVerification = (userId: string, pendingPasswordHash: string): void => {
         const token = randomBytes(32).toString('hex');
         const issuedAt = now();
         createUserRepo(db, userId).createEmailVerification({
           idHash: hashToken(token),
           now: new Date(issuedAt),
           expiresAt: new Date(issuedAt + VERIFICATION_TOKEN_TTL_MS),
-          ...(pendingPasswordHash === undefined ? {} : { pendingPasswordHash }),
+          pendingPasswordHash,
         });
         const content = verificationEmail(publicOrigin, token);
         mailer.send({ to: email, subject: content.subject, text: content.text });
       };
       try {
         if (existing === undefined) {
-          const user = createUser(db, { email, passwordHash });
-          issueVerification(user.id);
-        } else if (!existing.emailVerified && existing.passwordHash !== null) {
-          // The stored hash may be an attacker's. This registrant's hash rides on the new token
-          // and replaces it only when that token is used, so the verifier's password wins.
+          // No password on the user until the address is verified.
+          const user = createUser(db, { email, passwordHash: null });
+          issueVerification(user.id, passwordHash);
+        } else if (!existing.emailVerified) {
+          // Each token carries its registrant's hash; only the holder of that password can use it.
           issueVerification(existing.userId, passwordHash);
         } else {
           sendAlreadyRegistered();
@@ -237,11 +239,13 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
     });
 
     local.post('/auth/verify-email', { config: { public: true } }, async (request, reply) => {
-      const token =
+      const body =
         typeof request.body === 'object' && request.body !== null
-          ? (request.body as Record<string, unknown>)['token']
-          : undefined;
-      if (typeof token !== 'string') {
+          ? (request.body as Record<string, unknown>)
+          : {};
+      const token = body['token'];
+      const rawPassword = body['password'];
+      if (typeof token !== 'string' || typeof rawPassword !== 'string') {
         return reply.code(400).send({ error: 'invalid_request' });
       }
       if (limited(reply, `ip:${ipRateKey(request.ip)}`)) {
@@ -249,8 +253,24 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       }
       const idHash = hashToken(token);
       const when = new Date(now());
-      const userId = findEmailVerificationUserId(db, idHash, when);
-      if (userId === undefined || !createUserRepo(db, userId).consumeEmailVerification(idHash, when)) {
+      const found = findEmailVerification(db, idHash, when);
+      if (found === undefined) {
+        return reply.code(400).send({ error: 'invalid_token' });
+      }
+      // Issued before the password moved onto the token: nobody can prove the password, so refuse.
+      if (found.pendingPasswordHash === null) {
+        return reply.code(400).send({ error: 'token_without_password' });
+      }
+      let ok = false;
+      if (isWithinRawLimit(rawPassword)) {
+        const password = normalisePassword(rawPassword);
+        ok = isAcceptablePasswordLength(password) && (await verifyPassword(password, found.pendingPasswordHash));
+      }
+      if (!ok) {
+        // The token stays valid so the rightful owner can retry.
+        return reply.code(401).send({ error: 'invalid_password' });
+      }
+      if (!createUserRepo(db, found.userId).consumeEmailVerification(idHash, when)) {
         return reply.code(400).send({ error: 'invalid_token' });
       }
       return reply.code(204).send();

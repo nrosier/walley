@@ -124,7 +124,8 @@ describe('POST /api/auth/register', () => {
     expect(res.json()).toEqual({ status: 'verification_sent' });
     expect(res.cookies).toHaveLength(0);
     expect(res.headers['set-cookie']).toBeUndefined();
-    expect(storedHash(t.db, 'new.user@example.test')?.startsWith('$argon2id$')).toBe(true);
+    // The password waits on the verification token; the user has none until verified.
+    expect(storedHash(t.db, 'new.user@example.test')).toBeNull();
     expect(verifiedAt(t.db, 'new.user@example.test')).toBeNull();
   });
 

@@ -8,7 +8,7 @@
  * the rest of src/server, so this factory is the only way to reach user-owned rows.
  * The single unscoped write is `createUser` in accounts.ts. The only unscoped reads are the
  * five pre-sign-in lookups in lookup.ts, including the one token-keyed read
- * (`findEmailVerificationUserId`), whose result is then bound here as the user id.
+ * (`findEmailVerification`), whose result is then bound here as the user id.
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq, gt, isNull, lte, ne } from 'drizzle-orm';
@@ -85,8 +85,9 @@ export interface EmailVerificationInput {
   now: Date;
   expiresAt: Date;
   /**
-   * Password hash chosen by whoever asked for this token. Applied to the user, replacing the
-   * stored one, only when the token is consumed while the user is still unverified.
+   * Password hash chosen by whoever asked for this token. Applied to the user only when the
+   * token is consumed while the user is still unverified. Optional here only for non-password
+   * callers (OIDC link tests); the register route always sets it.
    */
   pendingPasswordHash?: string;
 }
@@ -111,7 +112,7 @@ export interface UserRepo {
    * expired, and sets `email_verified_at` to `now` if unset, in one transaction. If the token
    * carries a pending password hash and the user is unverified, that hash replaces the stored one. Returns false
    * when no live token of this user matches. The token is looked up beforehand by
-   * `findEmailVerificationUserId` in lookup.ts, the only token-keyed read.
+   * `findEmailVerification` in lookup.ts, the only token-keyed read.
    */
   consumeEmailVerification(idHash: string, now: Date): boolean;
   /**
