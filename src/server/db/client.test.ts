@@ -89,7 +89,7 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(7);
+    expect(journalCount(db)).toBe(8);
     const row = db.$client
       .prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u1'")
       .get() as { v: number | null };
@@ -104,17 +104,40 @@ describe('openDatabase', () => {
     expect(fresh.v).toBeNull();
   });
 
+  it('gives an email_verifications row from before 0007 failed_attempts 0', () => {
+    const old = join(dir, 'old-migrations-0006');
+    cpSync(MIGRATIONS_FOLDER, old, { recursive: true });
+    const journalPath = join(old, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: unknown[] };
+    journal.entries = journal.entries.slice(0, 7);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const path = join(dir, 'walley.db');
+    const raw = new Database(path);
+    migrate(drizzle(raw), { migrationsFolder: old });
+    raw.prepare('INSERT INTO users (id, email, key_salt, created_at) VALUES (?, ?, ?, ?)').run('u1', 'a@example.com', Buffer.alloc(32, 1), 1234);
+    raw
+      .prepare('INSERT INTO email_verifications (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)')
+      .run('a'.repeat(64), 'u1', 99, 1);
+    raw.close();
+
+    const db = track(openDatabase(path));
+    expect(journalCount(db)).toBe(8);
+    const row = db.$client.prepare('SELECT failed_attempts AS n FROM email_verifications').get() as { n: number };
+    expect(row.n).toBe(0);
+  });
+
   it('is idempotent and keeps data across a second open', () => {
     const path = join(dir, 'walley.db');
     const first = openDatabase(path);
     first.$client
       .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
       .run('u1', 'a@example.com', Buffer.alloc(32, 1));
-    expect(journalCount(first)).toBe(7);
+    expect(journalCount(first)).toBe(8);
     closeDatabase(first);
 
     const second = track(openDatabase(path));
-    expect(journalCount(second)).toBe(7);
+    expect(journalCount(second)).toBe(8);
     const users = second.$client.prepare('SELECT id FROM users').all() as { id: string }[];
     expect(users).toEqual([{ id: 'u1' }]);
   });

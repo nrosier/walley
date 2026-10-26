@@ -91,6 +91,8 @@ export const emailVerifications = sqliteTable(
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
     /** Argon2id hash the registrant chose; applied to the user only when this token is consumed. */
     pendingPasswordHash: text('pending_password_hash'),
+    /** Wrong passwords sent for this token, in total. The route burns the token at five. */
+    failedAttempts: integer('failed_attempts').notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [

@@ -240,6 +240,33 @@ describe('createUserRepo', () => {
       expect(tokenCount(userId)).toBe(0);
     });
 
+    it('recordFailedEmailVerification counts on the row and burns the token at the limit', () => {
+      const repo = createUserRepo(db, userId);
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'h' });
+      const attempts = () =>
+        (db.$client.prepare('SELECT failed_attempts AS n FROM email_verifications WHERE id = ?').get(tok('a')) as {
+          n: number;
+        }).n;
+      expect(attempts()).toBe(0);
+      for (let i = 1; i <= 4; i += 1) {
+        expect(repo.recordFailedEmailVerification(tok('a'), 5)).toBe(i);
+        expect(attempts()).toBe(i);
+      }
+      expect(repo.recordFailedEmailVerification(tok('a'), 5)).toBe(5);
+      expect(tokenCount(userId)).toBe(0);
+      expect(repo.recordFailedEmailVerification(tok('a'), 5)).toBeUndefined();
+    });
+
+    it('recordFailedEmailVerification cannot touch another user token', () => {
+      createUserRepo(db, userId).createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'h' });
+      const other = createUserRepo(db, otherId);
+      for (let i = 0; i < 6; i += 1) expect(other.recordFailedEmailVerification(tok('a'), 5)).toBeUndefined();
+      expect(tokenCount(userId)).toBe(1);
+      expect(
+        (db.$client.prepare('SELECT failed_attempts AS n FROM email_verifications').get() as { n: number }).n,
+      ).toBe(0);
+    });
+
     it('markEmailVerified clears the hash on request and is a no-op for an already verified user', () => {
       const repo = createUserRepo(db, userId);
       expect(repo.markEmailVerified(t0, { clearPasswordHash: true })).toBe(true);

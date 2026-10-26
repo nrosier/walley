@@ -418,7 +418,7 @@ describe('verify-email password check', () => {
 });
 
 describe('verify-email brute-force limits', () => {
-  it('(a) refuses the sixth wrong password with 429, keeps the token, and works after the window', async () => {
+  it('(a) burns the token on the fifth wrong password, then the correct password gets 400 invalid_token', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'burn@example.test');
@@ -428,13 +428,47 @@ describe('verify-email brute-force limits', () => {
       expect(res.statusCode).toBe(401);
       expect(res.json()).toEqual({ error: 'invalid_password' });
     }
-    // The email key fills first and refuses; the token key is not charged and the token stays.
-    const sixth = await verify(t, token, 'wrong passphrase number 5');
-    expect(sixth.statusCode).toBe(429);
-    expect(sixth.json()).toEqual({ error: 'rate_limited' });
-    expect(tokenCount(t.db)).toBe(1);
+    expect(tokenCount(t.db)).toBe(0);
+    const right = await verify(t, token);
+    expect(right.statusCode).toBe(400);
+    expect(right.json()).toEqual({ error: 'invalid_token' });
     t.clock.advance(15 * 60 * 1000 + 1);
-    expect((await verify(t, token)).statusCode).toBe(204);
+    expect((await verify(t, token)).statusCode).toBe(400);
+  });
+
+  it('(b) a wrong password refused by the email key does not count against the token', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'held2@example.test');
+    const tokenA = lastToken(mailer);
+    await register(t, 'held2@example.test');
+    const tokenB = lastToken(mailer);
+    for (let i = 0; i < 2; i += 1) await verify(t, tokenA, `wrong passphrase number ${String(i)}`);
+    for (let i = 0; i < 3; i += 1) await verify(t, tokenB, `wrong passphrase number ${String(i)}`);
+    const attempts = (): number =>
+      (t.db.$client
+        .prepare('select failed_attempts as n from email_verifications where id = ?')
+        .get(hashToken(tokenA)) as { n: number }).n;
+    expect(attempts()).toBe(2);
+    for (let i = 0; i < 4; i += 1) {
+      expect((await verify(t, tokenA, 'refused wrong passphrase')).statusCode).toBe(429);
+    }
+    expect(attempts()).toBe(2);
+    expect(tokenCount(t.db)).toBe(2);
+  });
+
+  it('(c) the count survives the rate window: the fifth wrong password still burns the token', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'window@example.test');
+    const token = lastToken(mailer);
+    for (let i = 0; i < 4; i += 1) {
+      expect((await verify(t, token, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
+    }
+    t.clock.advance(15 * 60 * 1000 + 1);
+    expect((await verify(t, token, 'wrong passphrase number 4')).statusCode).toBe(401);
+    expect(tokenCount(t.db)).toBe(0);
+    expect((await verify(t, token)).statusCode).toBe(400);
   });
 
   it('keeps the token while the misses stay under the limit', async () => {
@@ -566,7 +600,8 @@ describe('verify-email brute-force limits', () => {
     }
     expect(results.some((res) => res.statusCode === 204)).toBe(false);
     expect(userRow(t.db, 'race@example.test')).toEqual({ hash: null, verifiedAt: null });
-    expect(tokenCount(t.db)).toBe(1);
+    // The fifth wrong password burned the token.
+    expect(tokenCount(t.db)).toBe(0);
   });
 
   it('(f) after the burn the correct password gets the same status and body as a wrong one', async () => {

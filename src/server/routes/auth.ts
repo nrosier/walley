@@ -52,6 +52,9 @@ export interface AuthRoutesOptions {
 
 const MAX_EMAIL_LENGTH = 254;
 
+/** Wrong passwords in total, whatever the time window, after which a verification token is burned. */
+const MAX_VERIFY_FAILURES = 5;
+
 /**
  * Registration only: no whitespace or control characters, one '@', and a dot in the domain.
  * The local part also excludes ',', ';', '"', '<' and '>', which nodemailer's address parser splits or unquotes.
@@ -287,8 +290,13 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
         const password = normalisePassword(rawPassword);
         ok = isAcceptablePasswordLength(password) && (await verifyPassword(password, found.pendingPasswordHash));
       }
+      if (!ok) {
+        // Counted on the row, whatever the time window: the fifth wrong password burns the token.
+        repo.recordFailedEmailVerification(idHash, MAX_VERIFY_FAILURES);
+        return wrongPassword();
+      }
       // A correct password whose token was consumed or burned meanwhile looks like a wrong one.
-      if (!ok || !repo.consumeEmailVerification(idHash, when)) {
+      if (!repo.consumeEmailVerification(idHash, when)) {
         return wrongPassword();
       }
       verifyLimiter.clear(`token:${idHash}`);

@@ -50,6 +50,13 @@
       "when": 1793035883689,
       "tag": "0006_email_verification_pending_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793040371827,
+      "tag": "0007_short_patriot",
+      "breakpoints": true
     }
   ]
 }

@@ -11,7 +11,7 @@
  * (`findEmailVerification`), whose result is then bound here as the user id.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt, isNull, lte, ne } from 'drizzle-orm';
+import { and, eq, gt, isNull, lte, ne, sql } from 'drizzle-orm';
 import type { AuthMethod } from '../../lib/auth-mode.js';
 import { parseRate } from '../../lib/currency-convert.js';
 import type { MatchStatus } from '../../lib/match-status.js';
@@ -118,6 +118,13 @@ export interface UserRepo {
   consumeEmailVerification(idHash: string, now: Date): boolean;
   /** Deletes one verification token of this user (burns it). Returns false when it is not this user's. */
   deleteEmailVerification(idHash: string): boolean;
+  /**
+   * Counts one wrong password against this user's token and, in the same transaction, deletes
+   * the token once the count reaches `burnAt`. The count is kept on the row, so it does not
+   * depend on any time window. Returns the new count, or undefined when the token is not this
+   * user's (nothing is written then).
+   */
+  recordFailedEmailVerification(idHash: string, burnAt: number): number | undefined;
   /**
    * Marks an unverified user verified, in one transaction: sets `email_verified_at` to `now`,
    * nulls the password hash when `clearPasswordHash` is true, and deletes this user's
@@ -341,6 +348,21 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
           .where(and(eq(emailVerifications.id, idHash), eq(emailVerifications.userId, userId)))
           .run().changes > 0
       );
+    },
+
+    recordFailedEmailVerification(idHash, burnAt) {
+      return db.transaction((tx) => {
+        const mine = and(eq(emailVerifications.id, idHash), eq(emailVerifications.userId, userId));
+        const row = tx
+          .update(emailVerifications)
+          .set({ failedAttempts: sql`${emailVerifications.failedAttempts} + 1` })
+          .where(mine)
+          .returning({ failedAttempts: emailVerifications.failedAttempts })
+          .get() as { failedAttempts: number } | undefined;
+        if (row === undefined) return undefined;
+        if (row.failedAttempts >= burnAt) tx.delete(emailVerifications).where(mine).run();
+        return row.failedAttempts;
+      });
     },
 
     markEmailVerified(now, opts) {
