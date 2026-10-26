@@ -704,6 +704,28 @@ describe('verify-email brute-force limits', () => {
     expect(res.statusCode).toBe(429);
     expect(res.json()).toEqual({ error: 'rate_limited' });
   });
+
+  it('(e) is not blocked by login or register floods from the same IP', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'victim@example.test');
+    const token = lastToken(mailer);
+    // Exhaust the shared login and register IP key.
+    for (let i = 0; i < 25; i += 1) {
+      await login(t, `flood${String(i)}@example.test`);
+    }
+    expect((await login(t, 'flood-last@example.test')).statusCode).toBe(429);
+    expect((await register(t, 'flood-reg@example.test')).statusCode).toBe(429);
+    expect((await verify(t, token)).statusCode).toBe(204);
+  });
+
+  it('(f) verify-email floods do not use up the login IP key', async () => {
+    const t = setup();
+    for (let i = 0; i < 21; i += 1) {
+      await verify(t, '0'.repeat(64));
+    }
+    expect((await login(t, 'someone@example.test')).statusCode).toBe(401);
+  });
 });
 
 describe('re-registering', () => {

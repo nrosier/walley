@@ -11,13 +11,15 @@ import {
 import {
   SIGN_IN_MAX_KEYS,
   SIGN_IN_MAX_PER_EMAIL,
-  SIGN_IN_MAX_PER_IP,
   SIGN_IN_WINDOW_MS,
   createRateLimiter,
   ipRateKey,
 } from '../auth/rate-limit.js';
 import type { AppDatabase } from '../db/client.js';
 import { createUserRepo } from '../db/repo.js';
+
+/** Password changes per client IP per window; well above the per-user limit (see the limiter below). */
+export const PASSWORD_CHANGE_MAX_PER_IP = 100;
 
 export interface AccountRoutesOptions {
   readonly db: AppDatabase;
@@ -34,12 +36,17 @@ export interface AccountRoutesOptions {
 export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (app, opts) => {
   const { db, mode } = opts;
 
-  // Same limits as sign-in, in their own limiter: per user id and per client IP. The current
-  // password is checked here, so this route is a password-guessing oracle for a stolen session.
+  // Own limiter, per user id and per client IP. The current password is checked here, so this
+  // route is a password-guessing oracle for a stolen session. The per-user limit (5 per 15 min)
+  // bounds guessing against one account. The per-IP key is kept only as abuse protection and is
+  // set well above it (100 per 15 min, 20 users each at their full per-user limit), because many
+  // users can share one IP behind a NAT: one user's failures must not block another before that
+  // user reaches their own per-user limit. The user key is taken first, so attempts already
+  // refused by the per-user limit do not also use up the shared IP budget.
   const limiter = createRateLimiter({
     now: opts.now ?? Date.now,
     maxPerEmail: SIGN_IN_MAX_PER_EMAIL,
-    maxPerIp: SIGN_IN_MAX_PER_IP,
+    maxPerIp: PASSWORD_CHANGE_MAX_PER_IP,
     windowMs: SIGN_IN_WINDOW_MS,
     maxKeys: SIGN_IN_MAX_KEYS,
   });
@@ -78,7 +85,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
       return reply.code(403).send({ error: 'local_auth_disabled' });
     }
     // Before the body is read or any Argon2 work. The per-user key is the user id.
-    for (const key of [`ip:${ipRateKey(request.ip)}`, `email:${request.auth.userId}`] as const) {
+    for (const key of [`email:${request.auth.userId}`, `ip:${ipRateKey(request.ip)}`] as const) {
       const result = limiter.take(key);
       if (!result.allowed) {
         return reply

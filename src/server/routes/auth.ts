@@ -129,9 +129,10 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
     windowMs: SIGN_IN_WINDOW_MS,
     maxKeys: SIGN_IN_MAX_KEYS,
   };
-  // Holds the IP keys of every route and the email counter shared by login and register.
+  // Holds the IP keys of login and register and the email counter they share.
   const limiter = createRateLimiter(limiterOptions);
-  // verify-email's own email and token counters, so a login or register flood cannot block it.
+  // verify-email's own IP, email and token counters, so a login or register flood from one IP
+  // cannot block it. Its IP key still stops guessing across many tokens (SIGN_IN_MAX_PER_IP).
   const verifyLimiter = createRateLimiter(limiterOptions);
 
   /** Counts one attempt. On refusal sends 429 and returns true; the caller must stop. */
@@ -254,8 +255,13 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       if (typeof token !== 'string' || typeof rawPassword !== 'string') {
         return reply.code(400).send({ error: 'invalid_request' });
       }
-      if (limited(reply, `ip:${ipRateKey(request.ip)}`)) {
-        return reply;
+      // Per-IP guard against guessing across many tokens, on verify-email's own limiter.
+      const ipTake = verifyLimiter.take(`ip:${ipRateKey(request.ip)}`);
+      if (!ipTake.allowed) {
+        return reply
+          .header('Retry-After', String(ipTake.retryAfterSeconds))
+          .code(429)
+          .send({ error: 'rate_limited' });
       }
       const idHash = hashToken(token);
       const when = new Date(now());

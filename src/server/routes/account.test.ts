@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AuthMode } from '../../lib/auth-mode.js';
 import { hashPassword } from '../auth/passwords.js';
-import { SIGN_IN_MAX_PER_EMAIL, SIGN_IN_MAX_PER_IP } from '../auth/rate-limit.js';
+import { SIGN_IN_MAX_PER_EMAIL } from '../auth/rate-limit.js';
+import { PASSWORD_CHANGE_MAX_PER_IP } from './account.js';
 import { hashToken } from '../auth/sessions.js';
 import { createUser } from '../db/accounts.js';
 import { closeDatabase } from '../db/client.js';
@@ -190,14 +191,33 @@ describe('account routes', () => {
     expect((await put(t, other, wrong)).statusCode).toBe(401);
   });
 
+  it('does not let one user block another on the same IP', async () => {
+    const t = await setup();
+    const a = signIn(t, await addUser(t, 'nat-a@example.test'));
+    const b = signIn(t, await addUser(t, 'nat-b@example.test'));
+    const wrong = { currentPassword: 'not the password', newPassword: NEW };
+    for (let i = 0; i < SIGN_IN_MAX_PER_EMAIL; i++) {
+      expect((await put(t, a, wrong)).statusCode).toBe(401);
+    }
+    // A keeps retrying past its own limit: refused attempts must not use up the shared IP budget.
+    for (let i = 0; i < PASSWORD_CHANGE_MAX_PER_IP; i++) {
+      expect((await put(t, a, wrong)).statusCode).toBe(429);
+    }
+    expect((await put(t, b, wrong)).statusCode).toBe(401);
+    expect((await put(t, b, { currentPassword: OLD, newPassword: NEW })).statusCode).toBe(204);
+  }, 30_000);
+
   it('returns 429 after the per-IP limit across users', async () => {
     const t = await setup();
+    const hash = await hashPassword(OLD);
     const wrong = { currentPassword: 'not the password', newPassword: NEW };
-    for (let i = 0; i < SIGN_IN_MAX_PER_IP; i++) {
-      const s = signIn(t, await addUser(t, `ip${String(i)}@example.test`));
+    for (let i = 0; i < PASSWORD_CHANGE_MAX_PER_IP; i++) {
+      const email = `ip${String(i)}@example.test`;
+      const s = signIn(t, createUser(t.db, { email, passwordHash: hash }).id);
+      verifyEmail(t.db, email);
       expect((await put(t, s, wrong)).statusCode).toBe(401);
     }
     const s = signIn(t, await addUser(t, 'ip-last@example.test'));
     expect((await put(t, s, wrong)).statusCode).toBe(429);
-  }, 30_000);
+  }, 120_000);
 });
