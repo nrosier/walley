@@ -5,6 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { HealthStatus } from '@/components/HealthStatus';
 import { CreateActualForm } from '@/components/dashboard/CreateActualModal';
 import { CreateWallosForm } from '@/components/dashboard/CreateWallosModal';
+import { createModalMessages } from '@/components/dashboard/CreateModal.messages';
 import { DiffModal } from '@/components/matches/DiffModal';
 import { diffModalMessages } from '@/components/matches/DiffModal.messages';
 import type { SyncMismatch } from '../../lib/sync-check-types';
@@ -17,6 +18,9 @@ import { VerifyEmailView } from '@/pages/VerifyEmailPage';
 import { catalogues } from './catalogues';
 import { I18nProvider } from './I18nProvider';
 import type { Locale } from './locale';
+
+/** Wrapper sources as raw text (Vite glob: src/web must not import Node built-ins). */
+const sources = import.meta.glob<string>(['../components/dashboard/Create*Modal.tsx'], { query: '?raw', import: 'default', eager: true });
 
 const render = (locale: Locale, ui: ReactElement) =>
   renderToStaticMarkup(<I18nProvider initialLocale={locale}>{ui}</I18nProvider>);
@@ -97,6 +101,7 @@ const views: Record<string, ReactElement> = {
 /** Main heading and primary button of each new view: present in en, absent in nl. */
 const headings: Record<string, string[]> = {
   'sync dashboard': ['>Sync Dashboard<', '>Run Sync Check<'],
+  matches: ['>Matches<', '>Show ignored items<'],
   'create actual form': ['>Create<'],
   'create wallos form': ['>Create<'],
 };
@@ -146,4 +151,32 @@ describe('no hard-coded user-visible text', () => {
       }
     });
   });
+  // CreateActualModal and CreateWallosModal also render in a Radix portal. Check their catalogue keys and their source.
+  const lookupKey = (tree: unknown, key: string): unknown =>
+    key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], tree);
+  const wrappers = [
+    { file: '../components/dashboard/CreateActualModal.tsx', required: ['actual.title', 'actual.description', 'submit', 'cancel'] },
+    { file: '../components/dashboard/CreateWallosModal.tsx', required: ['wallos.title', 'wallos.description', 'submit', 'cancel'] },
+  ];
+  for (const { file, required } of wrappers) {
+    describe(`modal wrapper ${file}`, () => {
+      const source = sources[file] ?? '';
+      if (source === '') throw new Error(`missing source ${file}`);
+      const used = [...new Set([...source.matchAll(/\bt\('([\w.]+)'/g)].map((m) => m[1] ?? ''))];
+      it('imports the translated catalogue and uses the title and action keys', () => {
+        expect(source).toContain("from './CreateModal.messages'");
+        expect(source).toContain('useT(createModalMessages)');
+        for (const key of required) expect(used, key).toContain(key);
+      });
+      it('has differing en and nl text for every key it uses', () => {
+        for (const key of used) {
+          const en = lookupKey(createModalMessages.en, key);
+          const nl = lookupKey(createModalMessages.nl, key);
+          expect(typeof en, `en ${key}`).toBe('string');
+          expect(typeof nl, `nl ${key}`).toBe('string');
+          expect(nl, key).not.toBe(en);
+        }
+      });
+    });
+  }
 });
