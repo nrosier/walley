@@ -6,6 +6,7 @@ import { createActualSchedule, prefillActualSchedule, type ActualSchedulePrefill
 import { syncStore } from '@/lib/sync-check';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
+import { RateField } from './RateField';
 import { createModalMessages } from './CreateModal.messages';
 import { everyKey, FIELD_CLASS } from './create-modal-shared';
 import { actualSubmitDisabled, buildActualBody, NEW_PAYEE, performCreate } from './create-submit';
@@ -14,10 +15,12 @@ export interface CreateActualFormProps {
   prefill: ActualSchedulePrefill;
   wallosId: string;
   fetchImpl?: typeof fetch;
+  /** Called after the rate was saved or cleared so the caller can re-fetch the pre-fill. */
+  onRateChanged?: () => void;
 }
 
 /** The pre-fill, three dropdowns and a Submit that needs an account and is locked while in flight. */
-export function CreateActualForm({ prefill, wallosId, fetchImpl }: CreateActualFormProps) {
+export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged }: CreateActualFormProps) {
   const { t, errorText, locale } = useT(createModalMessages);
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState<CreateActualScheduleResult | null>(null);
@@ -57,6 +60,9 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl }: CreateActualF
         <dt className="text-muted-foreground">{t('actual.startDate')}</dt>
         <dd className="font-mono">{prefill.startDate}</dd>
       </dl>
+      {prefill.sourceCurrency !== prefill.baseCurrency ? (
+        <RateField prefill={prefill} wallosId={wallosId} fetchImpl={fetchImpl} onChanged={onRateChanged} />
+      ) : null}
       <label htmlFor={ids.payee} className="grid gap-1">
         {t('actual.payee')}
         <select id={ids.payee} value={payee} onChange={(e) => { setPayee(e.target.value); }} className={FIELD_CLASS}>
@@ -143,6 +149,7 @@ export function CreateActualModal(props: CreateActualModalProps) {
   const { t, errorText } = useT(createModalMessages);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const { wallosId, fetchImpl } = props;
+  const [reloads, setReloads] = useState(0);
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -154,7 +161,7 @@ export function CreateActualModal(props: CreateActualModalProps) {
       },
     );
     return () => { ctl.abort(); };
-  }, [wallosId, fetchImpl]);
+  }, [wallosId, fetchImpl, reloads]);
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) props.onClose(); }}>
@@ -165,7 +172,7 @@ export function CreateActualModal(props: CreateActualModalProps) {
         </DialogHeader>
         {load.status === 'loading' ? <p role="status">{t('loading')}</p> : null}
         {load.status === 'error' ? <p role="alert" className="text-warning">{errorText(load.code)}</p> : null}
-        {load.status === 'ready' ? <CreateActualForm prefill={load.prefill} wallosId={wallosId} fetchImpl={fetchImpl} /> : null}
+        {load.status === 'ready' ? <CreateActualForm prefill={load.prefill} wallosId={wallosId} fetchImpl={fetchImpl} onRateChanged={() => { setReloads((n) => n + 1); }} /> : null}
         <DialogFooter>
           <Button type="button" variant="outline" size="sm" onClick={props.onClose}>
             {t('cancel')}
