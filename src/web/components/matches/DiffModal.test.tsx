@@ -5,6 +5,7 @@ import { resolveMatch } from '@/lib/matches.api';
 import { applyResolve, driftedFields, performResolve } from '@/lib/resolve-mismatch';
 import type { SyncCheckResult, SyncMismatch, SyncMismatchFields } from '../../../lib/sync-check-types';
 import src from './DiffModal.tsx?raw';
+import shellSrc from '../ui/dialog-shell.tsx?raw';
 import { DiffModal } from './DiffModal';
 import { diffModalMessages, isOverwriteErrorCode, OVERWRITE_ERROR_CODES } from './DiffModal.messages';
 
@@ -99,7 +100,9 @@ describe('resolveMatch', () => {
 
 describe('overwrite buttons', () => {
   it('are enabled, and only the confirmation action calls onOverwrite', () => {
-    expect(src).not.toMatch(/disabled/);
+    // Buttons are only ever disabled while an action is being sent.
+    expect(src.match(/disabled=\{working\}/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(src).not.toMatch(/disabled(?!=\{working\})/);
     expect(src).not.toMatch(/fetch|apiRequest|resolveMatch/);
     // onOverwrite appears once in the call position: inside the AlertDialogAction onClick.
     expect(src.match(/onOverwrite\(mismatch\.matchId, action\)/g)).toHaveLength(1);
@@ -167,5 +170,55 @@ describe('performResolve', () => {
     expect(out).toEqual({ ok: false, code: 'invalid_state' });
     expect(state).toEqual(result());
     expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiffModal design contract', () => {
+  const unlinkBlock = src.slice(src.indexOf('footer={'), src.indexOf('{working ?'));
+  it('opens with Ignore Diff focused (the safe choice) and returns focus to the Review button', () => {
+    expect(src).toContain('onOpenAutoFocus');
+    expect(src).toMatch(/ignoreRef\.current\?\.focus\(\)/);
+    expect(src).toContain('ref={ignoreRef}');
+    expect(src).toContain('onCloseAutoFocus');
+    expect(src).toContain('data-review-for=');
+  });
+  it('puts Unlink alone in the pinned footer as a danger outline with an icon and text', () => {
+    expect(unlinkBlock).toContain('<Unlink');
+    expect(unlinkBlock).toContain("t('unlink')");
+    expect(unlinkBlock).toContain('border-danger-line');
+    expect(unlinkBlock).toContain('variant="outline"');
+    expect(unlinkBlock).not.toContain('variant="destructive"');
+    expect(unlinkBlock).not.toContain("t('overwrite");
+    expect(unlinkBlock).not.toContain("t('ignoreDiff')");
+    expect(src).toContain('<DialogShell');
+  });
+  it('overwrite and ignore buttons are neutral outlines, not filled or danger', () => {
+    const neutral = src.slice(src.indexOf('const overwrite ='), src.indexOf('return (\n    <Dialog')) + src.slice(src.indexOf('<ul aria-label'));
+    expect(neutral).not.toMatch(/destructive|text-danger|bg-primary/);
+    expect(neutral.match(/variant="outline"/g)).toHaveLength(2);
+  });
+  it('cannot be dismissed while working, and says "Working..." until the server answers', () => {
+    expect(src).toContain('if (!open && !working) onClose()');
+    expect(src).toContain("t('working')");
+    expect(diffModalMessages.en.working).toBe('Working...');
+  });
+  it('has a consequence line for every option, in en and nl', () => {
+    for (const key of ['ignoreDiff', 'overwriteWallos', 'overwriteActual', 'unlink'] as const) {
+      expect(diffModalMessages.en.consequence[key].length, key).toBeGreaterThan(20);
+      expect(diffModalMessages.nl.consequence[key], key).not.toBe(diffModalMessages.en.consequence[key]);
+      expect(src).toContain(`consequence.${key}`);
+    }
+  });
+  it('renders the shell with a scrolling body, max height and pinned footer when open', () => {
+    // Static markup has no portal, so the layout classes come from the shell source.
+    expect(shellSrc).toContain('max-h-[85vh]');
+    expect(shellSrc).toContain('overflow-y-auto');
+    expect(shellSrc).toContain('data-slot="dialog-shell-footer"');
+  });
+  it('formats values: money, a readable date and a named frequency, not raw codes', () => {
+    expect(src).toContain('formatMoney');
+    expect(src).toContain('Intl.DateTimeFormat');
+    expect(src).toContain('frequencies.');
+    expect(diffModalMessages.en.frequencies.yearly).toBe('Yearly');
   });
 });

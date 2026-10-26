@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { SyncCheckResult, SyncIgnored, SyncLinked } from '../../lib/sync-check-types';
+import { Loader2 } from 'lucide-react';
+import type { SyncCheckResult, SyncIgnored, SyncLinked, SyncMismatch } from '../../lib/sync-check-types';
 import { formatMoney } from '../../lib/format-money';
 import { pairBadge } from '../../lib/match-badge';
 import { useT } from '@/i18n';
 import type { ResolveAction } from '@/lib/matches.api';
 import { performResolve } from '@/lib/resolve-mismatch';
+import { followInApp } from '@/lib/route';
 import { checkIfEmpty, nextRowId, restoreAndRecheck, syncStore, useSyncCheck } from '@/lib/sync-check';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
@@ -12,6 +14,7 @@ import { Badge } from '../components/ui/badge';
 import { DiffModal } from '../components/matches/DiffModal';
 import { diffModalMessages, isOverwriteErrorCode } from '../components/matches/DiffModal.messages';
 import { Button } from '../components/ui/button';
+import { MoreActionsMenu } from '../components/ui/more-actions-menu';
 import { matchesMessages } from './Matches.messages';
 
 export interface MatchesViewProps {
@@ -29,9 +32,11 @@ export interface MatchesViewProps {
   errorMessage?: string | null;
   /** Opens the diff modal for a mismatch row by its match id. */
   onReview?: (matchId: string) => void;
-  /** Match id of the mismatch row whose resolve failed, and its resolved text. */
-  resolveErrorId?: string | null;
-  resolveErrorMessage?: string | null;
+  /** Case-insensitive name filter over both sides of a pair. */
+  query?: string;
+  onQueryChange?: (query: string) => void;
+  /** Starts a sync check (the Run Sync Check button and the empty state). */
+  onRun?: () => void;
   /** A sync check is running: shows the "Updating sync status" line. */
   checking?: boolean;
   /** Resolved text of the failed check, and the Retry handler. */
@@ -40,12 +45,17 @@ export interface MatchesViewProps {
 }
 
 const CELL = 'px-3 py-1.5 text-sm';
-const HEAD = 'px-3 py-1.5 text-left text-xs font-medium text-muted-foreground';
+const HEAD = 'px-3 py-1.5 text-left text-xs font-medium text-muted';
+/** Sticky header cells: level 1 at the top, level 2 below it (level 1 is h-8), both opaque. */
+const STICKY_1 = 'sticky top-0 z-20 h-8 bg-card';
+const STICKY_2 = 'sticky top-8 z-20 bg-card';
+/** First column stays visible when the table scrolls sideways. */
+const STICKY_COL = 'sticky left-0 z-10 bg-card';
 const DASH = '—';
 
 /** Renders a name or amount; a missing value (`muted`) shows the em dash in the muted colour. */
 function Value({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
-  return <span className={muted ? 'text-muted-foreground' : undefined}>{children}</span>;
+  return <span className={muted ? 'text-muted' : undefined}>{children}</span>;
 }
 
 /** Linked subscription pairs and, when switched on, the ignored items with a Restore action. */
@@ -58,8 +68,9 @@ export function MatchesView({
   errorId,
   errorMessage,
   onReview,
-  resolveErrorId,
-  resolveErrorMessage,
+  query = '',
+  onQueryChange,
+  onRun,
   checking = false,
   checkErrorMessage,
   onRetryCheck,
@@ -71,31 +82,77 @@ export function MatchesView({
   const linked: readonly SyncLinked[] = result?.linked ?? [];
   const ignored: readonly SyncIgnored[] = result?.ignored ?? [];
 
+  const q = query.trim().toLowerCase();
+  const shown = q === '' ? linked : linked.filter((r) => `${r.wallosName ?? ''} ${r.actualName ?? ''}`.toLowerCase().includes(q));
+  const differing = linked.filter((r) => r.status === 'MISMATCH_DETECTED').length;
+  const amountsDiffer = (r: SyncLinked) =>
+    r.wallosAmountCents !== null && r.actualAmountCents !== null && r.wallosAmountCents !== r.actualAmountCents;
+  /** Amount cell: bold with a hidden "differs" when the two sides disagree, so colour is not the only cue. */
+  const amountCell = (cents: number | null, differs: boolean) => (
+    <td className={cn(CELL, 'border-b border-r text-right font-mono', differs && 'font-bold')}>
+      <Value muted={cents === null}>{money(cents, baseCurrency)}</Value>
+      {differs ? <span className="sr-only"> {t('differs')}</span> : null}
+    </td>
+  );
+
+  const running = checking;
+  const runButton = (label: string) => (
+    <Button type="button" className="min-h-(--control-h) max-md:w-full" disabled={running} aria-busy={running} onClick={() => onRun?.()}>
+      {running ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
+      {label}
+    </Button>
+  );
+
   let body: ReactNode;
   if (linked.length === 0) {
-    body = <p className="text-sm text-muted-foreground">{t('empty')}</p>;
+    body = (
+      <div className="rounded-lg border bg-card p-4">
+        <p className="mb-3 text-sm text-muted">{t('empty')}</p>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href="/sync"
+            onClick={(e) => {
+              followInApp(e, '/sync');
+            }}
+            className="inline-flex min-h-(--control-h) items-center rounded-md border border-input-border px-3 text-sm font-medium outline-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            {t('emptyActions.dashboard')}
+          </a>
+          {runButton(running ? t('emptyActions.running') : t('emptyActions.run'))}
+        </div>
+      </div>
+    );
+  } else if (shown.length === 0) {
+    body = <p className="text-sm text-muted">{t('noMatches')}</p>;
   } else {
     body = (
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        <table aria-label={t('table.label')} className="w-full border-collapse">
-          <thead className="border-b">
+      <div className="max-h-[70vh] overflow-auto rounded-lg border bg-card">
+        <table aria-label={t('table.label')} className="w-full border-separate border-spacing-0">
+          <thead>
             <tr>
-              <th scope="col" className={HEAD}>{t('table.wallos')}</th>
-              <th scope="col" className={HEAD}>{t('table.actual')}</th>
-              <th scope="col" className={cn(HEAD, 'text-right')}>{t('table.wallosAmount')}</th>
-              <th scope="col" className={cn(HEAD, 'text-right')}>{t('table.actualAmount')}</th>
-              <th scope="col" className={HEAD}>{t('table.status')}</th>
+              <th scope="colgroup" colSpan={2} className={cn(HEAD, STICKY_1, STICKY_COL, 'z-30 border-b border-r')}>{t('table.wallosGroup')}</th>
+              <th scope="colgroup" colSpan={2} className={cn(HEAD, STICKY_1, 'border-b border-r')}>{t('table.actualGroup')}</th>
+              <th scope="col" rowSpan={2} className={cn(HEAD, STICKY_1, 'border-b')}>{t('table.status')}</th>
+            </tr>
+            <tr>
+              <th scope="col" className={cn(HEAD, STICKY_2, STICKY_COL, 'z-30 border-b')}>{t('table.name')}</th>
+              <th scope="col" className={cn(HEAD, STICKY_2, 'border-b border-r text-right')}>{t('table.amount')}</th>
+              <th scope="col" className={cn(HEAD, STICKY_2, 'border-b')}>{t('table.name')}</th>
+              <th scope="col" className={cn(HEAD, STICKY_2, 'border-b border-r text-right')}>{t('table.amount')}</th>
             </tr>
           </thead>
           <tbody>
-            {linked.map((row) => {
+            {shown.map((row) => {
               const kind = pairBadge({ status: row.status, orphan: row.orphan });
+              const differs = amountsDiffer(row);
+              const label = row.wallosName ?? row.actualName ?? DASH;
               return (
-                <tr key={`${row.wallosId}:${row.actualScheduleId}`} data-match-row className="border-b last:border-b-0">
-                  <td className={cn(CELL, 'font-medium')}>
+                <tr key={`${row.wallosId}:${row.actualScheduleId}`} data-match-row className="group">
+                  <td className={cn(CELL, 'border-b font-medium', STICKY_COL)}>
                     <Value muted={row.wallosName === null}>{row.wallosName ?? DASH}</Value>
                   </td>
-                  <td className={CELL}>
+                  {amountCell(row.wallosAmountCents, differs)}
+                  <td className={cn(CELL, 'border-b')}>
                     <Value muted={row.actualName === null}>{row.actualName ?? DASH}</Value>
                     {row.isRange ? (
                       <Badge variant="mismatch" className="ml-2" title={t('rangeHint')}>
@@ -103,30 +160,21 @@ export function MatchesView({
                       </Badge>
                     ) : null}
                   </td>
-                  <td className={cn(CELL, 'text-right font-mono')}>
-                    <Value muted={row.wallosAmountCents === null}>{money(row.wallosAmountCents, baseCurrency)}</Value>
-                  </td>
-                  <td className={cn(CELL, 'text-right font-mono')}>
-                    <Value muted={row.actualAmountCents === null}>{money(row.actualAmountCents, baseCurrency)}</Value>
-                  </td>
-                  <td className={CELL}>
+                  {amountCell(row.actualAmountCents, differs)}
+                  <td className={cn(CELL, 'border-b')}>
                     <StatusBadge kind={kind} />
                     {row.status === 'MISMATCH_DETECTED' && onReview !== undefined ? (
                       <Button
                         type="button"
-                        size="xs"
+                        size="sm"
                         variant="outline"
-                        className="ml-2"
-                        aria-label={t('reviewLabel')}
+                        className="ml-2 min-h-(--control-h)"
+                        data-review-for={row.matchId}
+                        aria-label={t('reviewLabel', { name: label })}
                         onClick={() => { onReview(row.matchId); }}
                       >
                         {t('review')}
                       </Button>
-                    ) : null}
-                    {resolveErrorId === row.matchId && resolveErrorMessage != null ? (
-                      <p role="alert" className="mt-1 text-xs text-warning">
-                        {resolveErrorMessage}
-                      </p>
                     ) : null}
                   </td>
                 </tr>
@@ -144,14 +192,22 @@ export function MatchesView({
         {t('title')}
       </h1>
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm">
+        <input
+          type="search"
+          value={query}
+          aria-label={t('search')}
+          placeholder={t('searchPlaceholder')}
+          onChange={(e) => onQueryChange?.(e.target.value)}
+          className="min-h-(--control-h) w-56 rounded-md border border-input-border bg-background px-3 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring max-md:w-full"
+        />
+        <label className="flex min-h-(--control-h) items-center gap-2 text-sm">
           <button
             type="button"
             role="switch"
             aria-checked={showIgnored}
             onClick={() => onShowIgnoredChange?.(!showIgnored)}
             className={cn(
-              'relative h-5 w-9 shrink-0 rounded-full border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              'relative h-5 w-9 shrink-0 rounded-full border border-input-border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
               showIgnored ? 'bg-primary' : 'bg-neutral-bg',
             )}
           >
@@ -165,8 +221,12 @@ export function MatchesView({
           </button>
           <span>{t('ignored.toggle')}</span>
         </label>
+        <div className="ml-auto max-md:w-full">{linked.length === 0 ? null : runButton(running ? t('emptyActions.running') : t('emptyActions.run'))}</div>
       </div>
-      <div role="status" aria-live="polite" className="mb-2 text-xs text-muted-foreground">
+      {linked.length === 0 ? null : (
+        <p className="mb-2 text-xs text-muted">{t('counts', { shown: shown.length, total: linked.length, differing })}</p>
+      )}
+      <div role="status" aria-live="polite" className="mb-2 text-xs text-muted">
         {checking ? t('checking') : null}
       </div>
       {checkErrorMessage != null && !checking ? (
@@ -184,7 +244,7 @@ export function MatchesView({
             {t('ignored.title')}
           </h2>
           {ignored.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('ignored.none')}</p>
+            <p className="text-sm text-muted">{t('ignored.none')}</p>
           ) : (
             <div className="overflow-x-auto rounded-lg border bg-card">
               <table aria-labelledby="matches-ignored-title" className="w-full border-collapse">
@@ -211,16 +271,17 @@ export function MatchesView({
                         <StatusBadge kind="ignored" />
                       </td>
                       <td className={CELL}>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="outline"
-                          disabled={busyId === row.matchId}
-                          aria-label={t('ignored.restoreLabel')}
-                          onClick={() => onRestore?.(row.matchId)}
-                        >
-                          {t('ignored.restore')}
-                        </Button>
+                        <MoreActionsMenu
+                          name={row.name ?? row.itemId}
+                          items={[
+                            {
+                              id: 'restore',
+                              label: t('ignored.restoreNamed', { name: row.name ?? row.itemId }),
+                              disabled: busyId === row.matchId,
+                              onSelect: () => onRestore?.(row.matchId),
+                            },
+                          ]}
+                        />
                         {errorId === row.matchId && errorMessage != null ? (
                           <p role="alert" className="mt-1 text-xs text-warning">
                             {errorMessage}
@@ -253,8 +314,12 @@ export function Matches() {
   const [showIgnored, setShowIgnored] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [failed, setFailed] = useState<{ id: string; text: string } | null>(null);
-  const [reviewId, setReviewId] = useState<string | null>(null);
-  const [resolveFailed, setResolveFailed] = useState<{ id: string; text: string } | null>(null);
+  const [query, setQuery] = useState('');
+  // The mismatch under review is held here, not looked up in the result: the optimistic resolve removes it
+  // from the result at once, and the modal must stay open ("Working...") until the server answers.
+  const [reviewing, setReviewing] = useState<SyncMismatch | null>(null);
+  const [working, setWorking] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const modalT = useT(diffModalMessages).t;
 
   // Opening Matches with no result starts a check; the Dashboard never does this.
@@ -263,17 +328,20 @@ export function Matches() {
   }, []);
 
   const resolve = (matchId: string, action: ResolveAction) => {
-    const name = sync.result?.mismatches.find((m) => m.matchId === matchId)?.wallosName ?? matchId;
-    setReviewId(null);
-    setResolveFailed(null);
+    const name = reviewing?.wallosName ?? matchId;
+    setWorking(true);
+    setResolveError(null);
     void performResolve(() => syncStore.getState().result, syncStore.setResult, matchId, action, syncStore.requestRun).then((outcome) => {
-      if (!outcome.ok) {
-        const reason =
-          action.startsWith('overwrite_') && isOverwriteErrorCode(outcome.code)
-            ? modalT(`overwriteErrors.${outcome.code}`)
-            : errorText(outcome.code);
-        setResolveFailed({ id: matchId, text: `${modalT('failed', { name })} ${reason}` });
+      setWorking(false);
+      if (outcome.ok) {
+        setReviewing(null);
+        return;
       }
+      const reason =
+        action.startsWith('overwrite_') && isOverwriteErrorCode(outcome.code)
+          ? modalT(`overwriteErrors.${outcome.code}`)
+          : errorText(outcome.code);
+      setResolveError(`${modalT('failed', { name })} ${reason}`);
     });
   };
 
@@ -308,9 +376,13 @@ export function Matches() {
       busyId={busyId}
       errorId={failed?.id ?? null}
       errorMessage={failed?.text ?? null}
-      onReview={setReviewId}
-      resolveErrorId={resolveFailed?.id ?? null}
-      resolveErrorMessage={resolveFailed?.text ?? null}
+      query={query}
+      onQueryChange={setQuery}
+      onRun={() => void sync.run()}
+      onReview={(id) => {
+        setResolveError(null);
+        setReviewing(sync.result?.mismatches.find((m) => m.matchId === id) ?? null);
+      }}
       checking={sync.status === 'loading'}
       checkErrorMessage={
         sync.status === 'error'
@@ -320,9 +392,11 @@ export function Matches() {
       onRetryCheck={() => { void syncStore.requestRun(); }}
     />
     <DiffModal
-      mismatch={sync.result?.mismatches.find((m) => m.matchId === reviewId) ?? null}
+      mismatch={reviewing}
       baseCurrency={sync.result?.baseCurrency ?? ''}
-      onClose={() => { setReviewId(null); }}
+      working={working}
+      error={resolveError}
+      onClose={() => { setReviewing(null); }}
       onIgnoreDiff={(id) => { resolve(id, 'ignore_diff'); }}
       onOverwrite={resolve}
       onUnlink={(id) => { resolve(id, 'unlink'); }}

@@ -5,6 +5,7 @@ import type { SyncCheckResult, SyncLinked, SyncIgnored } from '../../lib/sync-ch
 import matchesSrc from './Matches.tsx?raw';
 import storeSrc from '@/lib/sync-check.ts?raw';
 import { Matches, MatchesView, type MatchesViewProps } from './Matches';
+import { matchesMessages } from './Matches.messages';
 import { checkIfEmpty, createSyncStore, restoreAndRecheck, syncStore } from '@/lib/sync-check';
 import { performResolve } from '@/lib/resolve-mismatch';
 
@@ -101,9 +102,9 @@ describe('Matches table rows', () => {
     expect(html.match(/data-match-row/g)).toHaveLength(3);
     expect(html).toContain('Netflix');
     expect(html).toContain('NETFLIX.COM');
-    expect(html).toMatch(/font-mono"><span>€12\.99<\/span>/);
-    expect(html).toMatch(/font-mono"><span>€40\.00<\/span>/);
-    expect(html).toMatch(/font-mono"><span>€45\.00<\/span>/);
+    expect(html).toMatch(/font-mono[^"]*"><span>€12\.99<\/span>/);
+    expect(html).toMatch(/font-mono[^"]*"><span>€40\.00<\/span>/);
+    expect(html).toMatch(/font-mono[^"]*"><span>€45\.00<\/span>/);
   });
 
   it('shows the synced, mismatch and orphaned badge kinds for linked rows', () => {
@@ -136,7 +137,7 @@ describe('Matches missing sides', () => {
     const html = render({});
     const orphanRow = html.slice(html.indexOf('Old Cloud') - 200, html.indexOf('Old Cloud') + 600);
     expect(orphanRow).toContain('—');
-    expect(orphanRow).toContain('text-muted-foreground');
+    expect(orphanRow).toContain('text-muted');
     expect(orphanRow).toContain('€5.00');
   });
 });
@@ -191,13 +192,15 @@ describe('Matches ignored section', () => {
 });
 
 describe('Matches ignored section Restore', () => {
-  it('renders one Restore button per ignored row with the accessible name', () => {
+  it('puts Restore inside a More actions menu named for the row, not as a visible button', () => {
     const html = render({ result: fixture(), showIgnored: true });
-    expect(html.match(/aria-label="Restore \(unignore\)"/g)).toHaveLength(fixture().ignored.length);
-    expect(html).toContain('>Restore</button>');
+    expect(html.match(/aria-label="More actions for Old Magazine"/g)).toHaveLength(fixture().ignored.length);
+    expect(html).not.toContain('>Restore<');
   });
-  it('renders Herstellen in nl', () => {
-    expect(render({ result: fixture(), showIgnored: true }, 'nl')).toContain('>Herstellen</button>');
+  it('names Restore per row in en and nl', () => {
+    expect(matchesMessages.en.ignored.restoreNamed.replace('{name}', 'Amazon Prime')).toBe('Restore Amazon Prime');
+    expect(matchesMessages.nl.ignored.restoreNamed.replace('{name}', 'Amazon Prime')).toBe('Amazon Prime herstellen');
+    expect(render({ result: fixture(), showIgnored: true }, 'nl')).toContain('aria-label="Meer acties voor Old Magazine"');
   });
   it('uses only the restore write client and keeps the shared store', () => {
     expect(matchesSrc).not.toMatch(/linkPair|ignoreItem/);
@@ -340,5 +343,58 @@ describe('Matches page after a failed re-check', () => {
     expect(html).toContain('Netflix');
     expect(html).toContain('Saved. Sync status could not be refreshed:');
     expect(html).toContain('>Retry</button>');
+  });
+});
+
+describe('Matches table layout and cues', () => {
+  it('groups the headers under Wallos and Actual Budget with sticky header levels and a sticky first column', () => {
+    const html = render({});
+    expect(html).toMatch(/scope="colgroup"[^>]*colSpan="2"|colSpan="2"[^>]*scope="colgroup"|scope="colgroup"[^>]*colspan="2"/i);
+    expect(html).toContain('>Wallos</th>');
+    expect(html).toContain('>Actual Budget</th>');
+    expect(html).toContain('sticky top-0');
+    expect(html).toContain('sticky top-8');
+    expect(html).toContain('sticky left-0');
+    expect(html).toContain('overflow-auto');
+  });
+  it('makes differing amounts bold with hidden "differs" text, and leaves equal amounts plain', () => {
+    const html = render({});
+    expect(html.match(/<span class="sr-only"> differs<\/span>/g)).toHaveLength(2);
+    expect(html.match(/font-bold/g)).toHaveLength(2);
+    const start = html.indexOf('data-match-row');
+    const equal = html.slice(start, html.indexOf('</tr>', start));
+    expect(equal).not.toContain('font-bold');
+    expect(render({}, 'nl')).toContain('> wijkt af</span>');
+  });
+  it('shows a search box, the counts line, and Run Sync Check on the page', () => {
+    const html = render({});
+    expect(html).toContain('type="search"');
+    expect(html).toContain('3 of 3 pairs, 1 with differences');
+    expect(html).toContain('>Run Sync Check<');
+    expect(render({ checking: true })).toContain('Checking...');
+    expect(render({}, 'nl')).toContain('3 van 3 paren, 1 met verschillen');
+  });
+  it('filters pairs by either name and says so when nothing matches', () => {
+    const html = render({ query: 'fitness' });
+    expect(html.match(/data-match-row/g)).toHaveLength(1);
+    expect(html).toContain('1 of 3 pairs');
+    const none = render({ query: 'zzz' });
+    expect(none).toContain('No pairs match your search.');
+    expect(none).not.toContain('data-match-row');
+  });
+  it('the empty state offers both actions: open the Sync Dashboard and Run Sync Check', () => {
+    const html = render({ result: fixture({ linked: [] }) });
+    expect(html).toContain('href="/sync"');
+    expect(html).toContain('Open Sync Dashboard');
+    expect(html.match(/>Run Sync Check</g)).toHaveLength(1);
+    expect(html).not.toContain('<table');
+  });
+  it('the Review button has a unique name and a hook for focus return', () => {
+    const html = render({ onReview: () => undefined });
+    expect(html).toContain('aria-label="Review differences: Gym"');
+    expect(html).toContain('data-review-for="m2"');
+  });
+  it('loads pairs without a prior check: the page starts one on open, only when there is no result', () => {
+    expect(matchesSrc).toContain('checkIfEmpty(syncStore)');
   });
 });
