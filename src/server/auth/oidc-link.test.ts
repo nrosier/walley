@@ -105,7 +105,7 @@ describe("resolveOidcLogin", () => {
     );
   });
 
-  it("b2: linking an unverified local account nulls its hash, verifies it and drops its tokens", () => {
+  it("b2: linking an unverified local account keeps its hash, verifies it and drops its tokens", () => {
     const { db, kate } = setup();
     const repo = createUserRepo(db, kate.id);
     repo.createEmailVerification({
@@ -119,7 +119,8 @@ describe("resolveOidcLogin", () => {
       resolveOidcLogin(db, claims(), { allowRegistration: false }),
     ).toEqual({ kind: "signed_in", userId: kate.id, via: "linked" });
     const after = userRow(db, kate.id);
-    expect(after?.passwordHash).toBeNull();
+    expect(before?.passwordHash).not.toBeNull();
+    expect(after?.passwordHash).toBe(before?.passwordHash);
     expect(after?.verifiedAt).toBeGreaterThan(0);
     expect(after?.keySalt.equals(before?.keySalt ?? Buffer.alloc(0))).toBe(true);
     const tokens = db.$client

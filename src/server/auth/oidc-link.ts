@@ -51,10 +51,10 @@ export function resolveOidcLogin(
     // db.transaction nests as a savepoint, so a failed link rolls the account change back.
     const linked = db.transaction(() => {
       if (!repo.linkIdentity(claims.issuer, claims.subject)) return false;
-      // OIDC proved email_verified: true. An unverified local account loses its password
-      // hash, so whoever registered it unproven cannot sign in with it later.
+      // OIDC proved email_verified: true. The password hash is kept; it is unused while
+      // OIDC mode is on.
       if (!candidate.emailVerified) {
-        repo.markEmailVerified(new Date(), { clearPasswordHash: true });
+        repo.markEmailVerified(new Date());
       }
       return true;
     });
