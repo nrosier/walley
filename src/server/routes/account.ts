@@ -8,12 +8,22 @@ import {
   verifyAgainstDummy,
   verifyPassword,
 } from '../auth/passwords.js';
+import {
+  SIGN_IN_MAX_KEYS,
+  SIGN_IN_MAX_PER_EMAIL,
+  SIGN_IN_MAX_PER_IP,
+  SIGN_IN_WINDOW_MS,
+  createRateLimiter,
+  ipRateKey,
+} from '../auth/rate-limit.js';
 import type { AppDatabase } from '../db/client.js';
 import { createUserRepo } from '../db/repo.js';
 
 export interface AccountRoutesOptions {
   readonly db: AppDatabase;
   readonly mode: AuthMode;
+  /** Clock in ms for the password-change limiter. Defaults to `Date.now`. */
+  readonly now?: () => number;
 }
 
 /**
@@ -23,6 +33,16 @@ export interface AccountRoutesOptions {
  */
 export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (app, opts) => {
   const { db, mode } = opts;
+
+  // Same limits as sign-in, in their own limiter: per user id and per client IP. The current
+  // password is checked here, so this route is a password-guessing oracle for a stolen session.
+  const limiter = createRateLimiter({
+    now: opts.now ?? Date.now,
+    maxPerEmail: SIGN_IN_MAX_PER_EMAIL,
+    maxPerIp: SIGN_IN_MAX_PER_IP,
+    windowMs: SIGN_IN_WINDOW_MS,
+    maxKeys: SIGN_IN_MAX_KEYS,
+  });
 
   // Body parse failures (malformed JSON, empty body, wrong media type) get a fixed body.
   app.setErrorHandler((error: FastifyError, _request, reply) => {
@@ -57,6 +77,16 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     if (mode === 'oidc') {
       return reply.code(403).send({ error: 'local_auth_disabled' });
     }
+    // Before the body is read or any Argon2 work. The per-user key is the user id.
+    for (const key of [`ip:${ipRateKey(request.ip)}`, `email:${request.auth.userId}`] as const) {
+      const result = limiter.take(key);
+      if (!result.allowed) {
+        return reply
+          .header('Retry-After', String(result.retryAfterSeconds))
+          .code(429)
+          .send({ error: 'rate_limited' });
+      }
+    }
     const body: unknown = request.body;
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return reply.code(400).send({ error: 'invalid_request' });
@@ -90,6 +120,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     if (!repo.setPasswordHash(await hashPassword(next))) {
       return reply.code(401).send({ error: 'unauthenticated' });
     }
+    limiter.clear(`email:${request.auth.userId}`);
     repo.deleteOtherSessions(request.auth.idHash);
     return reply.code(204).send();
   });

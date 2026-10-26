@@ -20,7 +20,7 @@ Fastify backend. It serves the API, the built web app (when `NODE_ENV=production
 | `routes/auth-gate.test.ts` | Tests for default-deny: every non-public route gives 401, public routes, `/auth/config` and `/auth/me` bodies, mode-mismatched sessions | Changing the deny hook or adding a route |
 | `routes/csrf.test.ts` | Tests for the CSRF hook: Origin and token checks, public routes, hook order, two-user isolation | Changing CSRF rules |
 | `routes/integrations.ts` | `integrationRoutes`: `POST /api/integrations/actual-schedules` and `/wallos-subscriptions` (create flows #28-#30). Registered when `integrations` (a `CreateDeps`) is passed with `auth`; `index.ts` wires `realCreateDeps` | Changing the create routes |
-| `routes/account.ts` | `accountRoutes` (`db`, `mode`): `GET /api/account`, `PUT /api/account/password`. Registered whenever `auth` is set | Account settings |
+| `routes/account.ts` | `accountRoutes` (`db`, `mode`, `now`): `GET /api/account`, `PUT /api/account/password` (rate limited like sign-in: per user and per IP, 429 `rate_limited`). Registered whenever `auth` is set | Account settings |
 | `routes/settings-wallos.ts` | `settingsWallosRoutes`: `GET`/`PUT /api/settings/wallos`, `POST /api/settings/wallos/test`. Registered when `settings` is set | Wallos settings |
 | `routes/settings-actual.ts` | `settingsActualRoutes`: `GET`/`PUT /api/settings/actual`, `POST /api/settings/actual/budgets` and `/base-currency`. Registered when `settings.actual` is set | Actual settings |
 | `routes/overrides.ts` | `overridesRoutes`: `GET`/`PUT`/`DELETE /api/overrides/:wallosSubscriptionId` (per-subscription rate override; a changed save or a clear resets the user's LINKED Wallos hashes). Registered when `settings` is set | Currency rate overrides |
@@ -39,4 +39,4 @@ Fastify backend. It serves the API, the built web app (when `NODE_ENV=production
 
 - Route handlers must reach user data only through `createUserRepo` (see `db/MAP.md`). Do not import `drizzle-orm` here; ESLint blocks it.
 - `buildApp` never reads environment variables. Configuration arrives as arguments from `index.ts`.
-- Every `/api` route is default-deny. Without a valid session it returns 401 `unauthenticated`, unless the route is marked `config: { public: true }`. Public today: `GET /api/health`, `GET /api/auth/config`, `POST /api/auth/register` and `POST /api/auth/login`.
+- Every `/api` route is default-deny. Without a valid session it returns 401 `unauthenticated`, unless the route is marked `config: { public: true }`. Public today: `GET /api/health`, `GET /api/auth/config`, `POST /api/auth/register`, `POST /api/auth/verify-email` and `POST /api/auth/login`.

@@ -294,7 +294,7 @@ describe('login before and after verification', () => {
 });
 
 describe('re-registering', () => {
-  it('keeps the password of an unverified email, sends a new link, and leaves the old token valid', async () => {
+  it('leaves the stored hash alone, sends a new link, and leaves the old token valid', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'again@example.test');
@@ -303,15 +303,30 @@ describe('re-registering', () => {
     await register(t, 'again@example.test', NEW_PASSWORD);
     const newToken = lastToken(mailer);
     expect(newToken).not.toBe(oldToken);
+    // Nothing changes on the user until a token is used.
     expect(userRow(t.db, 'again@example.test')?.hash).toBe(oldHash);
     expect(tokenCount(t.db)).toBe(2);
 
-    expect((await verify(t, oldToken)).statusCode).toBe(204);
-    // The new link is still live until it expires, so it verifies too.
+    // The newest registrant verifies: their password is the one that works.
     expect((await verify(t, newToken)).statusCode).toBe(204);
-    // The original password is still the one that works; the second one never took effect.
-    expect((await login(t, 'again@example.test')).statusCode).toBe(200);
-    expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(401);
+    expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(200);
+    expect((await login(t, 'again@example.test')).statusCode).toBe(401);
+    // A token used after verification changes nothing.
+    expect((await verify(t, oldToken)).statusCode).toBe(204);
+    expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(200);
+    expect((await login(t, 'again@example.test')).statusCode).toBe(401);
+  });
+
+  it('does not leave the first registrant hash in place after a second registration', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    // An attacker registers an address they do not own, then the owner registers it.
+    await register(t, 'victim@example.test', 'attacker password one');
+    await register(t, 'victim@example.test', 'owner chosen password');
+    const ownerToken = lastToken(mailer);
+    expect((await verify(t, ownerToken)).statusCode).toBe(204);
+    expect((await login(t, 'victim@example.test', 'owner chosen password')).statusCode).toBe(200);
+    expect((await login(t, 'victim@example.test', 'attacker password one')).statusCode).toBe(401);
   });
 
   it('keeps the old token valid until it expires after a repeat registration', async () => {

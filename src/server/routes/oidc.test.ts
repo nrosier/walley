@@ -553,8 +553,8 @@ describe('sessions and isolation', () => {
     });
     expect(me.json()).toMatchObject({ email: 'bob@x.com', authMethod: 'oidc' });
     expect(sessions(t.db)).toEqual([{ userId: bob.id, method: 'oidc' }]);
-    // Alice was unverified; linking her verifies her but keeps the password hash.
-    expect(userRow(t.db, alice.id).ph).toBe('ha');
+    // Alice was unverified; linking her verifies her and clears the password hash.
+    expect(userRow(t.db, alice.id).ph).toBeNull();
     const rows = t.db.$client
       .prepare('select user_id as userId, subject from user_identities order by subject')
       .all();

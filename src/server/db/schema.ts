@@ -89,6 +89,8 @@ export const emailVerifications = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    /** Argon2id hash the registrant chose; applied to the user only when this token is consumed. */
+    pendingPasswordHash: text('pending_password_hash'),
     createdAt: createdAt(),
   },
   (t) => [

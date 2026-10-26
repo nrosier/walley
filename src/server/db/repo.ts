@@ -84,6 +84,11 @@ export interface EmailVerificationInput {
   idHash: string;
   now: Date;
   expiresAt: Date;
+  /**
+   * Password hash chosen by whoever asked for this token. Applied to the user, replacing the
+   * stored one, only when the token is consumed while the user is still unverified.
+   */
+  pendingPasswordHash?: string;
 }
 
 export interface OverwriteSnapshotInput {
@@ -103,7 +108,8 @@ export interface UserRepo {
   createEmailVerification(input: EmailVerificationInput): void;
   /**
    * Consumes a verification token owned by this user: deletes it when it matches and has not
-   * expired, and sets `email_verified_at` to `now` if unset, in one transaction. Returns false
+   * expired, and sets `email_verified_at` to `now` if unset, in one transaction. If the token
+   * carries a pending password hash and the user is unverified, that hash replaces the stored one. Returns false
    * when no live token of this user matches. The token is looked up beforehand by
    * `findEmailVerificationUserId` in lookup.ts, the only token-keyed read.
    */
@@ -294,6 +300,7 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
             id: input.idHash,
             userId,
             expiresAt: input.expiresAt,
+            pendingPasswordHash: input.pendingPasswordHash ?? null,
             createdAt: input.now,
           })
           .run();
@@ -302,19 +309,25 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
 
     consumeEmailVerification(idHash, now) {
       return db.transaction((tx) => {
-        const deleted = tx
-          .delete(emailVerifications)
-          .where(
-            and(
-              eq(emailVerifications.id, idHash),
-              eq(emailVerifications.userId, userId),
-              gt(emailVerifications.expiresAt, now),
-            ),
-          )
-          .run();
-        if (deleted.changes === 0) return false;
+        const live = and(
+          eq(emailVerifications.id, idHash),
+          eq(emailVerifications.userId, userId),
+          gt(emailVerifications.expiresAt, now),
+        );
+        const row = tx
+          .select({ pending: emailVerifications.pendingPasswordHash })
+          .from(emailVerifications)
+          .where(live)
+          .get();
+        if (row === undefined) return false;
+        tx.delete(emailVerifications).where(live).run();
+        // The verifier's own hash wins; a token used after verification changes nothing.
         tx.update(users)
-          .set({ emailVerifiedAt: now })
+          .set(
+            row.pending === null
+              ? { emailVerifiedAt: now }
+              : { emailVerifiedAt: now, passwordHash: row.pending },
+          )
           .where(and(eq(users.id, userId), isNull(users.emailVerifiedAt)))
           .run();
         return true;

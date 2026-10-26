@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AuthMode } from '../../lib/auth-mode.js';
 import { hashPassword } from '../auth/passwords.js';
+import { SIGN_IN_MAX_PER_EMAIL, SIGN_IN_MAX_PER_IP } from '../auth/rate-limit.js';
 import { hashToken } from '../auth/sessions.js';
 import { createUser } from '../db/accounts.js';
 import { closeDatabase } from '../db/client.js';
@@ -170,5 +171,33 @@ describe('account routes', () => {
       (await put(t, s, { currentPassword: OLD, newPassword: NEW })).body,
     ];
     for (const body of bodies) expect(body).not.toMatch(/argon2|\$v=/i);
+  });
+
+  it('returns 429 after the per-user limit and does not run the change', async () => {
+    const t = await setup();
+    const userId = await addUser(t, 'rl@example.test');
+    const s = signIn(t, userId);
+    const wrong = { currentPassword: 'not the password', newPassword: NEW };
+    for (let i = 0; i < SIGN_IN_MAX_PER_EMAIL; i++) {
+      expect((await put(t, s, wrong)).statusCode).toBe(401);
+    }
+    const limited = await put(t, s, { currentPassword: OLD, newPassword: NEW });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toEqual({ error: 'rate_limited' });
+    expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+    // Another user is not affected.
+    const other = signIn(t, await addUser(t, 'rl2@example.test'));
+    expect((await put(t, other, wrong)).statusCode).toBe(401);
+  });
+
+  it('returns 429 after the per-IP limit across users', async () => {
+    const t = await setup();
+    const wrong = { currentPassword: 'not the password', newPassword: NEW };
+    for (let i = 0; i < SIGN_IN_MAX_PER_IP; i++) {
+      const s = signIn(t, await addUser(t, `ip${String(i)}@example.test`));
+      expect((await put(t, s, wrong)).statusCode).toBe(401);
+    }
+    const s = signIn(t, await addUser(t, 'ip-last@example.test'));
+    expect((await put(t, s, wrong)).statusCode).toBe(429);
   });
 });

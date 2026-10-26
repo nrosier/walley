@@ -204,13 +204,14 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
         mailer.send({ to: email, subject: content.subject, text: content.text });
       };
       // Stores only the hash of a fresh token and mails the link. Older tokens stay valid.
-      const issueVerification = (userId: string): void => {
+      const issueVerification = (userId: string, pendingPasswordHash?: string): void => {
         const token = randomBytes(32).toString('hex');
         const issuedAt = now();
         createUserRepo(db, userId).createEmailVerification({
           idHash: hashToken(token),
           now: new Date(issuedAt),
           expiresAt: new Date(issuedAt + VERIFICATION_TOKEN_TTL_MS),
+          ...(pendingPasswordHash === undefined ? {} : { pendingPasswordHash }),
         });
         const content = verificationEmail(publicOrigin, token);
         mailer.send({ to: email, subject: content.subject, text: content.text });
@@ -220,8 +221,9 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
           const user = createUser(db, { email, passwordHash });
           issueVerification(user.id);
         } else if (!existing.emailVerified && existing.passwordHash !== null) {
-          // Keeps the existing password: a repeat only sends a new link.
-          issueVerification(existing.userId);
+          // The stored hash may be an attacker's. This registrant's hash rides on the new token
+          // and replaces it only when that token is used, so the verifier's password wins.
+          issueVerification(existing.userId, passwordHash);
         } else {
           sendAlreadyRegistered();
         }

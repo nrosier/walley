@@ -231,7 +231,7 @@ function registerAuth(
       now: clock,
       oidc: auth.mode === 'oidc' ? (auth.oidc ?? null) : null,
     });
-    void app.register(accountRoutes, { prefix: '/api', db, mode: auth.mode });
+    void app.register(accountRoutes, { prefix: '/api', db, mode: auth.mode, now: clock });
     if (settings !== undefined) {
       void app.register(settingsWallosRoutes, { prefix: '/api', deps: settings });
       void app.register(settingsMatchingRoutes, { prefix: '/api', deps: { repoFor: settings.repoFor } });

@@ -1,0 +1,1 @@
+ALTER TABLE `email_verifications` ADD `pending_password_hash` text;

@@ -199,9 +199,24 @@ describe('createUserRepo', () => {
       expect(tokenCount(otherId)).toBe(1);
     });
 
-    it('markEmailVerified is a no-op for an already verified user', () => {
+    it('consume applies the pending hash of the token used, only while the user is unverified', () => {
+      const repo = createUserRepo(db, userId);
+      const hashOf = () =>
+        (db.$client.prepare('SELECT password_hash AS h FROM users WHERE id = ?').get(userId) as { h: string | null }).h;
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'hash-first' });
+      repo.createEmailVerification({ idHash: tok('b'), now: t0, expiresAt: live, pendingPasswordHash: 'hash-second' });
+      expect(repo.consumeEmailVerification(tok('b'), t0)).toBe(true);
+      expect(hashOf()).toBe('hash-second');
+      expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(true);
+      expect(hashOf()).toBe('hash-second');
+    });
+
+    it('markEmailVerified clears the hash on request and is a no-op for an already verified user', () => {
       const repo = createUserRepo(db, userId);
       expect(repo.markEmailVerified(t0, { clearPasswordHash: true })).toBe(true);
+      expect(
+        (db.$client.prepare('SELECT password_hash AS h FROM users WHERE id = ?').get(userId) as { h: string | null }).h,
+      ).toBeNull();
       expect(repo.markEmailVerified(new Date(t0.getTime() + 1), { clearPasswordHash: true })).toBe(false);
       expect(verifiedAt(userId)).toBe(t0.getTime());
     });
