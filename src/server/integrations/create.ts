@@ -19,7 +19,7 @@ import {
   type PreparedScheduleInput,
 } from './prepare.js';
 import type { WallosSubscriptionPayload } from './wallos/write.js';
-import { buildCurrencyMap, mapWallosSubscription, WallosMappingError } from './wallos/map.js';
+import { buildCurrencyMap, mapWallosSubscription, resolveCurrencyCode, WallosMappingError } from './wallos/map.js';
 import type { CreateScheduleInput } from './actual/write.js';
 
 export type CreateFlowErrorCode =
@@ -81,6 +81,12 @@ export interface CreateActualScheduleRequest {
 export interface ActualSchedulePlan<T> {
   readonly prepared: PreparedScheduleInput;
   readonly baseCurrency: string;
+  /** #28: Wallos code of the subscription's currency. */
+  readonly sourceCurrency: string;
+  /** #28: Wallos rate of that currency, or null when the list has none. Never the override. */
+  readonly wallosRate: string | null;
+  /** #28: the saved manual rate, or null. */
+  readonly overrideRate: string | null;
   /** Result of the optional `extra` read, taken in the same Actual session as the base currency. */
   readonly extra: T;
 }
@@ -107,6 +113,8 @@ export async function planActualScheduleFromWallos<T = undefined>(
   }
   const mapped = mapWallosSubscription(raw);
   const override = deps.repoFor(userId).getSubscriptionOverride(wallosSubscriptionId);
+  const sourceCurrency = resolveCurrencyCode(buildCurrencyMap(currencies), mapped.currencyId);
+  const wallosEntry = currencies.find((c) => c.code.trim().toUpperCase() === sourceCurrency);
 
   const read = await deps.withActual(userId, async (api) => ({
     baseCode: await readBaseCurrency(api),
@@ -118,6 +126,9 @@ export async function planActualScheduleFromWallos<T = undefined>(
   return {
     prepared: prepareActualScheduleInput(mapped, currencies, read.baseCode, override?.rate),
     baseCurrency: read.baseCode,
+    sourceCurrency,
+    wallosRate: wallosEntry?.rate ?? null,
+    overrideRate: override?.rate ?? null,
     extra: read.extra,
   };
 }
@@ -141,6 +152,12 @@ export interface ActualSchedulePrefill {
   readonly name: string;
   readonly amountCents: number;
   readonly baseCurrency: string;
+  /** Wallos code of the subscription's currency. */
+  readonly sourceCurrency: string;
+  /** Wallos rate of that currency, or null. Never the override. */
+  readonly wallosRate: string | null;
+  /** The saved manual rate, or null. */
+  readonly overrideRate: string | null;
   readonly recurrence: PreparedScheduleInput['recurrence'];
   readonly startDate: string;
   readonly accounts: APIAccountEntity[];
@@ -159,7 +176,14 @@ export async function prefillActualScheduleFromWallos(
     payees: await readPayees(api),
     categories: await readCategories(api),
   }));
-  return { ...plan.prepared, baseCurrency: plan.baseCurrency, ...plan.extra };
+  return {
+    ...plan.prepared,
+    baseCurrency: plan.baseCurrency,
+    sourceCurrency: plan.sourceCurrency,
+    wallosRate: plan.wallosRate,
+    overrideRate: plan.overrideRate,
+    ...plan.extra,
+  };
 }
 
 /** What the schedule read returns for one schedule; the amount is never copied beyond this scope. */

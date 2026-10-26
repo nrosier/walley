@@ -20,6 +20,15 @@ const en = {
     category: 'Category',
     categoryNone: 'No category',
     payeeCreated: 'A new payee was created.',
+    rate: {
+      label: 'Rate ({from} to {to})',
+      wallosHelp: 'Wallos rate: {rate}',
+      wallosNone: 'Wallos has no rate for this currency. Enter one manually.',
+      overridden: 'Manual rate in use.',
+      save: 'Save rate',
+      clear: 'Clear',
+      saving: 'Saving...',
+    },
     categoryError: 'The schedule was created, but the category could not be set.',
   },
   wallos: {
@@ -60,6 +69,15 @@ const nl: typeof en = {
     category: 'Categorie',
     categoryNone: 'Geen categorie',
     payeeCreated: 'Er is een nieuwe begunstigde aangemaakt.',
+    rate: {
+      label: 'Koers ({from} naar {to})',
+      wallosHelp: 'Wallos-koers: {rate}',
+      wallosNone: 'Wallos heeft geen koers voor deze valuta. Voer er handmatig een in.',
+      overridden: 'Handmatige koers in gebruik.',
+      save: 'Koers opslaan',
+      clear: 'Wissen',
+      saving: 'Opslaan...',
+    },
     categoryError: 'Het schema is aangemaakt, maar de categorie kon niet worden ingesteld.',
   },
   wallos: {

@@ -20,6 +20,76 @@ describe('tenant isolation', () => {
     closeDatabase(db);
   });
 
+  describe('saveSubscriptionOverride / clearSubscriptionOverride (#28)', () => {
+    const now = new Date(0);
+    const linked = (r: UserRepo, wallosId = 'w1', status: 'LINKED' | 'MISMATCH_DETECTED' | 'IGNORED_WALLOS' = 'LINKED') =>
+      r.insertMatch({
+        wallosId,
+        actualScheduleId: `act-${wallosId}-${status}`,
+        status,
+        lastKnownWallosHash: 'hw',
+        lastKnownActualHash: 'ha',
+      });
+
+    it('a changed save nulls only the bound user LINKED Wallos hash for that wallos id', () => {
+      const mine = linked(a);
+      // One match per (user, wallos id): the other statuses and ids sit on other wallos ids.
+      const mismatch = linked(a, 'w3', 'MISMATCH_DETECTED');
+      const ignored = linked(a, 'w4', 'IGNORED_WALLOS');
+      const otherId = linked(a, 'w2');
+      const theirs = linked(b);
+      const res = a.saveSubscriptionOverride('w1', { rate: '1.0850', now });
+      expect(res.changed).toBe(true);
+      expect(res.resetMatchIds).toEqual([mine.id]);
+      expect(a.getMatch(mine.id)).toMatchObject({ lastKnownWallosHash: null, lastKnownActualHash: 'ha', status: 'LINKED' });
+      for (const m of [mismatch, ignored, otherId]) expect(a.getMatch(m.id)).toEqual(m);
+      expect(b.getMatch(theirs.id)).toEqual(theirs);
+    });
+
+    it('a same-rate save changes nothing and resets nothing', () => {
+      a.saveSubscriptionOverride('w1', { rate: '1.0850', now });
+      const m = linked(a);
+      const res = a.saveSubscriptionOverride('w1', { rate: ' 1.0850 ', now });
+      expect(res.changed).toBe(false);
+      expect(res.resetMatchIds).toEqual([]);
+      expect(a.getMatch(m.id)).toEqual(m);
+    });
+
+    it('an invalid rate throws and writes nothing', () => {
+      const m = linked(a);
+      for (const rate of ['0', '-1', '', 'abc', '1,5']) {
+        expect(() => a.saveSubscriptionOverride('w1', { rate, now })).toThrow(CurrencyConversionError);
+      }
+      expect(a.getSubscriptionOverride('w1')).toBeUndefined();
+      expect(a.getMatch(m.id)).toEqual(m);
+    });
+
+    it('clearing an existing override resets the LINKED Wallos hash, a missing one does not', () => {
+      const m = linked(a);
+      expect(a.clearSubscriptionOverride('w1')).toEqual({ deleted: false, resetMatchIds: [] });
+      expect(a.getMatch(m.id)).toEqual(m);
+      a.saveSubscriptionOverride('w1', { rate: '2', now });
+      a.updateMatch(m.id, { lastKnownWallosHash: 'hw' });
+      const mismatch = linked(a, 'w3', 'MISMATCH_DETECTED');
+      expect(a.clearSubscriptionOverride('w1')).toEqual({ deleted: true, resetMatchIds: [m.id] });
+      expect(a.getSubscriptionOverride('w1')).toBeUndefined();
+      expect(a.getMatch(m.id)?.lastKnownWallosHash).toBeNull();
+      expect(a.getMatch(m.id)?.lastKnownActualHash).toBe('ha');
+      expect(a.getMatch(mismatch.id)).toEqual(mismatch);
+    });
+
+    it('B save and clear never touch A override or A match hashes for the same wallos id', () => {
+      a.saveSubscriptionOverride('w1', { rate: '1.5', now });
+      const mine = linked(a);
+      b.saveSubscriptionOverride('w1', { rate: '9', now });
+      expect(a.getSubscriptionOverride('w1')?.rate).toBe('1.5');
+      expect(a.getMatch(mine.id)).toEqual(mine);
+      expect(b.clearSubscriptionOverride('w1').deleted).toBe(true);
+      expect(a.getSubscriptionOverride('w1')?.rate).toBe('1.5');
+      expect(a.getMatch(mine.id)).toEqual(mine);
+    });
+  });
+
   it('A cannot read B config', () => {
     b.upsertConfig({ wallosUrl: 'https://b.test', wallosApiKeyEnc: 'v1:b' });
     expect(a.getConfig()).toBeUndefined();

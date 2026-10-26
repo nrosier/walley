@@ -4,6 +4,7 @@ import { I18nProvider, type Locale } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { commonMessages } from '@/i18n/common.messages';
 import { createActualSchedule, createWallosSubscription, prefillActualSchedule, prefillWallosSubscription, type ActualSchedulePrefill, type WallosSubscriptionPrefill } from '@/lib/create.api';
+import { clearOverride, saveOverride } from '@/lib/overrides.api';
 import { CreateActualForm } from './CreateActualModal';
 import { actualSubmitDisabled, buildActualBody, performCreate, wallosSubmitDisabled } from './create-submit';
 import { CreateWallosForm } from './CreateWallosModal';
@@ -15,6 +16,9 @@ const actual: ActualSchedulePrefill = {
   name: 'Netflix',
   amountCents: -1299,
   baseCurrency: 'EUR',
+  sourceCurrency: 'EUR',
+  wallosRate: '1',
+  overrideRate: null,
   recurrence: { frequency: 'monthly', interval: 1 },
   startDate: '2026-11-01',
   accounts: [{ id: 'a1', name: 'Checking' }],
@@ -54,6 +58,42 @@ describe('CreateActualForm', () => {
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" />, 'nl');
     expect(html).toContain('Elke maand');
     expect(html).toContain('Rekening');
+  });
+});
+
+describe('RateField in CreateActualForm', () => {
+  const foreign: ActualSchedulePrefill = { ...actual, sourceCurrency: 'USD', wallosRate: '0.92', overrideRate: '0.95' };
+  it('is hidden for base-currency subscriptions', () => {
+    expect(render(<CreateActualForm prefill={actual} wallosId="w1" />)).not.toContain('Rate (');
+  });
+  it('shows both codes, the Wallos rate help, the saved rate and Clear for foreign currency', () => {
+    const html = render(<CreateActualForm prefill={foreign} wallosId="w1" />);
+    expect(html).toContain('Rate (USD to EUR)');
+    expect(html).toContain('Wallos rate: 0.92');
+    expect(html).toContain('value="0.95"');
+    expect(html).toContain('Clear');
+    expect(render(<CreateActualForm prefill={foreign} wallosId="w1" />, 'nl')).toContain('Koers (USD naar EUR)');
+  });
+  it('shows the empty state without a Wallos rate and no Clear without an override', () => {
+    const html = render(<CreateActualForm prefill={{ ...foreign, wallosRate: null, overrideRate: null }} wallosId="w1" />);
+    expect(html).toContain('Wallos has no rate');
+    expect(html).not.toContain('>Clear<');
+  });
+  it('overrides.api calls PUT with the rate and DELETE, same-origin', async () => {
+    const f = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({ wallosSubscriptionId: 'w 1', rate: '0.9', resetMatches: 0 }), { status: 200 })));
+    await saveOverride('w 1', '0.9', f);
+    const [url, init] = f.mock.calls[0] ?? [];
+    expect(url).toBe('/api/overrides/w%201');
+    expect(init?.method).toBe('PUT');
+    expect(init?.body).toBe('{"rate":"0.9"}');
+    const d = vi.fn<typeof fetch>(() => Promise.resolve(new Response(null, { status: 204 })));
+    await clearOverride('w1', d);
+    expect(d.mock.calls[0]?.[1]?.method).toBe('DELETE');
+  });
+  it('surfaces invalid_rate as an ApiError code with en and nl text', async () => {
+    const f = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({ error: 'invalid_rate' }), { status: 400 })));
+    await expect(saveOverride('w1', 'x', f)).rejects.toMatchObject({ code: 'invalid_rate' });
+    expect(commonMessages.nl.errors.invalid_rate).not.toBe(commonMessages.en.errors.invalid_rate);
   });
 });
 
