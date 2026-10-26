@@ -285,14 +285,19 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
         repo.deleteEmailVerification(idHash);
         return wrongPassword();
       }
+      // Charge this attempt BEFORE Argon2, in the same tick as the takes above, so parallel guesses
+      // cannot all run Argon2 before any is counted. The fifth charge burns the token, so even the
+      // correct password on the fifth attempt is refused. The charge dies with the row on consume.
+      const charged = repo.recordFailedEmailVerification(idHash, MAX_VERIFY_FAILURES);
+      if (charged === undefined || charged >= MAX_VERIFY_FAILURES) {
+        return wrongPassword();
+      }
       let ok = false;
       if (isWithinRawLimit(rawPassword)) {
         const password = normalisePassword(rawPassword);
         ok = isAcceptablePasswordLength(password) && (await verifyPassword(password, found.pendingPasswordHash));
       }
       if (!ok) {
-        // Counted on the row, whatever the time window: the fifth wrong password burns the token.
-        repo.recordFailedEmailVerification(idHash, MAX_VERIFY_FAILURES);
         return wrongPassword();
       }
       // A correct password whose token was consumed or burned meanwhile looks like a wrong one.

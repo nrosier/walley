@@ -604,6 +604,63 @@ describe('verify-email brute-force limits', () => {
     expect(tokenCount(t.db)).toBe(0);
   });
 
+  it('charges each attempt before Argon2: parallel mixed guesses run Argon2 at most five times and none succeeds after the burn', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'charge@example.test');
+    const token = lastToken(mailer);
+    const before = argon.calls;
+    const wrongPw = (i: number): string => `wrong passphrase number ${String(i)}`;
+    // Four wrong guesses start first, so the fifth request's charge burns the token.
+    const results = await Promise.all([
+      verify(t, token, wrongPw(0)),
+      verify(t, token, wrongPw(1)),
+      verify(t, token, wrongPw(2)),
+      verify(t, token, wrongPw(3)),
+      verify(t, token),
+      verify(t, token),
+      verify(t, token, wrongPw(4)),
+      verify(t, token),
+      verify(t, token),
+    ]);
+    expect(argon.calls - before).toBeLessThanOrEqual(5);
+    expect(results.some((res) => res.statusCode === 204)).toBe(false);
+    expect(results[4].statusCode).toBe(401);
+    expect(results[4].body).toBe('{"error":"invalid_password"}');
+    expect(userRow(t.db, 'charge@example.test')).toEqual({ hash: null, verifiedAt: null });
+    expect(tokenCount(t.db)).toBe(0);
+  });
+
+  it('refuses the correct password on the fifth attempt with 401 invalid_password and burns the token', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'fifth@example.test');
+    const token = lastToken(mailer);
+    for (let i = 0; i < 4; i += 1) {
+      expect((await verify(t, token, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
+    }
+    expect(tokenCount(t.db)).toBe(1);
+    const before = argon.calls;
+    const fifth = await verify(t, token);
+    expect(fifth.statusCode).toBe(401);
+    expect(fifth.body).toBe('{"error":"invalid_password"}');
+    expect(argon.calls).toBe(before);
+    expect(tokenCount(t.db)).toBe(0);
+    expect(userRow(t.db, 'fifth@example.test')).toEqual({ hash: null, verifiedAt: null });
+    expect((await verify(t, token)).statusCode).toBe(400);
+  });
+
+  it('a correct password on the fourth attempt still verifies and leaves no token', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'fourth@example.test');
+    const token = lastToken(mailer);
+    for (let i = 0; i < 3; i += 1) await verify(t, token, `wrong passphrase number ${String(i)}`);
+    expect((await verify(t, token)).statusCode).toBe(204);
+    expect(tokenCount(t.db)).toBe(0);
+    expect(userRow(t.db, 'fourth@example.test')?.verifiedAt).not.toBeNull();
+  });
+
   it('(f) after the burn the correct password gets the same status and body as a wrong one', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
