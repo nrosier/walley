@@ -4,9 +4,24 @@ import { I18nProvider, type Locale } from '@/i18n';
 import type { SyncCheckResult, SyncLinked, SyncIgnored } from '../../lib/sync-check-types';
 import matchesSrc from './Matches.tsx?raw';
 import storeSrc from '@/lib/sync-check.ts?raw';
-import { MatchesView, type MatchesViewProps } from './Matches';
-import { checkIfEmpty, createSyncStore, restoreAndRecheck } from '@/lib/sync-check';
+import { Matches, MatchesView, type MatchesViewProps } from './Matches';
+import { checkIfEmpty, createSyncStore, restoreAndRecheck, syncStore } from '@/lib/sync-check';
 import { performResolve } from '@/lib/resolve-mismatch';
+
+// The test environment is node, so useSyncExternalStore has no server snapshot. Matches is rendered
+// with a hook that reads the real shared store's current state once, which is all SSR needs.
+vi.mock('@/lib/sync-check', async (importActual) => {
+  const actual = await importActual<typeof import('@/lib/sync-check')>();
+  return {
+    ...actual,
+    useSyncCheck: () => ({
+      ...actual.syncStore.getState(),
+      run: actual.syncStore.run,
+      requestRun: actual.syncStore.requestRun,
+      setResult: actual.syncStore.setResult,
+    }),
+  };
+});
 
 const linkedRow = (over: Partial<SyncLinked>): SyncLinked => ({
   matchId: 'm',
@@ -303,5 +318,27 @@ describe('Matches auto re-check', () => {
     pending[1]?.(Response.json({ error: 'boom' }, { status: 500 }));
     await Promise.all([running, resolving]);
     expect(statusOf(store.getState().result)).toBe('LINKED');
+  });
+});
+
+describe('Matches page after a failed re-check', () => {
+  it('keeps the last good Matches rows and shows an error when a re-check fails', async () => {
+    syncStore.setResult(fixture());
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'bad_gateway' }, { status: 502 })));
+    try {
+      await syncStore.run(); // the public path the page's Retry and mount check use
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(syncStore.getState().status).toBe('error');
+    const html = renderToStaticMarkup(
+      <I18nProvider initialLocale="en">
+        <Matches />
+      </I18nProvider>,
+    );
+    expect(html.match(/data-match-row/g)).toHaveLength(3);
+    expect(html).toContain('Netflix');
+    expect(html).toContain('Saved. Sync status could not be refreshed:');
+    expect(html).toContain('>Retry</button>');
   });
 });
