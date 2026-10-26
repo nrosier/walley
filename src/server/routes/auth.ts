@@ -119,14 +119,17 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
     setSessionCookies(reply, createSession(db, userId, 'local', now()), secureCookies);
   }
 
-  // One limiter holds both kinds of key. The email counter is shared by login and register.
-  const limiter = createRateLimiter({
+  const limiterOptions = {
     now,
     maxPerEmail: SIGN_IN_MAX_PER_EMAIL,
     maxPerIp: SIGN_IN_MAX_PER_IP,
     windowMs: SIGN_IN_WINDOW_MS,
     maxKeys: SIGN_IN_MAX_KEYS,
-  });
+  };
+  // Holds the IP keys of every route and the email counter shared by login and register.
+  const limiter = createRateLimiter(limiterOptions);
+  // verify-email's own email and token counters, so a login or register flood cannot block it.
+  const verifyLimiter = createRateLimiter(limiterOptions);
 
   /** Counts one attempt. On refusal sends 429 and returns true; the caller must stop. */
   function limited(reply: FastifyReply, key: RateLimitKey): boolean {
@@ -266,11 +269,11 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       const wrongPassword = (): FastifyReply => reply.code(401).send({ error: 'invalid_password' });
       // Every attempt counts against the token and its owner's email BEFORE any Argon2 await, so
       // parallel guesses cannot all pass the lookup and then race the limit. Only the token key
-      // burns the token and answers like a wrong password; the email key is shared with login and
-      // register, so when it alone refuses the owner gets 429 and keeps the token. Neither path
+      // burns the token and answers like a wrong password; the email key belongs to verify-email
+      // alone, and when it alone refuses the owner gets 429 and keeps the token. Neither path
       // runs Argon2.
-      const tokenTake = limiter.take(`token:${idHash}`);
-      const emailTake = limiter.take(`email:${found.email}`);
+      const tokenTake = verifyLimiter.take(`token:${idHash}`);
+      const emailTake = verifyLimiter.take(`email:${found.email}`);
       if (!tokenTake.allowed) {
         repo.deleteEmailVerification(idHash);
         return wrongPassword();
@@ -290,8 +293,8 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       if (!ok || !repo.consumeEmailVerification(idHash, when)) {
         return wrongPassword();
       }
-      limiter.clear(`token:${idHash}`);
-      limiter.clear(`email:${found.email}`);
+      verifyLimiter.clear(`token:${idHash}`);
+      verifyLimiter.clear(`email:${found.email}`);
       return reply.code(204).send();
     });
 

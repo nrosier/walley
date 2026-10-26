@@ -425,13 +425,10 @@ describe('verify-email brute-force limits', () => {
     const token = lastToken(mailer);
     for (let i = 0; i < 6; i += 1) {
       const res = await verify(t, token, `wrong passphrase number ${String(i)}`);
-      // The register call already counted once against the shared email key, so the burn lands
-      // on the 5th miss at the latest; later tries find no token.
-      if (i < 4) {
-        expect(res.statusCode).toBe(401);
-        expect(res.json()).toEqual({ error: 'invalid_password' });
-      }
-      expect(res.statusCode).not.toBe(204);
+      // verify-email has its own counters, so five misses are checked and the sixth burns the
+      // token and answers like a wrong password.
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: 'invalid_password' });
     }
     expect(tokenCount(t.db)).toBe(0);
     const right = await verify(t, token);
@@ -451,24 +448,44 @@ describe('verify-email brute-force limits', () => {
     expect((await verify(t, token)).statusCode).toBe(204);
   });
 
-  it('refuses with 429 when only the shared email key is over its limit, keeps the token, and works after the window', async () => {
+  it('five failed logins on the owner email do not block a correct verify', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'flood@example.test');
     const token = lastToken(mailer);
-    // Someone who knows only the email fills the key shared with login and register.
+    // The register call took one count, so the fifth login is already refused.
     for (let i = 0; i < 5; i += 1) {
       await login(t, 'flood@example.test', `wrong passphrase number ${String(i)}`);
     }
+    // The login email key is now full; verify-email keeps its own counter.
+    expect((await login(t, 'flood@example.test')).statusCode).toBe(429);
+    expect((await verify(t, token)).statusCode).toBe(204);
+    expect(tokenCount(t.db)).toBe(0);
+  });
+
+  it('the verify-email email limit refuses after its own five wrong attempts across tokens, keeps the token, and works after the window', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'flood@example.test');
+    const tokenA = lastToken(mailer);
+    await register(t, 'flood@example.test');
+    const tokenB = lastToken(mailer);
+    // Three misses on one token and two on the other: no token key reaches its limit, the email key does.
+    for (let i = 0; i < 3; i += 1) {
+      expect((await verify(t, tokenA, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
+    }
+    for (let i = 0; i < 2; i += 1) {
+      expect((await verify(t, tokenB, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
+    }
     const before = argon.calls;
-    const res = await verify(t, token);
+    const res = await verify(t, tokenA);
     expect(res.statusCode).toBe(429);
     expect(res.json()).toEqual({ error: 'rate_limited' });
     expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
     expect(argon.calls).toBe(before);
-    expect(tokenCount(t.db)).toBe(1);
+    expect(tokenCount(t.db)).toBe(2);
     t.clock.advance(15 * 60 * 1000 + 1);
-    expect((await verify(t, token)).statusCode).toBe(204);
+    expect((await verify(t, tokenA)).statusCode).toBe(204);
   });
 
   it('(b) a correct verify deletes the other tokens, and an older link returns invalid_token', async () => {
@@ -507,22 +524,22 @@ describe('verify-email brute-force limits', () => {
     const t = setup({ mailer });
     await register(t, 'race@example.test');
     const token = lastToken(mailer);
-    // The register call took one email count, so four attempts are allowed. Wrong guesses come
-    // first and use them up; the correct ones start after the limit is reached.
+    // Five attempts are allowed. Wrong guesses come first and use them up; the correct ones
+    // start after the limit is reached.
     const wrong = Array.from({ length: 6 }, (_v, i) => verify(t, token, `wrong passphrase number ${String(i)}`));
     const right = Array.from({ length: 4 }, () => verify(t, token));
     const results = await Promise.all([...wrong, ...right]);
-    // The email key refuses first (429, token kept); the token key then burns the token (401). A
-    // request that looks the token up after the burn gets 400 invalid_token. None can succeed.
+    // The token key burns the token (401). A request that looks the token up after the burn gets
+    // 400 invalid_token. None can succeed.
     const bodies: Record<number, string> = {
       400: '{"error":"invalid_token"}',
       401: '{"error":"invalid_password"}',
-      429: '{"error":"rate_limited"}',
     };
     for (const res of results) {
       expect(Object.keys(bodies).map(Number)).toContain(res.statusCode);
       expect(res.body).toBe(bodies[res.statusCode]);
     }
+    expect(results.some((res) => res.statusCode === 204)).toBe(false);
     expect(userRow(t.db, 'race@example.test')).toEqual({ hash: null, verifiedAt: null });
     expect(tokenCount(t.db)).toBe(0);
   });
