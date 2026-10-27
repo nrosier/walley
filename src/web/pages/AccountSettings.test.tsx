@@ -5,7 +5,7 @@ import { accountSettingsMessages } from './AccountSettings.messages';
 import { PASSWORD_MAX_CODE_POINTS, PASSWORD_MIN_CODE_POINTS } from '../../lib/password-policy';
 import { appMessages } from '../App.messages';
 import { requestLogout } from '../App';
-import { AccountSettingsView, changePassword, type AccountInfo } from './AccountSettings';
+import { AccountSettingsView, changePassword, saveRegistration, type AccountInfo } from './AccountSettings';
 
 const render = (account: AccountInfo, locale: Locale = 'en') =>
   renderToStaticMarkup(
@@ -13,12 +13,13 @@ const render = (account: AccountInfo, locale: Locale = 'en') =>
       <AccountSettingsView account={account} />
     </I18nProvider>,
   );
-const local: AccountInfo = { email: 'a@example.test', mode: 'local', hasPassword: true, identities: [] };
+const local: AccountInfo = { email: 'a@example.test', mode: 'local', hasPassword: true, identities: [], isAdmin: false };
 const oidc: AccountInfo = {
   email: 'a@example.test',
   mode: 'oidc',
   hasPassword: false,
   identities: [{ issuer: 'https://idp.example.test', subject: 'sub-123' }],
+  isAdmin: false,
 };
 const en = createT(accountSettingsMessages, 'en');
 const OIDC_NOTE = en('oidcNote');
@@ -127,5 +128,35 @@ describe('changePassword', () => {
     const fetchImpl = (() => Promise.reject(new TypeError('offline'))) as unknown as typeof fetch;
     const result = await changePassword('a', 'b', fetchImpl);
     expect(result).toEqual({ ok: false, code: 'request_failed' });
+  });
+});
+
+describe('registration toggle', () => {
+  const admin: AccountInfo = { ...local, isAdmin: true };
+  const heading = createT(accountSettingsMessages, 'en')('registration.heading');
+  const headingNl = createT(accountSettingsMessages, 'nl')('registration.heading');
+
+  it('is shown to an admin in local and OIDC mode', () => {
+    expect(render(admin)).toContain(heading);
+    expect(render({ ...oidc, isAdmin: true })).toContain(heading);
+    expect(render(admin, 'nl')).toContain(headingNl);
+  });
+  it('is not rendered at all for a non-admin', () => {
+    for (const html of [render(local), render(oidc), render(local, 'nl')]) {
+      expect(html).not.toContain('registration-toggle');
+      expect(html).not.toContain(heading);
+      expect(html).not.toContain(headingNl);
+    }
+  });
+  it('saveRegistration PUTs the boolean and returns the new state', async () => {
+    const state = { enabled: true, ceiling: true, effective: true };
+    const { fetchImpl, calls } = fakeFetch(200, state);
+    expect(await saveRegistration(true, fetchImpl)).toEqual({ ok: true, state });
+    expect(calls[0]).toMatchObject({ url: '/api/admin/registration', method: 'PUT' });
+    expect(JSON.parse(calls[0]?.body ?? '{}')).toEqual({ enabled: true });
+  });
+  it('saveRegistration returns the server error code on 403', async () => {
+    const { fetchImpl } = fakeFetch(403, { error: 'forbidden' });
+    expect(await saveRegistration(false, fetchImpl)).toEqual({ ok: false, code: 'forbidden' });
   });
 });

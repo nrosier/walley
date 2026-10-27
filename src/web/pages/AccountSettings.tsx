@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode, type SyntheticEvent } from 'react'
 import { apiRequest, ApiError } from '@/lib/api';
 import { useT } from '@/i18n';
 import { SettingsCard } from '@/components/settings/SettingsCard';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { PASSWORD_MIN_CODE_POINTS } from '../../lib/password-policy';
 import { accountSettingsMessages } from './AccountSettings.messages';
 
@@ -10,6 +11,33 @@ export interface AccountInfo {
   mode: 'local' | 'oidc';
   hasPassword: boolean;
   identities: { issuer: string; subject: string }[];
+  /** True when the email is in ADMIN_EMAILS. Only then is the registration toggle shown. */
+  isAdmin: boolean;
+}
+
+/** GET and PUT /api/admin/registration: the stored toggle, the ALLOW_REGISTRATION ceiling and their AND. */
+export interface RegistrationState {
+  enabled: boolean;
+  ceiling: boolean;
+  effective: boolean;
+}
+
+/** Saves the registration toggle. Returns the new state, or the server error code. */
+// eslint-disable-next-line react-refresh/only-export-components -- exported for tests with a fake fetch
+export async function saveRegistration(
+  enabled: boolean,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true; state: RegistrationState } | { ok: false; code: string }> {
+  try {
+    const state = await apiRequest<RegistrationState>('/api/admin/registration', {
+      method: 'PUT',
+      body: { enabled },
+      fetchImpl,
+    });
+    return { ok: true, state };
+  } catch (err: unknown) {
+    return { ok: false, code: err instanceof ApiError ? err.code : 'request_failed' };
+  }
 }
 
 export type PasswordChangeResult = { ok: true } | { ok: false; code: string };
@@ -99,6 +127,72 @@ function PasswordForm() {
   );
 }
 
+/** Admin only: the server-wide switch for new accounts. Applies at once and says so. */
+function RegistrationToggle() {
+  const { t, errorText } = useT(accountSettingsMessages);
+  const [state, setState] = useState<RegistrationState | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    apiRequest<RegistrationState>('/api/admin/registration', { signal: controller.signal })
+      .then(setState)
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadFailed(true);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
+  const onChange = (value: string) => {
+    setError(null);
+    setSaved(false);
+    setBusy(true);
+    void saveRegistration(value === 'on')
+      .then((result) => {
+        if (result.ok) {
+          setState(result.state);
+          setSaved(true);
+        } else {
+          setError(errorText(result.code));
+        }
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  };
+
+  return (
+    <div data-testid="registration-toggle" className="space-y-2 border-t pt-3">
+      <h3 className="text-sm font-medium">{t('registration.heading')}</h3>
+      <p className="text-sm text-muted">{t('registration.help')}</p>
+      {loadFailed ? <p role="alert" className="text-sm text-warning">{t('registration.loadError')}</p> : null}
+      {state !== null ? (
+        <>
+          <SegmentedControl
+            aria-label={t('registration.label')}
+            value={state.enabled ? 'on' : 'off'}
+            onValueChange={busy ? () => undefined : onChange}
+            options={[
+              { value: 'on', label: t('registration.on') },
+              { value: 'off', label: t('registration.off') },
+            ]}
+          />
+          {!state.ceiling ? <p className="text-sm text-warning">{t('registration.ceilingOff')}</p> : null}
+        </>
+      ) : null}
+      <div aria-live="polite" role="status">
+        {error !== null ? <p className="text-sm text-warning">{error}</p> : null}
+        {saved ? <p className="text-sm text-success">{t('registration.saved')}</p> : null}
+      </div>
+    </div>
+  );
+}
+
 function AccountCard({ children }: { children: ReactNode }) {
   const { t } = useT(accountSettingsMessages);
   return (
@@ -116,6 +210,7 @@ export function AccountSettingsView({ account }: { account: AccountInfo }) {
       <div className="space-y-3">
         <p className="text-sm text-muted">{t('signedInAs', { email: account.email })}</p>
         {account.mode === 'local' ? <PasswordForm /> : <p className="text-sm">{t('oidcNote')}</p>}
+        {account.isAdmin ? <RegistrationToggle /> : null}
         {account.identities.length > 0 ? (
           <div>
             <h3 className="mb-1 text-sm font-medium">{t('identities.heading')}</h3>
