@@ -89,6 +89,11 @@ export interface SyncLinked {
   readonly actualAmountCents: number | null;
   /** True when the Actual schedule is a range (amount is the midpoint). */
   readonly isRange: boolean;
+  /**
+   * Unlinked items on the missing side that pass the candidate rule against the surviving side at
+   * the user's tolerance, best name score first. Empty when orphan is null or orphaned_both.
+   */
+  relinkCandidateIds: string[];
 }
 
 /** One IGNORED_WALLOS or IGNORED_ACTUAL row. Display fields are null when the item is gone. */

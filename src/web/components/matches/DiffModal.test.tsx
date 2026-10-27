@@ -54,6 +54,7 @@ const result = (): SyncCheckResult => ({
       wallosAmountCents: 1299,
       actualAmountCents: 1499,
       isRange: false,
+      relinkCandidateIds: [],
     },
   ],
   ignored: [],

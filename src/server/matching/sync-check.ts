@@ -17,6 +17,7 @@ import type {
   SyncLinked,
   SyncMismatch,
   SyncMismatchFields,
+  SyncOrphanKind,
   SyncOrphaned,
   SyncUnmappable,
   UnmappableReason,
@@ -259,6 +260,38 @@ export function isCandidate(
   };
 }
 
+/**
+ * Relink candidates for an orphaned row: unlinked items on the missing side that pass isCandidate
+ * against the surviving side, best name score first. Empty for linked rows and orphaned_both.
+ * Pure; uses only the sides the sync check already read.
+ */
+function relinkCandidateIdsOf(
+  orphan: SyncOrphanKind | null,
+  survivorWallos: Side | undefined,
+  survivorActual: Side | undefined,
+  unlinkedWallos: readonly Side[],
+  unlinkedActual: readonly Side[],
+  tolerance: number,
+): string[] {
+  if (orphan === 'orphaned_wallos' && survivorActual !== undefined) {
+    const found: SyncCandidate[] = [];
+    for (const w of unlinkedWallos) {
+      const c = isCandidate(w, survivorActual, tolerance);
+      if (c !== null) found.push(c);
+    }
+    return found.sort((x, y) => y.nameScore - x.nameScore).map((c) => c.wallosId);
+  }
+  if (orphan === 'orphaned_actual' && survivorWallos !== undefined) {
+    const found: SyncCandidate[] = [];
+    for (const a of unlinkedActual) {
+      const c = isCandidate(survivorWallos, a, tolerance);
+      if (c !== null) found.push(c);
+    }
+    return found.sort((x, y) => y.nameScore - x.nameScore).map((c) => c.actualScheduleId);
+  }
+  return [];
+}
+
 export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise<SyncCheckResult> {
   const repo = deps.repoFor(userId);
   const tolerance = repo.getConfig()?.tolerancePercent ?? DEFAULT_TOLERANCE_PERCENT;
@@ -363,17 +396,19 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
       const classification = classByPair.get(`${row.wallosId}\u0000${row.actualScheduleId}`);
       const w = wallosSides.get(row.wallosId);
       const a = actualSides.get(row.actualScheduleId);
+      const orphan = classification === undefined || classification === 'linked' ? null : classification;
       linked.push({
         matchId: row.id,
         wallosId: row.wallosId,
         actualScheduleId: row.actualScheduleId,
         status: nextStatusById.get(row.id) ?? row.status,
-        orphan: classification === undefined || classification === 'linked' ? null : classification,
+        orphan,
         wallosName: w?.name ?? null,
         actualName: a?.name ?? null,
         wallosAmountCents: w?.amountCents ?? null,
         actualAmountCents: a?.amountCents ?? null,
         isRange: a?.isRange ?? false,
+        relinkCandidateIds: relinkCandidateIdsOf(orphan, w, a, unlinkedWallos, unlinkedActual, tolerance),
       });
     } else {
       const side = row.status === 'IGNORED_WALLOS' ? 'wallos' : 'actual';

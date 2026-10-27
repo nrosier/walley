@@ -35,6 +35,7 @@ const linkedRow = (over: Partial<SyncLinked>): SyncLinked => ({
   wallosAmountCents: 1299,
   actualAmountCents: 1299,
   isRange: false,
+  relinkCandidateIds: [],
   ...over,
 });
 

@@ -182,6 +182,7 @@ describe('runSyncCheck', () => {
         wallosAmountCents: -1250,
         actualAmountCents: -1250,
         isRange: false,
+        relinkCandidateIds: [],
       },
     ]);
     expect(res.ignored).toEqual([]);
@@ -258,6 +259,48 @@ describe('runSyncCheck', () => {
     expect((await runSyncCheck(t.deps, t.userId)).mismatches).toHaveLength(1);
   });
 
+  it('lists relink candidates for an orphaned survivor, best name score first', async () => {
+    // Actual 'Netflix' survivor (orphaned_wallos): two unlinked Wallos items match it by amount.
+    const t = setup(
+      [sub(1, 'Netflix Premium', '12.50'), sub(2, 'Netflix', '12.50'), sub(3, 'Hulu', '12.50')],
+      [sched('a1', 'Netflix', -1250)],
+    );
+    const m = t.repo.insertMatch({ wallosId: 'gone-w', actualScheduleId: 'a1', status: 'LINKED' });
+    const res = await runSyncCheck(t.deps, t.userId);
+    const row = res.linked.find((l) => l.matchId === m.id);
+    expect(row?.orphan).toBe('orphaned_wallos');
+    // 'Netflix' scores 1 and 'Netflix Premium' scores 2/3; 'Hulu' scores 0 and is left out.
+    expect(row?.relinkCandidateIds).toEqual(['2', '1']);
+  });
+
+  it('lists relink candidates for an orphaned_actual row from the unlinked Actual schedules', async () => {
+    const t = setup([sub(1, 'Netflix', '12.50')], [sched('a1', 'Netflix', -1250), sched('a2', 'Netflix Family', -1250)]);
+    const m = t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'gone-a', status: 'LINKED' });
+    const res = await runSyncCheck(t.deps, t.userId);
+    const row = res.linked.find((l) => l.matchId === m.id);
+    expect(row?.orphan).toBe('orphaned_actual');
+    expect(row?.relinkCandidateIds).toEqual(['a1', 'a2']);
+  });
+
+  it('excludes a relink candidate outside the user tolerance', async () => {
+    const t = setup([sub(1, 'Netflix', '10.00')], [sched('a1', 'Netflix', -1100)]);
+    const m = t.repo.insertMatch({ wallosId: 'gone-w', actualScheduleId: 'a1', status: 'LINKED' });
+    const row = () => runSyncCheck(t.deps, t.userId).then((r) => r.linked.find((l) => l.matchId === m.id));
+    expect((await row())?.relinkCandidateIds).toEqual([]);
+    t.repo.upsertConfig({ tolerancePercent: 10 });
+    expect((await row())?.relinkCandidateIds).toEqual(['1']);
+  });
+
+  it('returns no relink candidates for a non-orphan row or orphaned_both', async () => {
+    const t = setup([sub(1, 'Netflix', '12.50')], [sched('a1', 'Netflix', -1250), sched('a9', 'Netflix', -1250)]);
+    const linkedRow = t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED' });
+    const both = t.repo.insertMatch({ wallosId: 'gone-w', actualScheduleId: 'gone-a', status: 'LINKED' });
+    const res = await runSyncCheck(t.deps, t.userId);
+    const byId = new Map(res.linked.map((l) => [l.matchId, l]));
+    expect(byId.get(linkedRow.id)).toMatchObject({ orphan: null, relinkCandidateIds: [] });
+    expect(byId.get(both.id)).toMatchObject({ orphan: 'orphaned_both', relinkCandidateIds: [] });
+  });
+
   it('marks each orphan kind in linked with null fields for the missing side', async () => {
     const t = setup([sub(1, 'Netflix', '12.50')], [sched('a2', 'Spotify', -999)]);
     const mw = t.repo.insertMatch({ wallosId: 'gone-w', actualScheduleId: 'a2', status: 'LINKED' });
@@ -276,6 +319,7 @@ describe('runSyncCheck', () => {
       wallosAmountCents: null,
       actualAmountCents: -999,
       isRange: false,
+      relinkCandidateIds: [],
     });
     expect(byId.get(ma.id)).toEqual({
       matchId: ma.id,
@@ -288,6 +332,7 @@ describe('runSyncCheck', () => {
       wallosAmountCents: -1250,
       actualAmountCents: null,
       isRange: false,
+      relinkCandidateIds: [],
     });
     expect(byId.get(mb.id)).toMatchObject({
       orphan: 'orphaned_both',

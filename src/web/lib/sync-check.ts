@@ -186,6 +186,7 @@ export function applyLink(result: SyncCheckResult, wallosId: string, actualSched
         wallosAmountCents: wallos?.amountCents ?? null,
         actualAmountCents: actual?.amountCents ?? null,
         isRange: actual?.isRange ?? false,
+        relinkCandidateIds: [],
       },
     ],
   };
