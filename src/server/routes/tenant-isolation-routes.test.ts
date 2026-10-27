@@ -257,8 +257,35 @@ const CASES: Record<string, Case> = {
             mode: 'local',
             hasPassword: false,
             identities: [],
+            isAdmin: false,
           });
         },
+      },
+    ],
+  },
+  'GET /api/admin/registration': {
+    why: 'server-wide setting, not tenant data; A is not in ADMIN_EMAILS, so the answer is 403 with no state',
+    attempts: () => [
+      {
+        method: 'GET',
+        url: '/api/admin/registration',
+        status: [403],
+        error: 'forbidden',
+        verify: (res) => {
+          expect(res.json()).toEqual({ error: 'forbidden' });
+        },
+      },
+    ],
+  },
+  'PUT /api/admin/registration': {
+    why: 'server-wide setting; a non-admin gets 403 and the stored toggle does not change',
+    attempts: () => [
+      {
+        method: 'PUT',
+        url: '/api/admin/registration',
+        payload: { enabled: true },
+        status: [403],
+        error: 'forbidden',
       },
     ],
   },

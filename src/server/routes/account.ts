@@ -15,6 +15,7 @@ import {
   createRateLimiter,
   ipRateKey,
 } from '../auth/rate-limit.js';
+import { isAdminEmail } from '../auth/registration.js';
 import type { AppDatabase } from '../db/client.js';
 import { createUserRepo } from '../db/repo.js';
 
@@ -24,6 +25,8 @@ export const PASSWORD_CHANGE_MAX_PER_IP = 100;
 export interface AccountRoutesOptions {
   readonly db: AppDatabase;
   readonly mode: AuthMode;
+  /** Lowercased ADMIN_EMAILS, for the `isAdmin` flag. Default none. */
+  readonly adminEmails?: readonly string[];
   /** Clock in ms for the password-change limiter. Defaults to `Date.now`. */
   readonly now?: () => number;
 }
@@ -35,6 +38,7 @@ export interface AccountRoutesOptions {
  */
 export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (app, opts) => {
   const { db, mode } = opts;
+  const adminEmails = opts.adminEmails ?? [];
 
   // Own limiter, per user id and per client IP. The current password is checked here, so this
   // route is a password-guessing oracle for a stolen session. The per-user limit (5 per 15 min)
@@ -74,6 +78,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
       mode,
       hasPassword: repo.getPasswordHash() !== null,
       identities: repo.listIdentities(),
+      isAdmin: isAdminEmail(adminEmails, email),
     };
   });
 

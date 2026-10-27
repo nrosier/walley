@@ -100,6 +100,7 @@ async function main(): Promise<void> {
         mode: config.authMode,
         secureCookies: config.secureCookies,
         allowRegistration: config.allowRegistration,
+        adminEmails: config.adminEmails,
         publicOrigin: config.publicOrigin,
         ...(oidc === undefined ? {} : { oidc }),
         ...(mailer === undefined ? {} : { mailer }),

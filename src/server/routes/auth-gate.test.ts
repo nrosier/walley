@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuthMode } from '../../lib/auth-mode.js';
 import { buildApp } from '../app.js';
 import { hashToken } from '../auth/sessions.js';
+import { setRegistrationEnabled } from '../db/app-settings.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../db/client.js';
 import { createUserRepo } from '../db/repo.js';
 import { createCapturingMailer } from '../mail/index.js';
@@ -31,6 +32,7 @@ function setup(mode: AuthMode, allowRegistration: boolean, db?: AppDatabase) {
   if (db === undefined) {
     dbs.push(database);
   }
+  setRegistrationEnabled(database, true);
   const clock = makeClock();
   const app = buildApp({
     db: database,
@@ -53,6 +55,7 @@ describe('default-deny', () => {
     async (mode, allowRegistration) => {
       const database = openDatabase(':memory:');
       dbs.push(database);
+      setRegistrationEnabled(database, true);
       const clock = makeClock();
       const app = buildApp({
         db: database,

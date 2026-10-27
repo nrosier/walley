@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../app.js';
 import { hashPassword, verifyAgainstDummy } from '../auth/passwords.js';
 import { createUser } from '../db/accounts.js';
+import { setRegistrationEnabled } from '../db/app-settings.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../db/client.js';
 import { createCapturingMailer } from '../mail/index.js';
 import { makeClock, type TestClock } from '../test/auth-helpers.js';
@@ -41,6 +42,7 @@ afterEach(async () => {
 
 function setup(opts: { trustProxy?: string[]; allowRegistration?: boolean } = {}): Ctx {
   const db = openDatabase(':memory:');
+  setRegistrationEnabled(db, true);
   const clock = makeClock();
   const app = buildApp({
     db,

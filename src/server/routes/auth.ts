@@ -26,6 +26,7 @@ import {
   verifyPassword,
   warmDummyHash,
 } from '../auth/passwords.js';
+import { isRegistrationOpen } from '../auth/registration.js';
 import { createUser } from '../db/accounts.js';
 import type { AppDatabase } from '../db/client.js';
 import { findEmailVerification, findLoginByEmail } from '../db/lookup.js';
@@ -98,9 +99,10 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
     warmDummyHash();
   }
 
+  // The effective state: the ALLOW_REGISTRATION ceiling AND the admin toggle, read per request.
   app.get('/auth/config', { config: { public: true } }, () => ({
     mode,
-    registration: allowRegistration,
+    registration: isRegistrationOpen(db, allowRegistration),
   }));
 
   app.get('/auth/me', (request, reply) => {
@@ -173,7 +175,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
     });
 
     local.post('/auth/register', { config: { public: true, localAuthOnly: true } }, async (request, reply) => {
-      if (!allowRegistration) {
+      if (!isRegistrationOpen(db, allowRegistration)) {
         return reply.code(403).send({ error: 'registration_disabled' });
       }
       // Order: mode gate (hook), registration gate, IP, then email, all before any credential work.

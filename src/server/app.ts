@@ -16,6 +16,7 @@ import type { OidcRuntime } from './auth/oidc.js';
 import type { AppDatabase } from './db/client.js';
 import type { Mailer } from './mail/index.js';
 import { accountRoutes } from './routes/account.js';
+import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import type { CreateDeps } from './integrations/create.js';
 import { healthRoutes } from './routes/health.js';
@@ -31,8 +32,13 @@ import { syncRoutes } from './routes/sync.js';
 export interface AuthOptions {
   readonly mode: AuthMode;
   readonly secureCookies: boolean;
-  /** Whether new accounts may be created. Reported by GET /api/auth/config. */
+  /**
+   * The ALLOW_REGISTRATION ceiling. New accounts may be created only when this is true AND the
+   * admin toggle stored in app_settings is on (it starts off). GET /api/auth/config reports both.
+   */
   readonly allowRegistration: boolean;
+  /** Lowercased ADMIN_EMAILS: who may change the registration toggle. Default none. */
+  readonly adminEmails?: readonly string[];
   /** The origin browsers use to reach Walley, without a trailing slash. The CSRF hook compares Origin to it. */
   readonly publicOrigin: string;
   /** Clock in ms since the epoch. Tests inject one; the default is Date.now. */
@@ -233,7 +239,14 @@ function registerAuth(
       now: clock,
       oidc: auth.mode === 'oidc' ? (auth.oidc ?? null) : null,
     });
-    void app.register(accountRoutes, { prefix: '/api', db, mode: auth.mode, now: clock });
+    const adminEmails = auth.adminEmails ?? [];
+    void app.register(accountRoutes, { prefix: '/api', db, mode: auth.mode, now: clock, adminEmails });
+    void app.register(adminRoutes, {
+      prefix: '/api',
+      db,
+      allowRegistration: auth.allowRegistration,
+      adminEmails,
+    });
     if (settings !== undefined) {
       void app.register(settingsWallosRoutes, { prefix: '/api', deps: settings });
       void app.register(settingsMatchingRoutes, { prefix: '/api', deps: { repoFor: settings.repoFor } });

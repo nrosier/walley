@@ -3,6 +3,7 @@ import type { AuthMethod, AuthMode } from '../../lib/auth-mode.js';
 import { buildApp } from '../app.js';
 import { CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE, createSession } from '../auth/sessions.js';
 import { createUser } from '../db/accounts.js';
+import { setRegistrationEnabled } from '../db/app-settings.js';
 import { openDatabase, type AppDatabase } from '../db/client.js';
 import { createCapturingMailer, type Mailer } from '../mail/index.js';
 
@@ -46,6 +47,10 @@ export function makeAuthApp(
     mode?: AuthMode;
     secureCookies?: boolean;
     allowRegistration?: boolean;
+    /** The stored admin toggle. Defaults to on, so `allowRegistration: true` means registration is open. */
+    registrationEnabled?: boolean;
+    /** Lowercased ADMIN_EMAILS. Default none. */
+    adminEmails?: readonly string[];
     clock?: TestClock;
     mailer?: Mailer;
     /** Receives the app's request log. Omitted: logging is off. */
@@ -54,6 +59,7 @@ export function makeAuthApp(
 ): AuthApp {
   const db = openDatabase(':memory:');
   const clock = opts.clock ?? makeClock();
+  setRegistrationEnabled(db, opts.registrationEnabled ?? true);
   const publicOrigin = 'http://localhost:3000';
   const allowRegistration = opts.allowRegistration ?? false;
   // Local registration needs a mailer; tests that do not care get a capturing one.
@@ -67,6 +73,7 @@ export function makeAuthApp(
       mode: opts.mode ?? 'local',
       secureCookies: opts.secureCookies ?? false,
       allowRegistration,
+      ...(opts.adminEmails === undefined ? {} : { adminEmails: opts.adminEmails }),
       publicOrigin,
       now: () => clock.now(),
       ...(mailer === undefined ? {} : { mailer }),

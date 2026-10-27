@@ -75,7 +75,7 @@ describe('account routes', () => {
     const res = await injectAs(t.app, signIn(t, id), { method: 'GET', url: '/api/account' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      email: 'a@example.test', mode: 'local', hasPassword: true,
+      email: 'a@example.test', mode: 'local', hasPassword: true, isAdmin: false,
       identities: [{ issuer: 'https://idp.test', subject: 'sub-1' }],
     });
     expect(res.body).not.toContain('argon2');
