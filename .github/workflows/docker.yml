@@ -56,7 +56,7 @@ jobs:
               .all("table", "sqlite_%")
               .map((r) => r.name)
               .join(",");
-            const expected = "__drizzle_migrations,matches,sessions,user_configs,user_identities,users";
+            const expected = "__drizzle_migrations,email_verifications,matches,overwrite_snapshots,sessions,subscription_overrides,user_configs,user_identities,users";
             if (tables !== expected) throw new Error("unexpected tables: " + tables);
             const journal = JSON.parse(fs.readFileSync("dist/server/db/migrations/meta/_journal.json", "utf8"));
             const count = db.prepare("SELECT count(*) AS n FROM __drizzle_migrations").get().n;

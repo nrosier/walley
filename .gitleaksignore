@@ -1,0 +1,9 @@
+# src/server/routes/settings-wallos.test.ts (test fixture, generic-api-key, old commit)
+56938c914d6d3c86633690bc7d0d1959ff9939e2:src/server/routes/settings-wallos.test.ts:generic-api-key:10
+56938c914d6d3c86633690bc7d0d1959ff9939e2:src/server/routes/settings-wallos.test.ts:generic-api-key:11
+# src/server/routes/secrets-response.test.ts (test fixture, generic-api-key, old commit)
+bfd80b2ad01053be0c4ced16d97bea437093a51a:src/server/routes/secrets-response.test.ts:generic-api-key:9
+bfd80b2ad01053be0c4ced16d97bea437093a51a:src/server/routes/secrets-response.test.ts:generic-api-key:10
+# src/server/integrations/wallos/client.test.ts (test fixture, generic-api-key, old commit)
+baacd9e7ddd52cb142dadc541f5039af73debbe7:src/server/integrations/wallos/client.test.ts:generic-api-key:16
+baacd9e7ddd52cb142dadc541f5039af73debbe7:src/server/integrations/wallos/client.test.ts:generic-api-key:17
