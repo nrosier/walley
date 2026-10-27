@@ -134,6 +134,36 @@ describe('POST /api/auth/register', () => {
     expect(env.mailer.sent).toHaveLength(0);
   });
 
+  it('toggle off, ADMIN_EMAILS email, ceiling on: 202 and one mail', async () => {
+    const env = setup(true);
+    const res = await register(env, ADMIN);
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toEqual({ status: 'verification_sent' });
+    expect(env.mailer.sent).toHaveLength(1);
+  });
+
+  it('toggle off, email not in ADMIN_EMAILS: 403 registration_disabled', async () => {
+    const env = setup(true);
+    const res = await register(env, 'other@example.test');
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'registration_disabled' });
+    expect(env.mailer.sent).toHaveLength(0);
+  });
+
+  it('toggle off, ADMIN_EMAILS email, ceiling off: 403 registration_disabled', async () => {
+    const env = setup(false);
+    const res = await register(env, ADMIN);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'registration_disabled' });
+    expect(env.mailer.sent).toHaveLength(0);
+    expect(userCount(env)).toBe(0);
+  });
+
+  it('toggle off: the ADMIN_EMAILS match is case-insensitive', async () => {
+    const env = setup(true);
+    expect((await register(env, '  Admin@Example.TEST ')).statusCode).toBe(202);
+  });
+
   it('refusal comes before the rate limit: more attempts than the IP limit are all 403, never 429', async () => {
     const env = setup(true);
     for (let i = 0; i < SIGN_IN_MAX_PER_IP + 5; i += 1) {

@@ -227,6 +227,7 @@ function registerAuth(
       db,
       mode: auth.mode,
       allowRegistration: auth.allowRegistration,
+      adminEmails: auth.adminEmails ?? [],
       secureCookies: auth.secureCookies,
       now: clock,
       mailer: auth.mailer ?? NO_MAILER,

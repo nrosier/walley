@@ -14,7 +14,7 @@ Cookie sessions and password hashing for the API. Pure server code: no routes li
 | `rate-limit.test.ts` | Window, Retry-After, sweep, IP eviction and email refuse-at-cap tests for the limiter | Changing `rate-limit.ts` |
 | `oidc.ts` | `OidcProvider` (`start()` returns `{ url, flow }`, `finish(currentUrl, flow)` returns verified claims), `OidcRuntime`, `OidcError` (fixed message, `stage`, `code`, no cause), `createOidcProvider(config, fetchImpl?)`: `openid-client` with lazy cached discovery, PKCE S256, `client_secret_basic`, `enableNonRepudiationChecks` (ID token signature), exact `iss` check, `allowInsecureRequests` only for an http loopback issuer | Changing the provider protocol, client auth or claim checks |
 | `oidc-provider.test.ts` | Provider tests against in-memory responses signed with `jose`: state, nonce, aud, iss, exp, signature, sub, PKCE, provider errors, discovery retry | Changing `oidc.ts` |
-| `registration.ts` | `isRegistrationOpen(db, ceiling)` (ceiling AND the stored `app_settings` toggle, read per call; used by the register route, `/api/auth/config` and OIDC first login) and `isAdminEmail(adminEmails, email)` | Registration rules, admin check |
+| `registration.ts` | `isRegistrationOpen(db, ceiling)` (ceiling AND the stored `app_settings` toggle, read per call; used by the register route, `/api/auth/config` and OIDC first login) `canRegisterEmail(db, ceiling, adminEmails, email)` (the register route's gate: open, or ceiling on and the email is an admin) and `isAdminEmail(adminEmails, email)` | Registration rules, admin check |
 | `sessions.test.ts` | Cookie attribute, hashing, expiry, idle, touch and mode-mismatch tests | Changing `sessions.ts` |
 
 ## Rules

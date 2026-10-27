@@ -92,7 +92,7 @@ Registration is off by default. `ALLOW_REGISTRATION` is a ceiling: new accounts 
 3. Open the app, choose **Create an account**, and enter your email and password. The page says to check your email whatever the outcome, and it does not sign you in.
 4. Open the verification link in the email. It opens `/verify-email` with the token in the URL fragment, and the page sends it to `POST /api/auth/verify-email`. The link expires after 24 hours.
 5. Sign in with your email and password.
-6. To close registration again, an admin (an email in `ADMIN_EMAILS`) turns it off in Settings under **Account / Security**. No restart is needed. Known gap (issue 118): the stored setting starts off and only a signed-in admin can change it, so on a database with no accounts steps 1 to 3 are refused with `registration_disabled` until the owner decides how the first admin account is created.
+6. To close registration again, an admin (an email in `ADMIN_EMAILS`) turns it off in Settings under **Account / Security**. No restart is needed. To create the first admin on a fresh install, register with an email listed in `ADMIN_EMAILS`: while `ALLOW_REGISTRATION=true`, those emails may register even when the stored setting is off.
 
 ### OIDC provider setup
 

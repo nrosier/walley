@@ -14,3 +14,17 @@ export function isRegistrationOpen(db: AppDatabase, ceiling: boolean): boolean {
 export function isAdminEmail(adminEmails: readonly string[], email: string): boolean {
   return adminEmails.includes(email.trim().toLowerCase());
 }
+
+/**
+ * Whether this email may register right now: registration is open, or the ceiling is on and the
+ * email is in ADMIN_EMAILS (so a fresh install can always create its first admin). The ceiling
+ * is never bypassed. Used by the register route.
+ */
+export function canRegisterEmail(
+  db: AppDatabase,
+  ceiling: boolean,
+  adminEmails: readonly string[],
+  email: string,
+): boolean {
+  return isRegistrationOpen(db, ceiling) || (ceiling && isAdminEmail(adminEmails, email));
+}

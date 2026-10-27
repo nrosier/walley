@@ -26,7 +26,7 @@ import {
   verifyPassword,
   warmDummyHash,
 } from '../auth/passwords.js';
-import { isRegistrationOpen } from '../auth/registration.js';
+import { canRegisterEmail, isRegistrationOpen } from '../auth/registration.js';
 import { createUser } from '../db/accounts.js';
 import type { AppDatabase } from '../db/client.js';
 import { findEmailVerification, findLoginByEmail } from '../db/lookup.js';
@@ -42,6 +42,8 @@ export interface AuthRoutesOptions {
   readonly db: AppDatabase;
   readonly mode: AuthMode;
   readonly allowRegistration: boolean;
+  /** Lowercased ADMIN_EMAILS: these may register while the stored toggle is off. Default none. */
+  readonly adminEmails?: readonly string[];
   readonly secureCookies: boolean;
   /** Clock in ms since the epoch, the same one the session hook uses. */
   readonly now: () => number;
@@ -93,6 +95,7 @@ function isUniqueViolation(error: unknown): boolean {
 
 export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opts) => {
   const { db, mode, allowRegistration, secureCookies, now, mailer, publicOrigin } = opts;
+  const adminEmails = opts.adminEmails ?? [];
 
   if (mode === 'local') {
     // Pay for the dummy hash now, not on the first unknown-email login.
@@ -175,7 +178,9 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
     });
 
     local.post('/auth/register', { config: { public: true, localAuthOnly: true } }, async (request, reply) => {
-      if (!isRegistrationOpen(db, allowRegistration)) {
+      const body: unknown = request.body;
+      const submitted = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).email : undefined;
+      if (!canRegisterEmail(db, allowRegistration, adminEmails, typeof submitted === 'string' ? submitted : '')) {
         return reply.code(403).send({ error: 'registration_disabled' });
       }
       // Order: mode gate (hook), registration gate, IP, then email, all before any credential work.
