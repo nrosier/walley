@@ -330,6 +330,7 @@ describe('error mapping', () => {
     ['write sync', new ActualWriteError(SECRET_MESSAGE, 'sync_failed'), 502, 'actual_sync_failed'],
     ['session none', new ActualSessionError('not_configured'), 400, 'actual_not_configured'],
     ['session open', new ActualSessionError('open_failed'), 502, 'actual_unavailable'],
+    ['session timed out', new ActualSessionError('timed_out'), 502, 'actual_unavailable'],
     ['wallos auth', new WallosAuthError(), 502, 'wallos_auth_failed'],
     ['wallos rejected', new WallosRejectedError(SECRET_MESSAGE), 502, 'wallos_rejected'],
     ['wallos http', new WallosHttpError(500), 502, 'wallos_unavailable'],

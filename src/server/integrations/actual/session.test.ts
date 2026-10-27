@@ -39,7 +39,7 @@ import { deriveUserKey } from '../../crypto/keys.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../../db/client.js';
 import { createUserRepo } from '../../db/repo.js';
 import { createUser } from '../../db/accounts.js';
-import { ActualSessionError, withActualServer, withActualSession } from './session.js';
+import { ACTUAL_CALL_TIMEOUT_MS, ActualSessionError, withActualServer, withActualSession } from './session.js';
 
 const APP_SECRET = 'a'.repeat(40);
 const PW_A = 'password-of-user-a-xyz';
@@ -265,5 +265,72 @@ describe('withActualServer', () => {
       'init', 'shutdown',
       'init', 'download', 'shutdown',
     ]);
+  });
+});
+
+describe('call timeout', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Runs real I/O (mkdir) and fake timers forward until `done` is true. */
+  async function tickUntil(done: () => boolean): Promise<void> {
+    for (let i = 0; i < 1000 && !done(); i += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+      await vi.advanceTimersByTimeAsync(5);
+    }
+  }
+
+  it('rejects a call that never resolves after the timeout, then serves the next user', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    addUser('u1', PW_A);
+    addUser('u2', PW_B);
+    let hungStarted = false;
+    const hung = withActualSession(deps(), idOf('u1'), () => {
+      hungStarted = true;
+      return new Promise<never>(() => undefined);
+    });
+    const hungResult = hung.catch((e: unknown) => e);
+    const next = withActualSession(deps(), idOf('u2'), async () => 'u2 served');
+    let nextDone = false;
+    void next.finally(() => {
+      nextDone = true;
+    });
+
+    await tickUntil(() => hungStarted);
+    expect(hungStarted).toBe(true);
+    await vi.advanceTimersByTimeAsync(ACTUAL_CALL_TIMEOUT_MS - 10);
+    expect(nextDone).toBe(false);
+    expect(calls).toEqual(['init', 'download']);
+
+    await vi.advanceTimersByTimeAsync(10);
+    const error = await hungResult;
+    expect(error).toBeInstanceOf(ActualSessionError);
+    expect((error as ActualSessionError).code).toBe('timed_out');
+    expect((error as Error).message).not.toContain(PW_A);
+
+    await tickUntil(() => nextDone);
+    await expect(next).resolves.toBe('u2 served');
+    expect(calls).toEqual(['init', 'download', 'shutdown', 'init', 'download', 'shutdown']);
+  });
+
+  it('times out a hung init and still shuts down', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    addUser('u1', PW_A);
+    const actual = await import('@actual-app/api');
+    vi.mocked(actual.init).mockImplementationOnce(() => {
+      calls.push('init');
+      return new Promise<never>(() => undefined);
+    });
+    let settled = false;
+    const result = withActualServer(deps(), idOf('u1'), async () => 1).catch((e: unknown) => e);
+    void result.finally(() => {
+      settled = true;
+    });
+    await tickUntil(() => calls.includes('init'));
+    await vi.advanceTimersByTimeAsync(ACTUAL_CALL_TIMEOUT_MS);
+    await tickUntil(() => settled);
+    expect(await result).toMatchObject({ code: 'timed_out' });
+    expect(calls).toEqual(['init', 'shutdown']);
   });
 });
