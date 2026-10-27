@@ -11,7 +11,7 @@
  * (`findEmailVerification`), whose result is then bound here as the user id.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
 import type { AuthMethod } from '../../lib/auth-mode.js';
 import { parseRate } from '../../lib/currency-convert.js';
 import type { MatchStatus } from '../../lib/match-status.js';
@@ -50,6 +50,21 @@ export interface MatchInput {
 }
 
 export type MatchPatch = Partial<MatchInput>;
+
+/** The row state a caller last saw. A null id means that side must be absent. */
+export interface MatchSideExpectation {
+  wallosId: string | null;
+  actualScheduleId: string | null;
+  status: MatchStatus;
+}
+
+/** The side to repoint, its new item id, and the hashes to store with the repointed row. */
+export interface MatchSideReplacement {
+  side: 'wallos' | 'actual';
+  itemId: string;
+  lastKnownWallosHash: string | null;
+  lastKnownActualHash: string | null;
+}
 
 export interface SubscriptionOverrideInput {
   /** Decimal string on the Wallos scale, for example "1.0850". Must parse as a positive rate. */
@@ -157,6 +172,19 @@ export interface UserRepo {
   insertMatch(input: MatchInput): MatchRow;
   /** Returns false when the id is not this user's; that row is not touched. */
   updateMatch(id: string, patch: MatchPatch): boolean;
+  /**
+   * Compare-and-set repoint of one side of a match, in a single UPDATE. Changes the row only when
+   * its id, this user's ownership, both current item ids and its status (LINKED or MISMATCH_DETECTED,
+   * equal to `expected.status`) still match, and `next.itemId` is not already on another row of this
+   * user. Sets the status to LINKED and both hashes. The match id is unchanged. Returns true only
+   * when the row changed; every refusal (stale ids, IGNORED_*, another user's row, clash) returns
+   * false and writes nothing.
+   */
+  replaceMatchSide(
+    matchId: string,
+    expected: MatchSideExpectation,
+    next: MatchSideReplacement,
+  ): boolean;
   /** Returns false when the id is not this user's; that row is not touched. */
   deleteMatch(id: string): boolean;
   /** Returns this user's override for a Wallos subscription, or undefined. */
@@ -497,6 +525,38 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
         return getMatch(id) !== undefined;
       }
       return db.update(matches).set(values).where(ownMatch(id)).run().changes > 0;
+    },
+
+    replaceMatchSide(matchId, expected, next) {
+      const itemColumn = next.side === 'wallos' ? 'wallos_id' : 'actual_schedule_id';
+      const itemValues = next.side === 'wallos' ? { wallosId: next.itemId } : { actualScheduleId: next.itemId };
+      // Another row of this user already holds the new item id. The unique index would also refuse it,
+      // but this keeps the refusal a false return instead of a thrown error.
+      const clash = sql`exists (select 1 from matches as other where other.user_id = ${userId} and other.id <> ${matchId} and other.${sql.raw(itemColumn)} = ${next.itemId})`;
+      const result = db
+        .update(matches)
+        .set({
+          ...itemValues,
+          status: 'LINKED',
+          lastKnownWallosHash: next.lastKnownWallosHash,
+          lastKnownActualHash: next.lastKnownActualHash,
+        })
+        .where(
+          and(
+            ownMatch(matchId),
+            expected.wallosId === null
+              ? isNull(matches.wallosId)
+              : eq(matches.wallosId, expected.wallosId),
+            expected.actualScheduleId === null
+              ? isNull(matches.actualScheduleId)
+              : eq(matches.actualScheduleId, expected.actualScheduleId),
+            eq(matches.status, expected.status),
+            inArray(matches.status, ['LINKED', 'MISMATCH_DETECTED']),
+            sql`not ${clash}`,
+          ),
+        )
+        .run();
+      return result.changes === 1;
     },
 
     deleteMatch(id) {

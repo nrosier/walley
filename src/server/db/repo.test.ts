@@ -278,6 +278,107 @@ describe('createUserRepo', () => {
     });
   });
 
+  describe('replaceMatchSide', () => {
+    const hashes = { lastKnownWallosHash: 'hw', lastKnownActualHash: 'ha' };
+    const linked = { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' } as const;
+
+    it('repoints the expected side, keeps the match id, and stores the hashes', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch(linked);
+      const ok = repo.replaceMatchSide(
+        row.id,
+        { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' },
+        { side: 'actual', itemId: 'a2', ...hashes },
+      );
+      expect(ok).toBe(true);
+      const after = repo.getMatch(row.id);
+      expect(after?.id).toBe(row.id);
+      expect(after?.wallosId).toBe('w1');
+      expect(after?.actualScheduleId).toBe('a2');
+      expect(after?.status).toBe('LINKED');
+      expect(after?.lastKnownWallosHash).toBe('hw');
+      expect(after?.lastKnownActualHash).toBe('ha');
+    });
+
+    it('returns false and changes nothing when the expected ids are stale', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch(linked);
+      const before = repo.getMatch(row.id);
+      expect(
+        repo.replaceMatchSide(
+          row.id,
+          { wallosId: 'wOld', actualScheduleId: 'a1', status: 'LINKED' },
+          { side: 'actual', itemId: 'a2', ...hashes },
+        ),
+      ).toBe(false);
+      expect(
+        repo.replaceMatchSide(
+          row.id,
+          { wallosId: 'w1', actualScheduleId: 'a1', status: 'MISMATCH_DETECTED' },
+          { side: 'actual', itemId: 'a2', ...hashes },
+        ),
+      ).toBe(false);
+      expect(repo.getMatch(row.id)).toEqual(before);
+    });
+
+    it('returns false for an IGNORED row and changes nothing', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch({ wallosId: 'w1', actualScheduleId: null, status: 'IGNORED_WALLOS' });
+      const before = repo.getMatch(row.id);
+      expect(
+        repo.replaceMatchSide(
+          row.id,
+          { wallosId: 'w1', actualScheduleId: null, status: 'IGNORED_WALLOS' },
+          { side: 'actual', itemId: 'a9', ...hashes },
+        ),
+      ).toBe(false);
+      expect(repo.getMatch(row.id)).toEqual(before);
+    });
+
+    it('returns false when the new id clashes with another row of this user, but not with another user', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch(linked);
+      repo.insertMatch({ wallosId: 'w2', actualScheduleId: 'a2', status: 'LINKED' });
+      createUserRepo(db, otherId).insertMatch({ wallosId: 'w3', actualScheduleId: 'a3', status: 'LINKED' });
+      const before = repo.getMatch(row.id);
+      expect(
+        repo.replaceMatchSide(
+          row.id,
+          { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' },
+          { side: 'wallos', itemId: 'w2', ...hashes },
+        ),
+      ).toBe(false);
+      expect(
+        repo.replaceMatchSide(
+          row.id,
+          { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' },
+          { side: 'actual', itemId: 'a2', ...hashes },
+        ),
+      ).toBe(false);
+      expect(repo.getMatch(row.id)).toEqual(before);
+      expect(
+        repo.replaceMatchSide(
+          row.id,
+          { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' },
+          { side: 'wallos', itemId: 'w3', ...hashes },
+        ),
+      ).toBe(true);
+    });
+
+    it('user B cannot repoint user A row, and A row is unchanged', () => {
+      const row = createUserRepo(db, userId).insertMatch(linked);
+      const before = createUserRepo(db, userId).getMatch(row.id);
+      expect(
+        createUserRepo(db, otherId).replaceMatchSide(
+          row.id,
+          { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' },
+          { side: 'actual', itemId: 'a2', ...hashes },
+        ),
+      ).toBe(false);
+      expect(createUserRepo(db, userId).getMatch(row.id)).toEqual(before);
+    });
+  });
+
   describe('linkIdentity', () => {
     it('links once, then returns false for a duplicate (issuer, subject)', () => {
       expect(createUserRepo(db, userId).linkIdentity('https://idp', 's1')).toBe(true);
