@@ -89,7 +89,7 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(8);
+    expect(journalCount(db)).toBe(9);
     const row = db.$client
       .prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u1'")
       .get() as { v: number | null };
@@ -122,9 +122,34 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(8);
+    expect(journalCount(db)).toBe(9);
     const row = db.$client.prepare('SELECT failed_attempts AS n FROM email_verifications').get() as { n: number };
     expect(row.n).toBe(0);
+  });
+
+  it('adds first_seen_next_payment on 0008 and keeps existing match rows with a null anchor', () => {
+    const old = join(dir, 'old-migrations-0007');
+    cpSync(MIGRATIONS_FOLDER, old, { recursive: true });
+    const journalPath = join(old, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: unknown[] };
+    journal.entries = journal.entries.slice(0, 8);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const path = join(dir, 'walley.db');
+    const raw = new Database(path);
+    migrate(drizzle(raw), { migrationsFolder: old });
+    raw.prepare('INSERT INTO users (id, email, key_salt, created_at) VALUES (?, ?, ?, ?)').run('u1', 'a@example.com', Buffer.alloc(32, 1), 1234);
+    raw
+      .prepare("INSERT INTO matches (id, user_id, wallos_id, actual_schedule_id, status, last_known_wallos_hash) VALUES ('m1', 'u1', 'w1', 'a1', 'LINKED', 'hw')")
+      .run();
+    raw.close();
+
+    const db = track(openDatabase(path));
+    expect(journalCount(db)).toBe(9);
+    const row = db.$client
+      .prepare("SELECT first_seen_next_payment AS f, last_known_wallos_hash AS h, status FROM matches WHERE id = 'm1'")
+      .get() as { f: string | null; h: string; status: string };
+    expect(row).toEqual({ f: null, h: 'hw', status: 'LINKED' });
   });
 
   it('is idempotent and keeps data across a second open', () => {
@@ -133,11 +158,11 @@ describe('openDatabase', () => {
     first.$client
       .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
       .run('u1', 'a@example.com', Buffer.alloc(32, 1));
-    expect(journalCount(first)).toBe(8);
+    expect(journalCount(first)).toBe(9);
     closeDatabase(first);
 
     const second = track(openDatabase(path));
-    expect(journalCount(second)).toBe(8);
+    expect(journalCount(second)).toBe(9);
     const users = second.$client.prepare('SELECT id FROM users').all() as { id: string }[];
     expect(users).toEqual([{ id: 'u1' }]);
   });

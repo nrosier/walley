@@ -278,6 +278,42 @@ describe('createUserRepo', () => {
     });
   });
 
+  describe('first seen next payment anchor', () => {
+    const linked = { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' } as const;
+
+    it('starts null, is written once, and a later write does not overwrite it', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch(linked);
+      expect(row.firstSeenNextPayment).toBeNull();
+      expect(repo.setFirstSeenNextPayment(row.id, '2026-11-03')).toBe(true);
+      expect(repo.setFirstSeenNextPayment(row.id, '2026-12-03')).toBe(false);
+      expect(repo.getMatch(row.id)?.firstSeenNextPayment).toBe('2026-11-03');
+    });
+
+    it('is stored on insert and untouched by updateMatch', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch({ ...linked, firstSeenNextPayment: '2026-11-03' });
+      repo.updateMatch(row.id, { status: 'MISMATCH_DETECTED', firstSeenNextPayment: '2030-01-01' } as MatchPatch);
+      expect(repo.getMatch(row.id)?.firstSeenNextPayment).toBe('2026-11-03');
+    });
+
+    it("never writes another user's row", () => {
+      const row = createUserRepo(db, userId).insertMatch(linked);
+      expect(createUserRepo(db, otherId).setFirstSeenNextPayment(row.id, '2026-11-03')).toBe(false);
+      expect(createUserRepo(db, userId).getMatch(row.id)?.firstSeenNextPayment).toBeNull();
+    });
+
+    it('replaceMatchSide on the Wallos side replaces the anchor, on the Actual side keeps it', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch({ ...linked, firstSeenNextPayment: '2026-11-03' });
+      const hashes = { lastKnownWallosHash: 'hw', lastKnownActualHash: 'ha' };
+      repo.replaceMatchSide(row.id, linked, { side: 'actual', itemId: 'a2', ...hashes });
+      expect(repo.getMatch(row.id)?.firstSeenNextPayment).toBe('2026-11-03');
+      repo.replaceMatchSide(row.id, { ...linked, actualScheduleId: 'a2' }, { side: 'wallos', itemId: 'w2', ...hashes });
+      expect(repo.getMatch(row.id)?.firstSeenNextPayment).toBeNull();
+    });
+  });
+
   describe('replaceMatchSide', () => {
     const hashes = { lastKnownWallosHash: 'hw', lastKnownActualHash: 'ha' };
     const linked = { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' } as const;

@@ -135,6 +135,8 @@ export const matches = sqliteTable(
     status: text('status', { enum: MATCH_STATUSES }).notNull(),
     lastKnownWallosHash: text('last_known_wallos_hash'),
     lastKnownActualHash: text('last_known_actual_hash'),
+    /** First next_payment seen for a Wallos item with no start_date (YYYY-MM-DD); the stable date in its hash. Null until seen. */
+    firstSeenNextPayment: text('first_seen_next_payment'),
   },
   (t) => [
     uniqueIndex('matches_user_wallos_unique').on(t.userId, t.wallosId),

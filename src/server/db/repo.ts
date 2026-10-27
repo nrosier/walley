@@ -47,9 +47,11 @@ export interface MatchInput {
   status: MatchStatus;
   lastKnownWallosHash?: string | null;
   lastKnownActualHash?: string | null;
+  /** Anchor for a Wallos item with no start_date. Set only on insert or by setFirstSeenNextPayment, never by updateMatch. */
+  firstSeenNextPayment?: string | null;
 }
 
-export type MatchPatch = Partial<MatchInput>;
+export type MatchPatch = Partial<Omit<MatchInput, 'firstSeenNextPayment'>>;
 
 /** The row state a caller last saw. A null id means that side must be absent. */
 export interface MatchSideExpectation {
@@ -64,6 +66,8 @@ export interface MatchSideReplacement {
   itemId: string;
   lastKnownWallosHash: string | null;
   lastKnownActualHash: string | null;
+  /** Used only when `side` is `wallos`: the new item's anchor (null if none). The old item's anchor is never kept. */
+  firstSeenNextPayment?: string | null;
 }
 
 export interface SubscriptionOverrideInput {
@@ -170,6 +174,11 @@ export interface UserRepo {
   findMatchByItem(side: 'wallos' | 'actual', itemId: string): MatchRow | undefined;
   getMatch(id: string): MatchRow | undefined;
   insertMatch(input: MatchInput): MatchRow;
+  /**
+   * Writes the first-seen next payment anchor of this user's match, only while it is still null.
+   * Returns true when written; false when the row is not this user's or already has an anchor.
+   */
+  setFirstSeenNextPayment(id: string, date: string): boolean;
   /** Returns false when the id is not this user's; that row is not touched. */
   updateMatch(id: string, patch: MatchPatch): boolean;
   /**
@@ -510,13 +519,29 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
     insertMatch(input) {
       const id = randomUUID();
       db.insert(matches)
-        .values({ ...pickMatchValues(input), status: input.status, id, userId })
+        .values({
+          ...pickMatchValues(input),
+          firstSeenNextPayment: input.firstSeenNextPayment ?? null,
+          status: input.status,
+          id,
+          userId,
+        })
         .run();
       const row = getMatch(id);
       if (row === undefined) {
         throw new Error('match missing after insert');
       }
       return row;
+    },
+
+    setFirstSeenNextPayment(id, date) {
+      return (
+        db
+          .update(matches)
+          .set({ firstSeenNextPayment: date })
+          .where(and(ownMatch(id), isNull(matches.firstSeenNextPayment)))
+          .run().changes === 1
+      );
     },
 
     updateMatch(id, patch) {
@@ -540,6 +565,7 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
           status: 'LINKED',
           lastKnownWallosHash: next.lastKnownWallosHash,
           lastKnownActualHash: next.lastKnownActualHash,
+          ...(next.side === 'wallos' ? { firstSeenNextPayment: next.firstSeenNextPayment ?? null } : {}),
         })
         .where(
           and(

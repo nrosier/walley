@@ -49,6 +49,17 @@ describe('prepareActualScheduleInput', () => {
     expect(out.amountCents).toBe(-880);
   });
 
+  it('keeps the same start date for a start_date item whatever next_payment says', () => {
+    const a = prepareActualScheduleInput(mapWallosSubscription(RAW), CURRENCIES, 'EUR');
+    const b = prepareActualScheduleInput(
+      mapWallosSubscription({ ...RAW, next_payment: '2026-12-03' }),
+      CURRENCIES,
+      'EUR',
+    );
+    expect(b.startDate).toBe(a.startDate);
+    expect(b.startDate).toBe('2026-01-03');
+  });
+
   it('falls back to next_payment when start_date is absent', () => {
     const sub = { ...mapWallosSubscription(RAW), startDate: null };
     expect(prepareActualScheduleInput(sub, CURRENCIES, 'EUR').startDate).toBe('2026-11-03');

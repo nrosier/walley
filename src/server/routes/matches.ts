@@ -159,6 +159,7 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
           status: 'LINKED',
           lastKnownWallosHash: wallosHash,
           lastKnownActualHash: actualHash,
+          firstSeenNextPayment: w.anchorDate ?? null,
         });
       } catch (error: unknown) {
         // A concurrent request linked or ignored one of the items after the check above.

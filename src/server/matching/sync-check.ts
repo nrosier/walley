@@ -49,6 +49,12 @@ export type {
 
 export interface Side extends SyncItem {
   readonly fields: MatchFieldsInput | null;
+  /**
+   * Wallos sides only: the next_payment date used as the hash start date because Wallos has no
+   * start_date and no anchor was stored yet. A caller that creates the match row stores it as the
+   * anchor. Null or absent when start_date or a stored anchor was used.
+   */
+  readonly anchorDate?: string | null;
 }
 
 function mapActual(
@@ -137,14 +143,20 @@ function mismatchFieldsOf(f: MatchFieldsInput): SyncMismatchFields {
 }
 
 /**
- * Read-only: lists Wallos subscriptions and currencies and reads Actual schedules and the base
- * currency, then maps every item to its current comparable fields. Shared by the Sync Check and
- * by ignore_diff so both hash exactly the same values.
+ * Lists Wallos subscriptions and currencies and reads Actual schedules and the base currency,
+ * then maps every item to its current comparable fields. Shared by the Sync Check and by
+ * ignore_diff so both hash exactly the same values. The only write is the H14 anchor: a match row
+ * whose Wallos item has no start_date and no anchor yet gets its first next_payment stored.
  */
 export async function readCurrentSides(
   deps: Pick<SyncCheckDeps, 'wallos' | 'repoFor' | 'withActual'>,
   userId: string,
 ): Promise<CurrentSides> {
+  const repo = deps.repoFor(userId);
+  const anchorRows = new Map<string, { id: string; anchor: string | null }>();
+  for (const row of repo.listMatches()) {
+    if (row.wallosId !== null) anchorRows.set(row.wallosId, { id: row.id, anchor: row.firstSeenNextPayment });
+  }
   const overrides = new Map(
     deps.repoFor(userId).listSubscriptionOverrides().map((o) => [o.wallosSubscriptionId, o.rate]),
   );
@@ -167,8 +179,26 @@ export async function readCurrentSides(
     let side: Side;
     try {
       const mapped = mapWallosSubscription(raw, currencyMap);
-      const prepared = prepareActualScheduleInput(mapped, currencies, baseCode, overrides.get(id));
+      // H14: with no start_date the hash uses the first next_payment seen (stored on the match
+      // row) so it does not move each cycle. A row with no anchor yet gets it written here; an
+      // item with no row uses next_payment for this read and the link step stores it.
+      let anchorDate: string | null = null;
+      let source = mapped;
+      if (mapped.startDate === null) {
+        const known = anchorRows.get(id);
+        if (known?.anchor != null) {
+          source = { ...mapped, startDate: known.anchor };
+        } else if (mapped.nextPaymentDate !== null) {
+          if (known !== undefined && repo.setFirstSeenNextPayment(known.id, mapped.nextPaymentDate)) {
+            known.anchor = mapped.nextPaymentDate;
+          } else {
+            anchorDate = mapped.nextPaymentDate;
+          }
+        }
+      }
+      const prepared = prepareActualScheduleInput(source, currencies, baseCode, overrides.get(id));
       side = {
+        anchorDate,
         id,
         name: mapped.name,
         amountCents: prepared.amountCents,

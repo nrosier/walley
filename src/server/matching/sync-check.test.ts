@@ -33,7 +33,7 @@ const sched = (id: string, name: string, amount: Sched['amount'], patterns?: unk
   ...(patterns === undefined ? {} : { patterns }),
 });
 
-function setup(subs: Sub[], schedules: Sched[]) {
+function setup(subs: Sub[], schedules: Sched[], dates: { start_date: string | null; next_payment: string } = { start_date: '2026-01-01', next_payment: '2026-11-03' }) {
   const db = openDatabase(':memory:');
   dbs.push(db);
   const userId = makeUser(db);
@@ -42,7 +42,7 @@ function setup(subs: Sub[], schedules: Sched[]) {
     repoFor: (id) => createUserRepo(db, id),
     wallos: {
       listSubscriptions: async () =>
-        subs.map((s) => ({ ...s, cycle: 3, frequency: 1, next_payment: '2026-11-03', start_date: '2026-01-01', inactive: 0 })),
+        subs.map((s) => ({ ...s, cycle: 3, frequency: 1, next_payment: dates.next_payment, ...(dates.start_date === null ? {} : { start_date: dates.start_date }), inactive: 0 })),
       listCurrencies: async () => [
         { id: 1, code: 'EUR', rate: '1' },
         { id: 2, code: 'USD', rate: '2' },
@@ -61,7 +61,7 @@ function setup(subs: Sub[], schedules: Sched[]) {
           })),
       } as never),
   };
-  return { db, userId, deps, repo: createUserRepo(db, userId) };
+  return { db, userId, deps, dates, repo: createUserRepo(db, userId) };
 }
 
 const fields = (name: string, cents: number): MatchFieldsInput => ({
@@ -458,6 +458,74 @@ describe('runSyncCheck', () => {
     const t = setup([sub(1, 'Netflix', '12.50', 99)], []);
     const res = await runSyncCheck(t.deps, t.userId);
     expect(res.unmappable).toEqual([{ side: 'wallos', id: '1', name: 'Netflix', reason: 'mapping_failed' }]);
+  });
+});
+
+describe('H14 first seen next payment anchor', () => {
+  const dated = (start: string): string => hashMatchFields({ ...fields('Netflix', -1250), startDate: start }) ?? '';
+  const pair = (t: ReturnType<typeof setup>, userRepo = t.repo) =>
+    userRepo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED' });
+
+  it('keeps the Wallos hash across two cycles when next payment moves and start_date is absent', async () => {
+    const dates = { start_date: null, next_payment: '2026-11-03' };
+    const t = setup([sub(1, 'Netflix', '12.50')], [sched('a1', 'Netflix', -1250)], dates);
+    const m = pair(t);
+    await runSyncCheck(t.deps, t.userId);
+    const first = t.repo.getMatch(m.id);
+    expect(first?.firstSeenNextPayment).toBe('2026-11-03');
+    expect(first?.lastKnownWallosHash).toBe(dated('2026-11-03'));
+    dates.next_payment = '2026-12-03';
+    const res = await runSyncCheck(t.deps, t.userId);
+    const second = t.repo.getMatch(m.id);
+    expect(second?.lastKnownWallosHash).toBe(first?.lastKnownWallosHash);
+    expect(second?.firstSeenNextPayment).toBe('2026-11-03');
+    expect(res.mismatches).toEqual([]);
+  });
+
+  it('does not touch an item that has a start_date', async () => {
+    const dates = { start_date: '2026-01-01', next_payment: '2026-11-03' };
+    const t = setup([sub(1, 'Netflix', '12.50')], [sched('a1', 'Netflix', -1250)], dates);
+    const m = pair(t);
+    await runSyncCheck(t.deps, t.userId);
+    dates.next_payment = '2026-12-03';
+    await runSyncCheck(t.deps, t.userId);
+    const row = t.repo.getMatch(m.id);
+    expect(row?.firstSeenNextPayment).toBeNull();
+    expect(row?.lastKnownWallosHash).toBe(h('Netflix', -1250));
+  });
+
+  it('writes the anchor once and never overwrites a stored one', async () => {
+    const dates = { start_date: null, next_payment: '2026-11-03' };
+    const t = setup([sub(1, 'Netflix', '12.50')], [sched('a1', 'Netflix', -1250)], dates);
+    const m = t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED', firstSeenNextPayment: '2026-10-03' });
+    await runSyncCheck(t.deps, t.userId);
+    dates.next_payment = '2027-01-03';
+    await runSyncCheck(t.deps, t.userId);
+    expect(t.repo.getMatch(m.id)?.firstSeenNextPayment).toBe('2026-10-03');
+    expect(t.repo.getMatch(m.id)?.lastKnownWallosHash).toBe(dated('2026-10-03'));
+  });
+
+  it('reports the first-read date as anchorDate for an item with no row and writes nothing', async () => {
+    const t = setup([sub(1, 'Netflix', '12.50')], [], { start_date: null, next_payment: '2026-11-03' });
+    const { readCurrentSides } = await import('./sync-check.js');
+    const cur = await readCurrentSides(t.deps, t.userId);
+    expect(cur.wallosSides.get('1')?.anchorDate).toBe('2026-11-03');
+    expect(cur.wallosSides.get('1')?.fields?.startDate).toBe('2026-11-03');
+    expect(t.repo.listMatches()).toEqual([]);
+  });
+
+  it("user B's sync never reads or writes user A's anchor", async () => {
+    const dates = { start_date: null, next_payment: '2026-12-03' };
+    const t = setup([sub(1, 'Netflix', '12.50')], [sched('a1', 'Netflix', -1250)], dates);
+    const a = pair(t);
+    t.repo.setFirstSeenNextPayment(a.id, '2026-10-03');
+    const userB = makeUser(t.db, 'b@example.com');
+    const repoB = createUserRepo(t.db, userB);
+    const b = repoB.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED' });
+    await runSyncCheck(t.deps, userB);
+    expect(repoB.getMatch(b.id)?.firstSeenNextPayment).toBe('2026-12-03');
+    expect(repoB.getMatch(b.id)?.lastKnownWallosHash).toBe(dated('2026-12-03'));
+    expect(t.repo.getMatch(a.id)?.firstSeenNextPayment).toBe('2026-10-03');
   });
 });
 

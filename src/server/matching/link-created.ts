@@ -38,12 +38,14 @@ export async function linkCreatedPair(
 
   let wallosHash: string | null = null;
   let actualHash: string | null = null;
+  let anchor: string | null = null;
   try {
     const current = await readCurrentSides(deps, userId);
     const w = current.wallosSides.get(wallosId)?.fields ?? null;
     const a = current.actualSides.get(actualScheduleId)?.fields ?? null;
     wallosHash = w === null ? null : hashMatchFields(w);
     actualHash = a === null ? null : hashMatchFields(a);
+    anchor = current.wallosSides.get(wallosId)?.anchorDate ?? null;
   } catch {
     // Keep the null hashes; see above.
   }
@@ -54,6 +56,7 @@ export async function linkCreatedPair(
       status: 'LINKED',
       lastKnownWallosHash: wallosHash,
       lastKnownActualHash: actualHash,
+      firstSeenNextPayment: anchor,
     });
     return { matchId: row.id, matchCreated: true };
   } catch (error: unknown) {

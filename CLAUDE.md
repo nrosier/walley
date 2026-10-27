@@ -80,7 +80,7 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 - `user_identities`: `id`, `user_id` (FK), `issuer`, `subject`, `created_at`; unique `(issuer, subject)` and unique `(user_id, issuer)`
 - `sessions`: `id` (primary key, 64 characters; the SHA-256 of the session token), `user_id` (FK, cascade on delete, indexed), `auth_method` (`local` | `oidc`), `csrf_hash` (64 characters; the SHA-256 of the CSRF token), `created_at`, `last_seen_at`, `expires_at`
 - `user_configs`: `user_id` (FK), `wallos_url`, `wallos_api_key_enc`, `actual_url`, `actual_password_enc`, `actual_sync_key_enc`, `actual_budget_id`, `tolerance_percent`
-- `matches`: `id`, `user_id` (FK), `wallos_id`, `actual_schedule_id`, `status` (`LINKED` | `IGNORED_WALLOS` | `IGNORED_ACTUAL`), `last_known_wallos_hash`, `last_known_actual_hash`
+- `matches`: `id`, `user_id` (FK), `wallos_id`, `actual_schedule_id`, `status` (`LINKED` | `IGNORED_WALLOS` | `IGNORED_ACTUAL`), `last_known_wallos_hash`, `last_known_actual_hash`, `first_seen_next_payment` (nullable date string; for a Wallos item with no `start_date`, the first `next_payment` Walley saw, written once and used as the start date in the hash so the hash does not move each cycle; null for items with a start date and for rows from before the column)
 
 ### 2. Actual Budget Integration (`@actual-app/api`)
 - Executes server-side in Node.js per request/user session.
