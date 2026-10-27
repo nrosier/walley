@@ -104,16 +104,29 @@ describe('locale resolution', () => {
 });
 
 describe('LanguageSelect', () => {
-  it('renders a labelled select with both languages and the scope label', () => {
+  it('renders a labelled custom dropdown (globe, current language, chevron), not a native select', () => {
     const html = renderToStaticMarkup(
       <I18nProvider initialLocale="nl">
         <LanguageSelect />
       </I18nProvider>,
     );
-    expect(html).toContain('<label');
-    expect(html).toContain('Taal');
-    expect(html).toContain('Dit apparaat');
-    expect(html).toContain('English');
+    // The only <select> is Radix's hidden form input (aria-hidden, name="locale"); the visible control is the combobox.
+    expect(html).toMatch(/<select aria-hidden="true"[^>]*name="locale"/);
+    expect(html.match(/<select(?![^>]*aria-hidden)/g)).toBeNull();
+    expect(html).toContain('role="combobox"');
+    expect(html).toContain('Taal (Dit apparaat)');
+    expect(html).toContain('aria-labelledby=');
     expect(html).toContain('Nederlands');
+    expect(html).toContain('lucide-globe');
+    expect(html).toContain('lucide-chevron-down');
+    expect(html).toContain('name="locale"');
+  });
+  it('shows the English label in en', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider initialLocale="en">
+        <LanguageSelect />
+      </I18nProvider>,
+    );
+    expect(html).toContain('Language (This device)');
   });
 });

@@ -13,7 +13,7 @@ Walley is a sync and matching tool for Wallos subscriptions and Actual Budget (A
 | Sync Dashboard | `/sync` (also `/`) | Run a sync check, see unlinked Wallos subscriptions (left) and AB schedules (right), search, show ignored items, Link, Create in AB / Create in Wallos, Ignore, Restore |
 | Matches | `/matches` | See linked pairs with status, spot a Mismatch, open the diff modal, show ignored items, Restore |
 | Settings | `/settings` | Configure Wallos (URL, API key, Test connection), Actual Budget (URL, password / sync key, load and pick budget, see base currency), matching tolerance, language, password (local mode) or OIDC info |
-| Login | `/login` | Sign in by email and password (local mode) or by a single "Sign in with SSO" button (OIDC mode); register when enabled |
+| Login | `/login` | Sign in by email and password (local mode) or by a single "Log in with OpenID" button (OIDC mode); register when enabled |
 | Verify email | `/verify-email#token=...` | See verifying, success, invalid, disabled, missing or error, and reach sign-in |
 | Create modals | opened from Dashboard rows | Review pre-filled values, adjust, create the item in the other system |
 | Diff modal | opened from a Mismatch row in Matches | See drifted fields side by side, choose Overwrite Wallos, Overwrite Actual, Ignore Diff or Unlink |
@@ -169,7 +169,7 @@ Page order (guide section 5): h1, context line, inputs and primary action, statu
 ### 3.6 Login and Verify email
 
 - Centered single card (max width 24rem), title "Walley", one h1.
-- Local mode: email, password, Sign in (primary), optional Register toggle. OIDC mode: only "Sign in with SSO". Never both (CLAUDE.md).
+- Local mode: email, password, Sign in (primary), optional Register toggle. OIDC mode: only "Log in with OpenID". Never both (CLAUDE.md).
 - Errors (`?error=` codes, invalid_credentials, local_auth_disabled, no linked account) show in a `role="alert"` region above the primary button; entered email is preserved, password cleared.
 - Register success always shows the same "verification sent" notice (server returns the same 202 for every outcome; do not reveal whether the email exists).
 - Verify email: one status panel (verifying, success, invalid, disabled, missing, error) plus a sign-in link. Verifying uses `role="status"`; failures use `role="alert"`.

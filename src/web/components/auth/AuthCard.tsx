@@ -26,8 +26,8 @@ export function AuthCard({ title, children, className }: AuthCardProps) {
   const { t } = useT(authCardMessages);
   return (
     <main id="main" className="flex min-h-dvh items-center justify-center p-4">
-      <div className={cn('w-full max-w-sm space-y-4 rounded-lg border bg-card p-6 shadow-overlay', className)}>
-        <div className="flex flex-col items-center gap-3">
+      <div className={cn('w-full max-w-sm space-y-3 rounded-lg border bg-card p-6 shadow-overlay', className)}>
+        <div className="flex flex-col items-center gap-2">
           <span
             aria-hidden="true"
             data-slot="brand-mark"

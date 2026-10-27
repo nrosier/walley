@@ -27,7 +27,8 @@ describe('LoginPage local mode', () => {
     const html = render('local', false);
     expect(html).toContain('type="email"');
     expect(html).toContain('type="password"');
-    expect(html).not.toContain('Sign in with SSO');
+    expect(html).not.toContain('Log in with OpenID');
+    expect(html).not.toContain('or connect with SSO');
     expect(html).not.toContain('/api/auth/oidc/login');
   });
 
@@ -41,9 +42,10 @@ describe('LoginPage local mode', () => {
 });
 
 describe('LoginPage oidc mode', () => {
-  it('renders only the SSO link with no password field', () => {
+  it('renders only the SSO divider and link with no password field', () => {
     const html = render('oidc', false);
-    expect(html).toContain('Sign in with SSO');
+    expect(html).toContain('Log in with OpenID');
+    expect(html).toContain('or connect with SSO');
     expect(html).toContain('href="/api/auth/oidc/login"');
     expect(html).not.toContain('type="password"');
     expect(html).not.toContain('type="email"');
@@ -171,6 +173,26 @@ describe('LoginPage layout', () => {
     expect(html.indexOf('data-slot="alert"')).toBeGreaterThan(-1);
     expect(html.indexOf('data-slot="alert"')).toBeLessThan(html.indexOf('type="submit"'));
     expect(loginSrc.indexOf("failure !== null ? (")).toBeLessThan(loginSrc.indexOf('<button type="submit"'));
+  });
+  it('renders the language picker once, at the base of the card below a divider, in both modes', () => {
+    for (const mode of ['local', 'oidc'] as const) {
+      const html = render(mode, true);
+      expect(html.match(/Language \(This device\)/g), mode).toHaveLength(1);
+      expect(html.match(/name="locale"/g), mode).toHaveLength(1);
+      expect(html).toMatch(/class="border-t pt-4"/);
+      expect(html.indexOf('Language (This device)')).toBeGreaterThan(html.lastIndexOf('<button type="submit"'));
+    }
+  });
+  it('puts Create an account below the submit button and the SSO divider above the SSO link', () => {
+    const local = render('local', true);
+    expect(local.indexOf('Create an account')).toBeGreaterThan(local.indexOf('type="submit"'));
+    const oidc = render('oidc', false);
+    expect(oidc.indexOf('or connect with SSO')).toBeLessThan(oidc.indexOf('/api/auth/oidc/login'));
+  });
+  it('has the SSO strings in en and nl', () => {
+    expect(loginPageMessages.en.sso).toBe('Log in with OpenID');
+    expect(loginPageMessages.en.ssoDivider).toBe('or connect with SSO');
+    expect(loginPageMessages.nl.ssoDivider).not.toBe(loginPageMessages.en.ssoDivider);
   });
   it('has a "Signing in..." busy label in en and nl, used while the request runs', () => {
     expect(loginPageMessages.en.signingIn).toBe('Signing in...');

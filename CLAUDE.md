@@ -64,7 +64,7 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 - `ALLOW_REGISTRATION` means "new accounts may be created": through the register form in local mode (which also needs mail configured), and through a first OIDC login in OIDC mode.
 - Linking keeps the user's `id` and `key_salt`, so their encrypted credentials stay readable. An unverified local account has its password hash cleared when it is linked (the hash may belong to whoever registered the address first); a verified account keeps its hash, which is not used while OIDC mode is on.
 - Secure, HTTP-only cookie-based session management (`user_id` bound). Each session records how it was created (`local` or `oidc`). A session whose method does not match the current mode is treated as no session.
-- The login page reads the mode from the public `GET /api/auth/config` endpoint. It shows either the email and password form or a single "Sign in with SSO" button, never both.
+- The login page reads the mode from the public `GET /api/auth/config` endpoint. It shows either the email and password form or a single "Log in with OpenID" button, never both.
 
 ### 2. Secrets Encryption (Per User)
 - Each user's Wallos API credentials, Actual Budget passwords, and sync keys must be stored in the database encrypted at rest using AES-256-GCM.

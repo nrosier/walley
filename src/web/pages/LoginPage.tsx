@@ -1,4 +1,5 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
+import { KeyRound } from 'lucide-react';
 import { AUTH_BUTTON, AUTH_INPUT, AuthCard } from '@/components/auth/AuthCard';
 import { Alert } from '@/components/ui/alert';
 import { errorText, LanguageSelect, useT, type Locale } from '@/i18n';
@@ -53,6 +54,15 @@ export interface LoginFormProps {
   initialRegistering?: boolean;
 }
 
+/** Base of the card: a subtle divider, then the one language picker. */
+function LanguageFooter() {
+  return (
+    <div className="border-t pt-4">
+      <LanguageSelect />
+    </div>
+  );
+}
+
 /** Renders the sign-in UI for a known auth mode. Local mode shows the password form; OIDC mode shows only SSO. */
 export function LoginForm({ config, errorCode, initialRegistering = false }: LoginFormProps) {
   const { t, errorText: errorFor, locale } = useT(loginPageMessages);
@@ -70,10 +80,16 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
     return (
       <AuthCard title={t('title')}>
         {pageError !== null ? <Alert variant="error">{pageError}</Alert> : null}
-        <a href="/api/auth/oidc/login" className={buttonClass}>
+        <div role="separator" className="flex items-center gap-3 text-xs text-muted">
+          <span aria-hidden="true" className="h-px flex-1 bg-border" />
+          <span>{t('ssoDivider')}</span>
+          <span aria-hidden="true" className="h-px flex-1 bg-border" />
+        </div>
+        <a href="/api/auth/oidc/login" className={`${buttonClass} gap-2`}>
+          <KeyRound className="size-4" aria-hidden="true" />
           {t('sso')}
         </a>
-        <LanguageSelect />
+        <LanguageFooter />
       </AuthCard>
     );
   }
@@ -184,7 +200,7 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
           {registering ? t('backToSignIn') : t('showRegister')}
         </button>
       ) : null}
-      <LanguageSelect />
+      <LanguageFooter />
     </AuthCard>
   );
 }
