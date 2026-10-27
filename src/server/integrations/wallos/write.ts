@@ -1,3 +1,4 @@
+import { DEFAULT_CURRENCY_EXPONENT } from '../../../lib/currency-exponent.js';
 import { fromActualCents } from '../../../lib/money.js';
 import {
   actualToWallos,
@@ -21,7 +22,7 @@ import {
  */
 export type WallosSubscriptionPayload = {
   readonly name: string;
-  /** Positive decimal in the subscription's currency, two places, e.g. "12.50". */
+  /** Positive decimal in the subscription's currency, with its minor-unit places: "12.50" (EUR), "1250" (JPY). */
   readonly price: string;
   readonly currency_id: string;
   /** 1 = days, 2 = weeks, 3 = months, 4 = years. */
@@ -37,7 +38,7 @@ export type WallosSubscriptionPayload = {
 /** A recurring subscription in the internal model, e.g. from an Actual schedule. */
 export interface RecurringSubscriptionInput {
   name: string;
-  /** Integer cents, negative for an expense (money.ts convention). */
+  /** Integer minor units of the currency, negative for an expense (money.ts convention). */
   priceCents: number;
   /** Wallos `currency_id`, as a string of digits. */
   currencyId: string;
@@ -83,11 +84,13 @@ function cycleFor(interval: WallosInterval): { cycle: number; frequency: number 
 
 /**
  * Pure. Builds the `add` form fields from an internal recurring subscription. Converts integer
- * cents back to a positive Wallos price. Throws WallosMappingError for any field it cannot
- * write. It never substitutes a default.
+ * minor units back to a positive Wallos price with `exponent` decimal places (the currency's
+ * minor units, currency-exponent.ts; 2 by default, 0 for JPY). Throws WallosMappingError for any
+ * field it cannot write. It never substitutes a default.
  */
 export function buildWallosSubscriptionPayload(
   input: RecurringSubscriptionInput,
+  exponent: number = DEFAULT_CURRENCY_EXPONENT,
 ): WallosSubscriptionPayload {
   const name = input.name.trim();
   if (name === '') {
@@ -101,8 +104,8 @@ export function buildWallosSubscriptionPayload(
   if (input.priceCents >= 0) {
     throw new WallosMappingError('invalid_price', 'price', 'price must be an expense (negative cents)');
   }
-  const amount = Math.abs(fromActualCents(input.priceCents));
-  const price = amount.toFixed(2);
+  const amount = Math.abs(fromActualCents(input.priceCents, exponent));
+  const price = amount.toFixed(exponent);
 
   if (!CURRENCY_ID_PATTERN.test(input.currencyId) || Number(input.currencyId) < 1) {
     throw new WallosMappingError('missing_field', 'currency_id', 'currency_id is required');

@@ -1,3 +1,4 @@
+import { currencyExponent } from '../../../lib/currency-exponent.js';
 import { toActualCents } from '../../../lib/money.js';
 import {
   wallosToActual,
@@ -43,8 +44,9 @@ export interface MappedWallosSubscription {
   wallosId: string;
   name: string;
   /**
-   * Price in the subscription's own currency, as integer cents. Negative, following the
-   * expense convention in money.ts. Base-currency conversion is not done here.
+   * Price in the subscription's own currency, as integer minor units of that currency (cents for
+   * EUR, whole yen for JPY; see currency-exponent.ts). Negative, following the expense convention
+   * in money.ts. Base-currency conversion is not done here.
    */
   priceCents: number;
   /** Wallos `currency_id`. The currency code is not in this payload, so it is not mapped. */
@@ -171,8 +173,15 @@ function parseActive(value: number | boolean): boolean {
 /**
  * Maps one documented Wallos subscription to the internal model. Pure: no I/O, no credentials.
  * Throws WallosMappingError for any field it cannot map. It never substitutes a default.
+ *
+ * `currencies` (the user's Wallos currency map) gives the price its currency's minor units, so a
+ * JPY price of 1250 maps to 1250 and a EUR price of 12.50 to 1250. Production callers must pass
+ * it; an id not in the map throws unknown_currency. Without it the price is read as two decimals.
  */
-export function mapWallosSubscription(raw: WallosSubscription): MappedWallosSubscription {
+export function mapWallosSubscription(
+  raw: WallosSubscription,
+  currencies?: WallosCurrencyMap,
+): MappedWallosSubscription {
   const name = requirePresent(raw, 'name');
   if (name.trim() === '') {
     throw new WallosMappingError('invalid_value', 'name', 'name must not be empty');
@@ -180,9 +189,11 @@ export function mapWallosSubscription(raw: WallosSubscription): MappedWallosSubs
 
   const priceRaw = requirePresent(raw, 'price');
   const amount = parsePrice(priceRaw);
-  const priceCents = toActualCents(amount, { expense: true });
 
   const currencyId = String(requirePresent(raw, 'currency_id'));
+  const exponent =
+    currencies === undefined ? undefined : currencyExponent(resolveCurrencyCode(currencies, currencyId));
+  const priceCents = toActualCents(amount, { expense: true, exponent });
 
   const interval = parseInterval(
     requirePresent(raw, 'cycle'),

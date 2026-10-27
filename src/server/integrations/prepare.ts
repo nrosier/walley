@@ -4,6 +4,7 @@
  * The caller must fetch the Wallos currency list once per sync run and pass it to every call.
  */
 import { convertPriceCents } from '../../lib/currency-convert.js';
+import { currencyExponent } from '../../lib/currency-exponent.js';
 import { resolveBaseConversion } from '../../lib/currency-prepare.js';
 import type { CreateScheduleInput } from './actual/write.js';
 import { buildCurrencyMap, resolveCurrencyCode, WallosMappingError } from './wallos/map.js';
@@ -26,7 +27,8 @@ export type OverrideRate = string | number | null | undefined;
 
 /**
  * Wallos subscription -> createActualSchedule fields. The amount is converted into the base
- * currency and stays negative (mapWallosSubscription already applied toActualCents with
+ * currency, from the subscription currency's minor units to the base currency's
+ * (currency-exponent.ts), and stays negative (mapWallosSubscription already applied toActualCents with
  * expense true). The start date is the Wallos start_date, or next_payment when it is absent.
  * Throws WallosMappingError (unknown_currency, or missing_field when both dates are absent) and
  * CurrencyConversionError (missing_rate, invalid_rate).
@@ -49,16 +51,22 @@ export function prepareActualScheduleInput(
   }
   return {
     name: subscription.name,
-    amountCents: convertPriceCents(subscription.priceCents, fromRate, baseRate),
+    amountCents: convertPriceCents(
+      subscription.priceCents,
+      fromRate,
+      baseRate,
+      currencyExponent(code),
+      currencyExponent(baseCode),
+    ),
     recurrence: subscription.recurrence,
     startDate,
   };
 }
 
 /**
- * Inverse direction (#30): `input.priceCents` is in the base currency (negative for an expense)
- * and is converted into the currency named by `input.currencyId` before building the Wallos
- * `add` payload. Throws WallosMappingError and CurrencyConversionError as above.
+ * Inverse direction (#30): `input.priceCents` is in the base currency's minor units (negative for
+ * an expense) and is converted into the minor units of the currency named by `input.currencyId`
+ * before building the Wallos `add` payload, whose price has that currency's decimal places. Throws WallosMappingError and CurrencyConversionError as above.
  */
 export function prepareWallosSubscriptionPayload(
   input: RecurringSubscriptionInput,
@@ -68,8 +76,18 @@ export function prepareWallosSubscriptionPayload(
 ): WallosSubscriptionPayload {
   const code = resolveCurrencyCode(buildCurrencyMap(currencies), input.currencyId);
   const { fromRate, baseRate } = resolveBaseConversion(currencies, code, baseCode, override);
-  return buildWallosSubscriptionPayload({
-    ...input,
-    priceCents: convertPriceCents(input.priceCents, baseRate, fromRate),
-  });
+  const exponent = currencyExponent(code);
+  return buildWallosSubscriptionPayload(
+    {
+      ...input,
+      priceCents: convertPriceCents(
+        input.priceCents,
+        baseRate,
+        fromRate,
+        currencyExponent(baseCode),
+        exponent,
+      ),
+    },
+    exponent,
+  );
 }

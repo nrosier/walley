@@ -59,17 +59,29 @@ export function selectRate(input: {
 }
 
 /**
- * Converts integer cents from one currency to another. The result is integer cents, rounded half
- * away from zero. The sign is kept, so an expense stays negative. Zero is never returned as -0.
+ * Converts integer minor units from one currency to another. The result is integer minor units of
+ * the target currency, rounded half away from zero. `fromExponent` and `toExponent` are the minor
+ * unit digits of each currency (currency-exponent.ts; 2 when omitted), so JPY 1250 (exponent 0)
+ * at equal rates becomes 125000 in a two-decimal currency. The sign is kept, so an expense stays
+ * negative. Zero is never returned as -0.
  */
-export function convertPriceCents(priceCents: number, fromRate: number, toRate: number): number {
+export function convertPriceCents(
+  priceCents: number,
+  fromRate: number,
+  toRate: number,
+  fromExponent = 2,
+  toExponent = 2,
+): number {
   if (!Number.isSafeInteger(priceCents)) {
     throw new CurrencyConversionError('invalid_amount', 'amount must be an integer number of cents');
   }
   const from = parseRate(fromRate);
   const to = parseRate(toRate);
 
-  const exact = (priceCents * to) / from;
+  const shift = toExponent - fromExponent;
+  // Multiply or divide by a whole power of ten; 10 ** -2 is not exact in binary.
+  const scaled = shift >= 0 ? priceCents * to * 10 ** shift : (priceCents * to) / 10 ** -shift;
+  const exact = scaled / from;
   // toPrecision(15) removes float noise from the product (for example 100.49999999999999 becomes
   // 100.5) so that exact halves round up in magnitude. Rates such as 1.1 are not exact in binary.
   const magnitude = Math.round(Number(Math.abs(exact).toPrecision(15)));

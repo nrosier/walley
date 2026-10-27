@@ -50,6 +50,15 @@ describe('convertPriceCents', () => {
     expect(convertPriceCents(-1250, 1.1, 1)).toBe(-1136);
   });
 
+  it('rescales between currencies with different minor units', () => {
+    // JPY 1250 (exponent 0) at JPY rate 160 per EUR is EUR 7.81 -> 781 cents.
+    expect(convertPriceCents(-1250, 160, 1, 0, 2)).toBe(-781);
+    // EUR 10.00 (1000 cents) at JPY rate 160 is JPY 1600.
+    expect(convertPriceCents(-1000, 1, 160, 2, 0)).toBe(-1600);
+    // Same currency, exponent 0 on both sides: unchanged.
+    expect(convertPriceCents(-1250, 1, 1, 0, 0)).toBe(-1250);
+  });
+
   it('never returns negative zero', () => {
     expect(Object.is(convertPriceCents(0, 1.1, 1), 0)).toBe(true);
     expect(Object.is(convertPriceCents(0, 1, 1), 0)).toBe(true);

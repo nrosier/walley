@@ -12,6 +12,7 @@
  */
 import type { APIScheduleEntity } from '@actual-app/api/models';
 import { actualToWallos, FrequencyMappingError } from '../../lib/frequency-mapper.js';
+import { currencyExponent } from '../../lib/currency-exponent.js';
 import { toActualCents } from '../../lib/money.js';
 import type { UserRepo } from '../db/repo.js';
 import { CreateFlowError, type CreateDeps } from '../integrations/create.js';
@@ -21,7 +22,7 @@ import {
   prepareActualScheduleInput,
   prepareWallosSubscriptionPayload,
 } from '../integrations/prepare.js';
-import { mapWallosSubscription } from '../integrations/wallos/map.js';
+import { buildCurrencyMap, mapWallosSubscription, resolveCurrencyCode } from '../integrations/wallos/map.js';
 import type { WallosSubscriptionUpdate } from '../integrations/wallos/write.js';
 import { hashMatchFields } from './hash.js';
 import { readCurrentSides } from './sync-check.js';
@@ -149,7 +150,9 @@ async function doOverwriteWallos(deps: OverwriteDeps, userId: string, match: Mat
   if (actual.baseCode === null) throw new CreateFlowError('base_currency_missing');
   const { amount, recurrence } = requireSingleAmountSchedule(actual.schedule);
 
-  const current = mapWallosSubscription(raw);
+  const currencyMap = buildCurrencyMap(currencies);
+  const current = mapWallosSubscription(raw, currencyMap);
+  const exponent = currencyExponent(resolveCurrencyCode(currencyMap, current.currencyId));
   const override = repo.getSubscriptionOverride(wallosId);
   // The subscription keeps its own currency; the Actual cents are converted into it.
   const desired = prepareWallosSubscriptionPayload(
@@ -169,8 +172,8 @@ async function doOverwriteWallos(deps: OverwriteDeps, userId: string, match: Mat
     override?.rate,
   );
 
-  const storedCents = toActualCents(Number(raw.price), { expense: true });
-  const desiredCents = toActualCents(Number(desired.price), { expense: true });
+  const storedCents = toActualCents(Number(raw.price), { expense: true, exponent });
+  const desiredCents = toActualCents(Number(desired.price), { expense: true, exponent });
   const changed: { -readonly [K in keyof WallosSubscriptionUpdate]: WallosSubscriptionUpdate[K] } = {
     next_payment: desired.next_payment,
   };
@@ -220,7 +223,7 @@ async function doOverwriteActual(deps: OverwriteDeps, userId: string, match: Mat
     if (baseCode === null) throw new CreateFlowError('base_currency_missing');
     const { amount, recurrence } = requireSingleAmountSchedule(schedule);
 
-    const desired = prepareActualScheduleInput(mapWallosSubscription(raw), currencies, baseCode, override?.rate);
+    const desired = prepareActualScheduleInput(mapWallosSubscription(raw, buildCurrencyMap(currencies)), currencies, baseCode, override?.rate);
     const fields: Partial<APIScheduleEntity> = {};
     if (desired.name !== schedule.name) fields.name = desired.name;
     if (desired.amountCents !== amount) fields.amount = desired.amountCents;

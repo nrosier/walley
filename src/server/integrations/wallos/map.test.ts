@@ -104,7 +104,8 @@ describe('saved Wallos subscriptions response fixture', () => {
       nextPaymentDate: '2027-03-01', startDate: '2024-03-01', active: true,
     },
     {
-      wallosId: '103', name: 'Sample Meal Box', priceCents: -120000, currency: 'JPY',
+      // JPY has no minor units, so the Wallos price 1200 is 1200 yen, not 120000.
+      wallosId: '103', name: 'Sample Meal Box', priceCents: -1200, currency: 'JPY',
       interval: { type: 'weekly', every: 2 }, recurrence: { frequency: 'weekly', interval: 2 },
       nextPaymentDate: '2026-11-03', startDate: '2025-06-02', active: true,
     },
@@ -123,7 +124,7 @@ describe('saved Wallos subscriptions response fixture', () => {
       const sub = subs[i];
       if (!sub) throw new Error(`fixture is missing subscription ${String(i)}`);
       const { currency, ...rest } = want;
-      const mapped = mapWallosSubscription(sub);
+      const mapped = mapWallosSubscription(sub, currencies);
       expect(mapped).toMatchObject(rest);
       expect(mapped.name).toBe(rest.name);
       expect(mapped.priceCents).toBe(rest.priceCents);
@@ -137,6 +138,18 @@ describe('saved Wallos subscriptions response fixture', () => {
 });
 
 describe('mapWallosSubscription', () => {
+  it('uses the currency minor units: JPY 1250 is 1250, EUR 12.50 is 1250', () => {
+    const map = buildCurrencyMap([
+      { id: 1, code: 'EUR' },
+      { id: 2, code: 'JPY' },
+    ]);
+    expect(mapWallosSubscription({ ...FIXTURE_ACTIVE, price: 1250, currency_id: 2 }, map).priceCents).toBe(-1250);
+    expect(mapWallosSubscription({ ...FIXTURE_ACTIVE, price: '12.50', currency_id: 1 }, map).priceCents).toBe(-1250);
+    expect(() => mapWallosSubscription({ ...FIXTURE_ACTIVE, currency_id: 9 }, map)).toThrow(
+      expect.objectContaining({ code: 'unknown_currency' }),
+    );
+  });
+
   it('maps the saved active fixture to the internal model', () => {
     expect(mapWallosSubscription(FIXTURE_ACTIVE)).toEqual({
       wallosId: '1',

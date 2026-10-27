@@ -111,9 +111,10 @@ export async function planActualScheduleFromWallos<T = undefined>(
   if (raw === undefined) {
     throw new CreateFlowError('wallos_subscription_not_found');
   }
-  const mapped = mapWallosSubscription(raw);
+  const currencyMap = buildCurrencyMap(currencies);
+  const mapped = mapWallosSubscription(raw, currencyMap);
   const override = deps.repoFor(userId).getSubscriptionOverride(wallosSubscriptionId);
-  const sourceCurrency = resolveCurrencyCode(buildCurrencyMap(currencies), mapped.currencyId);
+  const sourceCurrency = resolveCurrencyCode(currencyMap, mapped.currencyId);
   const wallosEntry = currencies.find((c) => c.code.trim().toUpperCase() === sourceCurrency);
 
   const read = await deps.withActual(userId, async (api) => ({

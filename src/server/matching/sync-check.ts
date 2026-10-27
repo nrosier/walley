@@ -25,7 +25,7 @@ import type { MatchPatch } from '../db/repo.js';
 import { CreateFlowError, type CreateDeps } from '../integrations/create.js';
 import { readBaseCurrency, readSchedules } from '../integrations/actual/read.js';
 import { prepareActualScheduleInput } from '../integrations/prepare.js';
-import { mapWallosSubscription, WallosMappingError } from '../integrations/wallos/map.js';
+import { buildCurrencyMap, mapWallosSubscription, WallosMappingError } from '../integrations/wallos/map.js';
 import { classifySavedPairs } from './engine.js';
 import { detectMismatches } from './mismatch.js';
 
@@ -160,12 +160,13 @@ export async function readCurrentSides(
   if (actual.baseCode === null) throw new CreateFlowError('base_currency_missing');
   const baseCode = actual.baseCode.trim().toUpperCase();
 
+  const currencyMap = buildCurrencyMap(currencies);
   const wallosSides = new Map<string, Side>();
   for (const raw of subscriptions) {
     const id = String(raw.id);
     let side: Side;
     try {
-      const mapped = mapWallosSubscription(raw);
+      const mapped = mapWallosSubscription(raw, currencyMap);
       const prepared = prepareActualScheduleInput(mapped, currencies, baseCode, overrides.get(id));
       side = {
         id,

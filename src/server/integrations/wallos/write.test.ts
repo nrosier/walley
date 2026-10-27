@@ -74,6 +74,13 @@ describe('buildWallosSubscriptionPayload', () => {
     });
   });
 
+  it('writes a JPY price with no decimals and round-trips it unchanged', () => {
+    const payload = buildWallosSubscriptionPayload({ ...VALID_INPUT, priceCents: -1250 }, 0);
+    expect(payload.price).toBe('1250');
+    const map = new Map([['3', 'JPY']]);
+    expect(mapWallosSubscription(wallosRecordFrom(payload, '1'), map).priceCents).toBe(-1250);
+  });
+
   it('omits start_date when it is unknown', () => {
     const payload = buildWallosSubscriptionPayload({ ...VALID_INPUT, startDate: null });
     expect(payload).not.toHaveProperty('start_date');

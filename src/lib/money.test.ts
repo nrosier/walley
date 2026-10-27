@@ -57,3 +57,21 @@ describe('fromActualCents', () => {
     expect(() => fromActualCents(1.5)).toThrow(RangeError);
   });
 });
+
+describe('currency exponent', () => {
+  it('round trips a JPY amount unchanged with exponent 0', () => {
+    expect(toActualCents(1250, { expense: true, exponent: 0 })).toBe(-1250);
+    expect(fromActualCents(-1250, 0)).toBe(-1250);
+    expect(toActualCents(1250.5, { expense: false, exponent: 0 })).toBe(1251);
+  });
+
+  it('keeps two decimals for EUR, the default', () => {
+    expect(toActualCents(12.5, { expense: true, exponent: 2 })).toBe(-1250);
+    expect(fromActualCents(-1250, 2)).toBe(-12.5);
+  });
+
+  it('rejects a negative or fractional exponent', () => {
+    expect(() => toActualCents(1, { expense: false, exponent: -1 })).toThrow(RangeError);
+    expect(() => fromActualCents(1, 1.5)).toThrow(RangeError);
+  });
+});
