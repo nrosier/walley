@@ -6,13 +6,16 @@ import { commonMessages } from '@/i18n/common.messages';
 import { createActualSchedule, createWallosSubscription, prefillActualSchedule, prefillWallosSubscription, type ActualSchedulePrefill, type WallosSubscriptionPrefill } from '@/lib/create.api';
 import { clearOverride, saveOverride } from '@/lib/overrides.api';
 import { CreateActualForm } from './CreateActualModal';
-import { actualDisabledReason, actualSubmitDisabled, buildActualBody, performCreate, wallosSubmitDisabled } from './create-submit';
+import { actualDisabledReason, actualSubmitDisabled, buildActualBody, performCreate, submitCreate, wallosSubmitDisabled } from './create-submit';
+import { createNoticeKinds, createNoticeStore } from '@/lib/notices';
+import { NoticeToastView } from './NoticeToast';
 import { CreateWallosForm } from './CreateWallosModal';
 import actualSrc from './CreateActualModal.tsx?raw';
 import wallosSrc from './CreateWallosModal.tsx?raw';
 import apiSrc from '@/lib/create.api.ts?raw';
 import frameSrc from './CreateModalFrame.tsx?raw';
 import shellSrc from '../ui/dialog-shell.tsx?raw';
+import dashboardSrc from '../../pages/SyncDashboard.tsx?raw';
 
 const actual: ActualSchedulePrefill = {
   name: 'Netflix',
@@ -259,5 +262,61 @@ describe('create modal layout (UI only, pre-fill read-only until the override ba
       expect(src).toContain('<CreateModalFrame');
       expect(src).toContain('footerHost={host}');
     }
+  });
+});
+
+describe('close on success and toast notices (issue 110)', () => {
+  const okResult = { scheduleId: 'x', payeeId: 'p', payeeCreated: true, categoryApplied: false, categoryError: true };
+
+  it('On success the modal closes automatically and the dashboard refreshes', async () => {
+    const order: string[] = [];
+    const refresh = vi.fn(() => { order.push('refresh'); });
+    const onCreated = vi.fn(() => { order.push('close'); });
+    const onFailed = vi.fn();
+    const f = jsonFetch(okResult);
+    await submitCreate(() => createActualSchedule(buildActualBody('w1', 'a1', 'p1', '', ''), f), refresh, { onCreated, onFailed });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledWith(okResult);
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(order).toEqual(['refresh', 'close']);
+    for (const src of [actualSrc, wallosSrc]) {
+      expect(src).toContain('onCreated={');
+      expect(src).not.toMatch(/<Alert variant="success">/);
+    }
+    expect(actualSrc).toMatch(/onCreated=\{\(result\) => \{[^}]*props\.onClose\(\);/);
+    expect(wallosSrc).toContain('onCreated={props.onClose}');
+  });
+
+  it('If the create returns payee or category notices, they are shown on the dashboard as a dismissible toast, not in a blocking modal', () => {
+    expect(createNoticeKinds(okResult)).toEqual(['payeeCreated', 'categoryError']);
+    expect(createNoticeKinds({ payeeCreated: false })).toEqual([]);
+    const store = createNoticeStore();
+    store.push(createNoticeKinds(okResult));
+    const html = render(<NoticeToastView notices={store.getNotices()} onDismiss={store.dismiss} />);
+    expect(html).toContain('role="status"');
+    expect(html).toContain('A new payee was created.');
+    expect(html).toContain('the category could not be set');
+    expect(html).toContain('aria-label="Dismiss notice"');
+    expect(html).not.toContain('role="dialog"');
+    expect(render(<NoticeToastView notices={store.getNotices()} onDismiss={store.dismiss} />, 'nl')).toContain('aria-label="Melding sluiten"');
+    const first = store.getNotices()[0];
+    store.dismiss(first?.id ?? -1);
+    expect(store.getNotices().map((n) => n.kind)).toEqual(['categoryError']);
+    store.dismiss(store.getNotices()[0]?.id ?? -1);
+    expect(render(<NoticeToastView notices={store.getNotices()} onDismiss={store.dismiss} />)).toBe('');
+    expect(actualSrc).toContain('noticeStore.push(createNoticeKinds(result))');
+    expect(dashboardSrc).toContain('<NoticeToast />');
+  });
+
+  it('On failure the modal stays open with the error', async () => {
+    const refresh = vi.fn();
+    const onCreated = vi.fn();
+    const onFailed = vi.fn();
+    const f = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({ error: 'actual_unavailable' }), { status: 502 })));
+    await submitCreate(() => createActualSchedule(buildActualBody('w1', 'a1', 'p1', '', ''), f), refresh, { onCreated, onFailed });
+    expect(onFailed).toHaveBeenCalledWith('actual_unavailable');
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+    for (const src of [actualSrc, wallosSrc]) expect(src).toContain('{errorCode !== null ? <Alert variant="error">{errorText(errorCode)}</Alert> : null}');
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { NoticeToast } from '@/components/dashboard/NoticeToast';
 import { ActualColumn } from '@/components/dashboard/ActualColumn';
 import { HealthStatus } from '@/components/HealthStatus';
 import { Toolbar } from '@/components/dashboard/Toolbar';
@@ -225,6 +226,7 @@ export function SyncDashboard() {
   );
 
   return (
+    <>
     <SyncDashboardView
       state={sync}
       query={query}
@@ -246,5 +248,7 @@ export function SyncDashboard() {
         act(side, id, { kind: 'restore', matchId });
       }}
     />
+    <NoticeToast />
+    </>
   );
 }

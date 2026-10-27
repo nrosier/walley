@@ -36,6 +36,11 @@ const en = {
     },
     categoryError: 'The schedule was created, but the category could not be set.',
   },
+  notice: {
+    payeeCreated: 'A new payee was created.',
+    categoryError: 'The schedule was created, but the category could not be set.',
+    dismiss: 'Dismiss notice',
+  },
   wallos: {
     title: 'Create Wallos subscription',
     description: 'Pre-filled from the Actual Budget schedule {name}.',
@@ -95,6 +100,11 @@ const nl: typeof en = {
       saving: 'Opslaan...',
     },
     categoryError: 'Het schema is aangemaakt, maar de categorie kon niet worden ingesteld.',
+  },
+  notice: {
+    payeeCreated: 'Er is een nieuwe begunstigde aangemaakt.',
+    categoryError: 'Het schema is aangemaakt, maar de categorie kon niet worden ingesteld.',
+    dismiss: 'Melding sluiten',
   },
   wallos: {
     title: 'Wallos-abonnement aanmaken',

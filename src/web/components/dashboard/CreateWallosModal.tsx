@@ -9,7 +9,7 @@ import { CreateFooter } from './CreateFooter';
 import { CreateModalFrame } from './CreateModalFrame';
 import { createModalMessages } from './CreateModal.messages';
 import { CYCLE_UNITS, cycleKey, cycleUnit } from './create-modal-shared';
-import { performCreate, wallosSubmitDisabled } from './create-submit';
+import { submitCreate, wallosSubmitDisabled } from './create-submit';
 
 export interface CreateWallosFormProps {
   prefill: WallosSubscriptionPrefill;
@@ -18,13 +18,15 @@ export interface CreateWallosFormProps {
   /** Where Cancel and Create render (the modal's pinned footer); see `CreateFooter.host`. */
   footerHost?: HTMLElement | null;
   onCancel?: () => void;
+  /** Called once the subscription was created and the dashboard refreshed; the modal closes here. */
+  onCreated?: () => void;
 }
 
 /**
  * The pre-fill as read-only display (title, price, billing cycle, start date) until the Wallos create endpoint
  * accepts overrides, so nothing typed can be ignored. Create is locked while the request is in flight.
  */
-export function CreateWallosForm({ prefill, scheduleId, fetchImpl, footerHost, onCancel }: CreateWallosFormProps) {
+export function CreateWallosForm({ prefill, scheduleId, fetchImpl, footerHost, onCancel, onCreated }: CreateWallosFormProps) {
   const { t, errorText } = useT(createModalMessages);
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState(false);
@@ -41,14 +43,21 @@ export function CreateWallosForm({ prefill, scheduleId, fetchImpl, footerHost, o
         if (wallosSubmitDisabled(pending) || created) return;
         setPending(true);
         setErrorCode(null);
-        void performCreate(
+        void submitCreate(
           () => createWallosSubscription(scheduleId, fetchImpl),
           () => syncStore.run(),
-        ).then((outcome) => {
-          if (outcome.ok) setCreated(true);
-          else setErrorCode(outcome.code);
-          setPending(false);
-        });
+          {
+            onCreated: () => {
+              setCreated(true);
+              setPending(false);
+              onCreated?.();
+            },
+            onFailed: (code) => {
+              setErrorCode(code);
+              setPending(false);
+            },
+          },
+        );
       }}
     >
       <div className="grid gap-1">
@@ -75,7 +84,6 @@ export function CreateWallosForm({ prefill, scheduleId, fetchImpl, footerHost, o
         <p className="text-xs text-muted">{t('readOnlyNote')}</p>
       </div>
       {errorCode !== null ? <Alert variant="error">{errorText(errorCode)}</Alert> : null}
-      {created ? <Alert variant="success">{t('done')}</Alert> : null}
       <CreateFooter
         formId={formId}
         reasonId={reasonId}
@@ -132,7 +140,7 @@ export function CreateWallosModal(props: CreateWallosModalProps) {
       {load.status === 'loading' ? <p role="status">{t('loading')}</p> : null}
       {load.status === 'error' ? <Alert variant="error">{errorText(load.code)}</Alert> : null}
       {load.status === 'ready' ? (
-        <CreateWallosForm prefill={load.prefill} scheduleId={scheduleId} fetchImpl={fetchImpl} footerHost={host} onCancel={props.onClose} />
+        <CreateWallosForm prefill={load.prefill} scheduleId={scheduleId} fetchImpl={fetchImpl} footerHost={host} onCancel={props.onClose} onCreated={props.onClose} />
       ) : (
         <CreateFooter
           formId={footerId}

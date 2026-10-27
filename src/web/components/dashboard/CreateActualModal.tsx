@@ -3,6 +3,7 @@ import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { createActualSchedule, prefillActualSchedule, type ActualSchedulePrefill, type CreateActualScheduleResult } from '@/lib/create.api';
+import { createNoticeKinds, noticeStore } from '@/lib/notices';
 import { syncStore } from '@/lib/sync-check';
 import { Alert } from '../ui/alert';
 import { OptionCards } from '../ui/option-cards';
@@ -11,7 +12,7 @@ import { CreateModalFrame } from './CreateModalFrame';
 import { RateField } from './RateField';
 import { createModalMessages } from './CreateModal.messages';
 import { everyKey, FIELD_CLASS } from './create-modal-shared';
-import { actualDisabledReason, buildActualBody, NEW_PAYEE, performCreate } from './create-submit';
+import { actualDisabledReason, buildActualBody, NEW_PAYEE, submitCreate } from './create-submit';
 
 export interface CreateActualFormProps {
   prefill: ActualSchedulePrefill;
@@ -22,16 +23,18 @@ export interface CreateActualFormProps {
   /** Where Cancel and Create render (the modal's pinned footer); see `CreateFooter.host`. */
   footerHost?: HTMLElement | null;
   onCancel?: () => void;
+  /** Called once the schedule was created and the dashboard refreshed; the modal closes here. */
+  onCreated?: (result: CreateActualScheduleResult) => void;
 }
 
 /**
  * The pre-fill (read-only until the override backend lands), a payee choice, account and category, and Create.
  * Create needs an account and a payee name; the reason it is off shows in the footer and beside the field.
  */
-export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged, footerHost, onCancel }: CreateActualFormProps) {
+export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged, footerHost, onCancel, onCreated }: CreateActualFormProps) {
   const { t, errorText, locale } = useT(createModalMessages);
   const [pending, setPending] = useState(false);
-  const [created, setCreated] = useState<CreateActualScheduleResult | null>(null);
+  const [created, setCreated] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const formId = useId();
   const ids = { newPayee: useId(), account: useId(), category: useId(), reason: useId() };
@@ -50,17 +53,24 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged, 
       className="grid gap-4 text-sm"
       onSubmit={(e) => {
         e.preventDefault();
-        if (missing !== null || pending || created !== null) return;
+        if (missing !== null || pending || created) return;
         setPending(true);
         setErrorCode(null);
-        void performCreate(
+        void submitCreate(
           () => createActualSchedule(buildActualBody(wallosId, account, payee, newName, category), fetchImpl),
           () => syncStore.run(),
-        ).then((outcome) => {
-          if (outcome.ok) setCreated(outcome.result);
-          else setErrorCode(outcome.code);
-          setPending(false);
-        });
+          {
+            onCreated: (result) => {
+              setCreated(true);
+              setPending(false);
+              onCreated?.(result);
+            },
+            onFailed: (code) => {
+              setErrorCode(code);
+              setPending(false);
+            },
+          },
+        );
       }}
     >
       <div className="grid gap-1">
@@ -133,13 +143,6 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged, 
         </select>
       </label>
       {errorCode !== null ? <Alert variant="error">{errorText(errorCode)}</Alert> : null}
-      {created !== null ? (
-        <Alert variant="success">
-          {t('done')}
-          {created.payeeCreated ? ` ${t('actual.payeeCreated')}` : ''}
-          {created.categoryError === true ? ` ${t('actual.categoryError')}` : ''}
-        </Alert>
-      ) : null}
       <CreateFooter
         formId={formId}
         reasonId={ids.reason}
@@ -147,7 +150,7 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged, 
         submitLabel={pending ? t('creating') : t('submit')}
         onCancel={onCancel}
         reason={reasonText === null ? null : t('actual.createDisabled', { reason: reasonText })}
-        busy={pending || created !== null}
+        busy={pending || created}
         host={footerHost}
       />
     </form>
@@ -201,6 +204,10 @@ export function CreateActualModal(props: CreateActualModalProps) {
           onRateChanged={() => { setReloads((n) => n + 1); }}
           footerHost={host}
           onCancel={props.onClose}
+          onCreated={(result) => {
+            noticeStore.push(createNoticeKinds(result));
+            props.onClose();
+          }}
         />
       ) : (
         <CreateFooter

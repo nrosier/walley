@@ -51,3 +51,17 @@ export function buildActualBody(
     ...(category === '' ? {} : { categoryId: category }),
   };
 }
+
+/**
+ * Submits a create: runs the call and the dashboard refresh, then `onCreated` with the result (the modal closes
+ * and shows its notices there) or `onFailed` with the error code (the modal stays open and shows it).
+ */
+export async function submitCreate<T>(
+  call: () => Promise<T>,
+  refresh: () => Promise<void> | void,
+  handlers: { onCreated: (result: T) => void; onFailed: (code: string) => void },
+): Promise<void> {
+  const outcome = await performCreate(call, refresh);
+  if (outcome.ok) handlers.onCreated(outcome.result);
+  else handlers.onFailed(outcome.code);
+}
