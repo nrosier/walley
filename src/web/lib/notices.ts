@@ -47,7 +47,7 @@ export function createNoticeStore(): NoticeStore {
 export const noticeStore: NoticeStore = createNoticeStore();
 
 export function useNotices(store: NoticeStore = noticeStore): readonly Notice[] {
-  return useSyncExternalStore(store.subscribe, store.getNotices);
+  return useSyncExternalStore(store.subscribe, store.getNotices, store.getNotices);
 }
 
 /** The notices a successful Actual create reports: a payee was created, the category could not be set. */

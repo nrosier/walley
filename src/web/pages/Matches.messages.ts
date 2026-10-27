@@ -42,6 +42,11 @@ const en = {
   retry: 'Retry',
   review: 'Review',
   reviewLabel: 'Review differences: {name}',
+  orphan: {
+    recreateWallos: 'Recreate in Wallos',
+    recreateActual: 'Recreate in Actual Budget',
+    link: 'Link to another item',
+  },
 };
 
 const nl: typeof en = {
@@ -88,6 +93,11 @@ const nl: typeof en = {
   retry: 'Opnieuw proberen',
   review: 'Bekijken',
   reviewLabel: 'Verschillen bekijken: {name}',
+  orphan: {
+    recreateWallos: 'Opnieuw aanmaken in Wallos',
+    recreateActual: 'Opnieuw aanmaken in Actual Budget',
+    link: 'Koppelen aan een ander item',
+  },
 };
 
 export const matchesMessages = { en, nl };

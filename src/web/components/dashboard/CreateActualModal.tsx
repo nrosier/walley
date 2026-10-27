@@ -17,6 +17,8 @@ import { actualDisabledReason, buildActualBody, NEW_PAYEE, submitCreate } from '
 export interface CreateActualFormProps {
   prefill: ActualSchedulePrefill;
   wallosId: string;
+  /** Orphaned match the new schedule is attached to (Recreate from Matches); sent in the create body. */
+  matchId?: string;
   fetchImpl?: typeof fetch;
   /** Called after the rate was saved or cleared so the caller can re-fetch the pre-fill. */
   onRateChanged?: () => void;
@@ -31,7 +33,7 @@ export interface CreateActualFormProps {
  * The pre-fill (read-only until the override backend lands), a payee choice, account and category, and Create.
  * Create needs an account and a payee name; the reason it is off shows in the footer and beside the field.
  */
-export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged, footerHost, onCancel, onCreated }: CreateActualFormProps) {
+export function CreateActualForm({ prefill, wallosId, matchId, fetchImpl, onRateChanged, footerHost, onCancel, onCreated }: CreateActualFormProps) {
   const { t, errorText, locale } = useT(createModalMessages);
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState(false);
@@ -57,7 +59,7 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged, 
         setPending(true);
         setErrorCode(null);
         void submitCreate(
-          () => createActualSchedule(buildActualBody(wallosId, account, payee, newName, category), fetchImpl),
+          () => createActualSchedule(buildActualBody(wallosId, account, payee, newName, category, matchId), fetchImpl),
           () => syncStore.run(),
           {
             onCreated: (result) => {
@@ -160,6 +162,8 @@ export function CreateActualForm({ prefill, wallosId, fetchImpl, onRateChanged, 
 export interface CreateActualModalProps {
   wallosId: string;
   wallosName: string;
+  /** Recreate from an orphaned Matches row: the create call repoints this match. */
+  matchId?: string;
   onClose: () => void;
   fetchImpl?: typeof fetch;
 }
@@ -200,6 +204,7 @@ export function CreateActualModal(props: CreateActualModalProps) {
         <CreateActualForm
           prefill={load.prefill}
           wallosId={wallosId}
+          matchId={props.matchId}
           fetchImpl={fetchImpl}
           onRateChanged={() => { setReloads((n) => n + 1); }}
           footerHost={host}

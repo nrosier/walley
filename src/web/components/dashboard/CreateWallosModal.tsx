@@ -14,6 +14,8 @@ import { submitCreate, wallosSubmitDisabled } from './create-submit';
 export interface CreateWallosFormProps {
   prefill: WallosSubscriptionPrefill;
   scheduleId: string;
+  /** Orphaned match the new subscription is attached to (Recreate from Matches); sent in the create body. */
+  matchId?: string;
   fetchImpl?: typeof fetch;
   /** Where Cancel and Create render (the modal's pinned footer); see `CreateFooter.host`. */
   footerHost?: HTMLElement | null;
@@ -26,7 +28,7 @@ export interface CreateWallosFormProps {
  * The pre-fill as read-only display (title, price, billing cycle, start date) until the Wallos create endpoint
  * accepts overrides, so nothing typed can be ignored. Create is locked while the request is in flight.
  */
-export function CreateWallosForm({ prefill, scheduleId, fetchImpl, footerHost, onCancel, onCreated }: CreateWallosFormProps) {
+export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, footerHost, onCancel, onCreated }: CreateWallosFormProps) {
   const { t, errorText } = useT(createModalMessages);
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState(false);
@@ -44,7 +46,7 @@ export function CreateWallosForm({ prefill, scheduleId, fetchImpl, footerHost, o
         setPending(true);
         setErrorCode(null);
         void submitCreate(
-          () => createWallosSubscription(scheduleId, fetchImpl),
+          () => createWallosSubscription(scheduleId, fetchImpl, undefined, matchId),
           () => syncStore.run(),
           {
             onCreated: () => {
@@ -101,6 +103,8 @@ export function CreateWallosForm({ prefill, scheduleId, fetchImpl, footerHost, o
 export interface CreateWallosModalProps {
   scheduleId: string;
   scheduleName: string;
+  /** Recreate from an orphaned Matches row: the create call repoints this match. */
+  matchId?: string;
   onClose: () => void;
   fetchImpl?: typeof fetch;
 }
@@ -140,7 +144,7 @@ export function CreateWallosModal(props: CreateWallosModalProps) {
       {load.status === 'loading' ? <p role="status">{t('loading')}</p> : null}
       {load.status === 'error' ? <Alert variant="error">{errorText(load.code)}</Alert> : null}
       {load.status === 'ready' ? (
-        <CreateWallosForm prefill={load.prefill} scheduleId={scheduleId} fetchImpl={fetchImpl} footerHost={host} onCancel={props.onClose} onCreated={props.onClose} />
+        <CreateWallosForm prefill={load.prefill} scheduleId={scheduleId} matchId={props.matchId} fetchImpl={fetchImpl} footerHost={host} onCancel={props.onClose} onCreated={props.onClose} />
       ) : (
         <CreateFooter
           formId={footerId}

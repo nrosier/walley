@@ -11,6 +11,10 @@ import { checkIfEmpty, nextRowId, restoreAndRecheck, syncStore, useSyncCheck } f
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
 import { Badge } from '../components/ui/badge';
+import { CreateActualModal } from '../components/dashboard/CreateActualModal';
+import { CreateWallosModal } from '../components/dashboard/CreateWallosModal';
+import { NoticeToast } from '../components/dashboard/NoticeToast';
+import { RelinkDialog } from '../components/matches/RelinkDialog';
 import { DiffModal } from '../components/matches/DiffModal';
 import { diffModalMessages, isOverwriteErrorCode } from '../components/matches/DiffModal.messages';
 import { Button } from '../components/ui/button';
@@ -32,6 +36,10 @@ export interface MatchesViewProps {
   errorMessage?: string | null;
   /** Opens the diff modal for a mismatch row by its match id. */
   onReview?: (matchId: string) => void;
+  /** Recreate the missing side of a single-side orphan (opens the create modal with its match id). */
+  onRecreate?: (row: SyncLinked) => void;
+  /** Link a single-side orphan to another unlinked item. */
+  onRelink?: (row: SyncLinked) => void;
   /** Case-insensitive name filter over both sides of a pair. */
   query?: string;
   onQueryChange?: (query: string) => void;
@@ -68,6 +76,8 @@ export function MatchesView({
   errorId,
   errorMessage,
   onReview,
+  onRecreate,
+  onRelink,
   query = '',
   onQueryChange,
   onRun,
@@ -175,6 +185,20 @@ export function MatchesView({
                       >
                         {t('review')}
                       </Button>
+                    ) : null}
+                    {row.orphan === 'orphaned_wallos' || row.orphan === 'orphaned_actual' ? (
+                      <MoreActionsMenu
+                        name={label}
+                        className="ml-1 align-middle"
+                        items={[
+                          {
+                            id: 'recreate',
+                            label: t(row.orphan === 'orphaned_wallos' ? 'orphan.recreateWallos' : 'orphan.recreateActual'),
+                            onSelect: () => onRecreate?.(row),
+                          },
+                          { id: 'relink', label: t('orphan.link'), onSelect: () => onRelink?.(row) },
+                        ]}
+                      />
                     ) : null}
                   </td>
                 </tr>
@@ -321,6 +345,7 @@ export function Matches() {
   const [working, setWorking] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const modalT = useT(diffModalMessages).t;
+  const [orphanAction, setOrphanAction] = useState<{ kind: 'recreate' | 'relink'; row: SyncLinked } | null>(null);
 
   // Opening Matches with no result starts a check; the Dashboard never does this.
   useEffect(() => {
@@ -390,7 +415,38 @@ export function Matches() {
           : null
       }
       onRetryCheck={() => { void syncStore.requestRun(); }}
+      onRecreate={(row) => { setOrphanAction({ kind: 'recreate', row }); }}
+      onRelink={(row) => { setOrphanAction({ kind: 'relink', row }); }}
     />
+    {orphanAction?.kind === 'recreate' && orphanAction.row.orphan === 'orphaned_actual' ? (
+      <CreateActualModal
+        wallosId={orphanAction.row.wallosId}
+        wallosName={orphanAction.row.wallosName ?? orphanAction.row.wallosId}
+        matchId={orphanAction.row.matchId}
+        onClose={() => { setOrphanAction(null); }}
+      />
+    ) : null}
+    {orphanAction?.kind === 'recreate' && orphanAction.row.orphan === 'orphaned_wallos' ? (
+      <CreateWallosModal
+        scheduleId={orphanAction.row.actualScheduleId}
+        scheduleName={orphanAction.row.actualName ?? orphanAction.row.actualScheduleId}
+        matchId={orphanAction.row.matchId}
+        onClose={() => { setOrphanAction(null); }}
+      />
+    ) : null}
+    {orphanAction?.kind === 'relink' && (orphanAction.row.orphan === 'orphaned_wallos' || orphanAction.row.orphan === 'orphaned_actual') ? (
+      <RelinkDialog
+        matchId={orphanAction.row.matchId}
+        name={(orphanAction.row.orphan === 'orphaned_actual' ? orphanAction.row.wallosName : orphanAction.row.actualName) ?? DASH}
+        missingSide={orphanAction.row.orphan === 'orphaned_actual' ? 'actual' : 'wallos'}
+        items={(orphanAction.row.orphan === 'orphaned_actual' ? sync.result?.unlinkedActual : sync.result?.unlinkedWallos) ?? []}
+        candidateIds={orphanAction.row.relinkCandidateIds}
+        baseCurrency={sync.result?.baseCurrency ?? ''}
+        onClose={() => { setOrphanAction(null); }}
+        onLinked={() => { void syncStore.requestRun(); }}
+      />
+    ) : null}
+    <NoticeToast />
     <DiffModal
       mismatch={reviewing}
       baseCurrency={sync.result?.baseCurrency ?? ''}

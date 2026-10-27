@@ -41,3 +41,15 @@ export function resolveMatch(
     fetchImpl,
   }).then((data) => (data?.outcome === 'no_change_needed' ? 'no_change_needed' : undefined));
 }
+
+/**
+ * POST /api/matches/:id/relink. Points an orphaned match's missing side at an unlinked item; the server derives the
+ * side. Throws ApiError with the server code (match_not_found, invalid_state, already_matched, item_not_found).
+ */
+export function relinkMatch(matchId: string, itemId: string, fetchImpl?: typeof fetch): Promise<MatchCreated> {
+  return apiRequest<MatchCreated>(`/api/matches/${encodeURIComponent(matchId)}/relink`, {
+    method: 'POST',
+    body: { itemId },
+    fetchImpl,
+  });
+}

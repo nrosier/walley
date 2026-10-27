@@ -399,3 +399,39 @@ describe('Matches table layout and cues', () => {
     expect(matchesSrc).toContain('checkIfEmpty(syncStore)');
   });
 });
+
+describe('Matches orphan actions menu', () => {
+  const orphanRows = [
+    linkedRow({ matchId: 'o1', wallosId: 'w1', actualScheduleId: 'a1', orphan: 'orphaned_actual', wallosName: 'Lost Actual', actualName: null }),
+    linkedRow({ matchId: 'o2', wallosId: 'w2', actualScheduleId: 'a2', orphan: 'orphaned_wallos', wallosName: null, actualName: 'Lost Wallos' }),
+    linkedRow({ matchId: 'o3', wallosId: 'w3', actualScheduleId: 'a3', orphan: 'orphaned_both', wallosName: null, actualName: null }),
+    linkedRow({ matchId: 'o4', wallosId: 'w4', actualScheduleId: 'a4', status: 'MISMATCH_DETECTED', wallosName: 'Drifted' }),
+    linkedRow({ matchId: 'o5', wallosId: 'w5', actualScheduleId: 'a5', wallosName: 'Fine' }),
+  ];
+  const html = render({ result: fixture({ linked: orphanRows, ignored: [] }), onReview: () => undefined });
+
+  it('shows the actions menu only on single-side orphan rows, named for the surviving item', () => {
+    expect(html.match(/aria-label="More actions for /g)).toHaveLength(2);
+    expect(html).toContain('aria-label="More actions for Lost Actual"');
+    expect(html).toContain('aria-label="More actions for Lost Wallos"');
+  });
+
+  it('shows no actions on orphaned_both, mismatch or synced rows', () => {
+    expect(html).not.toContain('More actions for Drifted');
+    expect(html).not.toContain('More actions for Fine');
+    expect(html).not.toContain('More actions for —');
+  });
+
+  it('names the actions in en and nl with identical catalogue keys', () => {
+    expect(Object.keys(matchesMessages.nl.orphan)).toEqual(Object.keys(matchesMessages.en.orphan));
+    expect(matchesMessages.en.orphan.link).toBe('Link to another item');
+    expect(render({ result: fixture({ linked: orphanRows }) }, 'nl')).toContain('aria-label="Meer acties voor Lost Actual"');
+  });
+
+  it('wires Recreate to the create modals with the match id, Link to the candidates, and mounts the notice toast', () => {
+    expect(matchesSrc).toMatch(/<CreateActualModal[\s\S]*?matchId=\{orphanAction\.row\.matchId\}/);
+    expect(matchesSrc).toMatch(/<CreateWallosModal[\s\S]*?matchId=\{orphanAction\.row\.matchId\}/);
+    expect(matchesSrc).toContain('<NoticeToast />');
+    expect(matchesSrc).toMatch(/<RelinkDialog[\s\S]*?candidateIds=\{orphanAction\.row\.relinkCandidateIds\}/);
+  });
+});

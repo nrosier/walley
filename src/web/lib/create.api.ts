@@ -70,6 +70,8 @@ export interface CreateActualScheduleInput {
   accountId: string;
   payee: PayeeChoice;
   categoryId?: string;
+  /** Orphaned match to repoint to the new schedule instead of creating a second row. */
+  matchId?: string;
 }
 
 export interface CreateActualScheduleResult {
@@ -94,15 +96,16 @@ export function createActualSchedule(
   });
 }
 
-/** POST /api/integrations/wallos-subscriptions (live write). Throws ApiError with the server code. */
+/** POST /api/integrations/wallos-subscriptions (live write). `matchId` repoints an orphaned match. Throws ApiError with the server code. */
 export function createWallosSubscription(
   scheduleId: string,
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
+  matchId?: string,
 ): Promise<{ wallosSubscriptionId: string }> {
   return apiRequest<{ wallosSubscriptionId: string }>('/api/integrations/wallos-subscriptions', {
     method: 'POST',
-    body: { scheduleId },
+    body: matchId === undefined ? { scheduleId } : { scheduleId, matchId },
     fetchImpl,
     signal,
   });

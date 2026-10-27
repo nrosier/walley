@@ -43,12 +43,14 @@ export function buildActualBody(
   payee: string,
   newName: string,
   category: string,
+  matchId?: string,
 ): CreateActualScheduleInput {
   return {
     wallosSubscriptionId: wallosId,
     accountId: account,
     payee: payee === NEW_PAYEE ? { kind: 'new', name: newName } : { kind: 'existing', id: payee },
     ...(category === '' ? {} : { categoryId: category }),
+    ...(matchId === undefined ? {} : { matchId }),
   };
 }
 
