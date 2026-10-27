@@ -128,6 +128,14 @@ describe('default-deny', () => {
     },
   );
 
+  it('config reports registration false when the stored toggle is off', async () => {
+    const { app, db } = setup('local', true);
+    setRegistrationEnabled(db, false);
+    const res = await app.inject({ method: 'GET', url: '/api/auth/config' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ mode: 'local', registration: false });
+  });
+
   it('a valid local session reaches GET /api/auth/me', async () => {
     const t = setup('local', false);
     const email = 'me@example.test';
