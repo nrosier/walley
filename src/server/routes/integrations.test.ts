@@ -38,7 +38,10 @@ function setup(overrides: Partial<CreateDeps> = {}) {
     payeeCreated: true,
     categoryApplied: false,
   }));
-  const createSubscription = vi.fn(async () => '55');
+  const createSubscription = vi.fn(async (userId: string) => {
+    (owned[userId] ??= { subs: [], schedules: [] }).subs.push(55);
+    return '55';
+  });
   const wallos = {
     listSubscriptions: async (id: string) =>
       (owned[id]?.subs ?? []).map((n) => ({
@@ -94,8 +97,9 @@ function setup(overrides: Partial<CreateDeps> = {}) {
   owned[a] = { subs: [7], schedules: ['sch-a'] };
   owned[b] = { subs: [8], schedules: ['sch-b'] };
   const ctx = { db: t.db, clock: t.clock };
-  return { app, a, b, sa: signIn(ctx, a), sb: signIn(ctx, b), createSchedule, createSubscription };
+  return { app, a, b, sa: signIn(ctx, a), sb: signIn(ctx, b), createSchedule, createSubscription, db: t.db };
 }
+
 
 const SCHED_URL = '/api/integrations/actual-schedules';
 const SUB_URL = '/api/integrations/wallos-subscriptions';
@@ -138,7 +142,7 @@ describe('auth gate and CSRF', () => {
 });
 
 describe('POST /api/integrations/actual-schedules', () => {
-  it('201 with ids and flags only', async () => {
+  it('201 with ids, flags and the saved match', async () => {
     const { app, sa } = setup();
     const res = await injectAs(app, sa, { method: 'POST', url: SCHED_URL, payload: SCHED_BODY });
     expect(res.statusCode).toBe(201);
@@ -147,6 +151,8 @@ describe('POST /api/integrations/actual-schedules', () => {
       payeeId: 'p1',
       payeeCreated: true,
       categoryApplied: false,
+      matchId: expect.any(String) as string,
+      matchCreated: true,
     });
   });
 
@@ -183,7 +189,7 @@ describe('POST /api/integrations/wallos-subscriptions', () => {
     const { app, sa } = setup();
     const res = await injectAs(app, sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a' } });
     expect(res.statusCode).toBe(201);
-    expect(res.json()).toEqual({ wallosSubscriptionId: '55' });
+    expect(res.json()).toMatchObject({ wallosSubscriptionId: '55', matchCreated: true });
   });
 
   it('400 invalid_request for a bad body', async () => {
@@ -338,5 +344,85 @@ describe('error mapping', () => {
       expect(res.json()).toEqual({ error: code });
       expect(res.body).not.toMatch(SECRETISH);
     }
+  });
+});
+
+describe('create saves the pair as a LINKED match (#108)', () => {
+  const HEX64 = /^[0-9a-f]{64}$/;
+
+  it('actual-schedules: saves LINKED with server hashes, and the next sync check lists it as linked', async () => {
+    const { app, sa, a, db } = setup({
+      createSchedule: async () => ({ scheduleId: 'sch-a', payeeId: 'p1', payeeCreated: true, categoryApplied: false }),
+    });
+    const res = await injectAs(app, sa, { method: 'POST', url: SCHED_URL, payload: SCHED_BODY });
+    expect(res.statusCode).toBe(201);
+    const rows = createUserRepo(db, a).listMatches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ wallosId: '7', actualScheduleId: 'sch-a', status: 'LINKED' });
+    expect(rows[0]?.lastKnownWallosHash).toMatch(HEX64);
+    expect(rows[0]?.lastKnownActualHash).toMatch(HEX64);
+    expect(res.json()).toMatchObject({ scheduleId: 'sch-a', matchId: rows[0]?.id, matchCreated: true });
+
+    const check = await injectAs(app, sa, { method: 'POST', url: '/api/sync/check', payload: {} });
+    expect(check.statusCode).toBe(200);
+    const body = check.json<{ linked: unknown[]; unlinkedWallos: unknown[]; unlinkedActual: unknown[]; mismatches: unknown[] }>();
+    expect(body.linked).toHaveLength(1);
+    expect(body.unlinkedWallos).toHaveLength(0);
+    expect(body.unlinkedActual).toHaveLength(0);
+    expect(body.mismatches).toHaveLength(0);
+  });
+
+  it('wallos-subscriptions: saves LINKED with server hashes', async () => {
+    const { app, sa, a, db } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a' } });
+    expect(res.statusCode).toBe(201);
+    const rows = createUserRepo(db, a).listMatches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ wallosId: '55', actualScheduleId: 'sch-a', status: 'LINKED' });
+    expect(rows[0]?.lastKnownWallosHash).toMatch(HEX64);
+    expect(rows[0]?.lastKnownActualHash).toMatch(HEX64);
+    expect(res.json()).toEqual({ wallosSubscriptionId: '55', matchId: rows[0]?.id, matchCreated: true });
+  });
+
+  it("two users: B's create never links A's rows, and A has no match", async () => {
+    const { app, sb, a, b, db } = setup({
+      createSchedule: async () => ({ scheduleId: 'sch-b', payeeId: 'p1', payeeCreated: true, categoryApplied: false }),
+    });
+    const res = await injectAs(app, sb, {
+      method: 'POST',
+      url: SCHED_URL,
+      payload: { ...SCHED_BODY, wallosSubscriptionId: '8' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(createUserRepo(db, a).listMatches()).toEqual([]);
+    const rowsB = createUserRepo(db, b).listMatches();
+    expect(rowsB).toHaveLength(1);
+    expect(rowsB[0]).toMatchObject({ wallosId: '8', actualScheduleId: 'sch-b', status: 'LINKED' });
+
+    // B asking for A's subscription is refused and writes no match for anyone.
+    const foreign = await injectAs(app, sb, { method: 'POST', url: SCHED_URL, payload: { ...SCHED_BODY, wallosSubscriptionId: '7' } });
+    expect(foreign.statusCode).toBe(404);
+    expect(createUserRepo(db, a).listMatches()).toEqual([]);
+    expect(createUserRepo(db, b).listMatches()).toHaveLength(1);
+  });
+
+  it('does not duplicate an existing match and reports matchCreated false', async () => {
+    const { app, sa, a, db } = setup({
+      createSchedule: async () => ({ scheduleId: 'sch-a', payeeId: 'p1', payeeCreated: true, categoryApplied: false }),
+    });
+    const existing = createUserRepo(db, a).insertMatch({ wallosId: '7', actualScheduleId: 'old', status: 'LINKED' });
+    const res = await injectAs(app, sa, { method: 'POST', url: SCHED_URL, payload: SCHED_BODY });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ matchId: existing.id, matchCreated: false });
+    const rows = createUserRepo(db, a).listMatches();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.actualScheduleId).toBe('old');
+  });
+
+  it('a failed remote create saves no match', async () => {
+    const { app, sa, a, db } = setup({ createSchedule: () => Promise.reject(new ActualWriteError('x', 'sync_failed')) });
+    const res = await injectAs(app, sa, { method: 'POST', url: SCHED_URL, payload: SCHED_BODY });
+    expect(res.statusCode).toBe(502);
+    expect(createUserRepo(db, a).listMatches()).toEqual([]);
   });
 });

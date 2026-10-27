@@ -19,6 +19,7 @@ import {
   WallosRejectedError,
 } from '../integrations/wallos/client.js';
 import { WallosMappingError } from '../integrations/wallos/map.js';
+import { linkCreatedPair } from '../matching/link-created.js';
 
 export interface IntegrationRoutesOptions {
   readonly deps: CreateDeps;
@@ -114,12 +115,14 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
         payee,
         ...(categoryId === undefined ? {} : { categoryId }),
       });
+      const linked = await linkCreatedPair(deps, request.auth.userId, body['wallosSubscriptionId'], result.scheduleId);
       return await reply.code(201).send({
         scheduleId: result.scheduleId,
         payeeId: result.payeeId,
         payeeCreated: result.payeeCreated,
         categoryApplied: result.categoryApplied,
         ...(result.categoryError === true ? { categoryError: true } : {}),
+        ...(linked === null ? {} : linked),
       });
     } catch (error: unknown) {
       return await Promise.resolve(sendFailure(reply, error));
@@ -138,7 +141,11 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
       const result = await createWallosSubscriptionFromActualSchedule(deps, request.auth.userId, {
         scheduleId: body['scheduleId'],
       });
-      return await reply.code(201).send({ wallosSubscriptionId: result.wallosSubscriptionId });
+      const linked = await linkCreatedPair(deps, request.auth.userId, result.wallosSubscriptionId, body['scheduleId']);
+      return await reply.code(201).send({
+        wallosSubscriptionId: result.wallosSubscriptionId,
+        ...(linked === null ? {} : linked),
+      });
     } catch (error: unknown) {
       return await Promise.resolve(sendFailure(reply, error));
     }
