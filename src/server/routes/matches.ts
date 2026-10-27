@@ -172,6 +172,75 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
     }
   });
 
+  app.post<{ Params: { id: string } }>('/matches/:id/relink', async (request, reply) => {
+    if (request.auth === null) {
+      return reply.code(401).send({ error: 'unauthenticated' });
+    }
+    const id = request.params.id;
+    const body: unknown = request.body;
+    if (!isId(id) || !isRecord(body) || !isId(body['itemId'])) {
+      return reply.code(400).send({ error: 'invalid_request' });
+    }
+    const itemId = body['itemId'];
+    const userId = request.auth.userId;
+    try {
+      const repo = opts.deps.repoFor(userId);
+      const match = repo.getMatch(id);
+      if (match === undefined) {
+        return await reply.code(404).send({ error: 'match_not_found' });
+      }
+      if (match.status !== 'LINKED' && match.status !== 'MISMATCH_DETECTED') {
+        return await reply.code(400).send({ error: 'invalid_state' });
+      }
+      if (match.wallosId === null || match.actualScheduleId === null) {
+        return await reply.code(400).send({ error: 'invalid_state' });
+      }
+      // The missing side is only known after the read below, so the row check covers both sides
+      // first. It costs no Wallos or Actual call.
+      if (repo.findMatchByItem('wallos', itemId) !== undefined || repo.findMatchByItem('actual', itemId) !== undefined) {
+        return await reply.code(409).send(ALREADY_MATCHED);
+      }
+      const current = await readCurrentSides(opts.deps, userId);
+      const wallosSurvives = current.wallosSides.has(match.wallosId);
+      const actualSurvives = current.actualSides.has(match.actualScheduleId);
+      // Exactly one side must be gone. Both present is not an orphan; both gone has no survivor.
+      if (wallosSurvives === actualSurvives) {
+        return await reply.code(400).send({ error: 'invalid_state' });
+      }
+      const missingSide = wallosSurvives ? 'actual' : 'wallos';
+      const survivor = wallosSurvives ? current.wallosSides.get(match.wallosId) : current.actualSides.get(match.actualScheduleId);
+      const target = (missingSide === 'wallos' ? current.wallosSides : current.actualSides).get(itemId);
+      if (survivor === undefined || target === undefined) {
+        return await reply.code(400).send({ error: 'item_not_found' });
+      }
+      const survivorHash = survivor.fields === null ? null : hashMatchFields(survivor.fields);
+      const targetHash = target.fields === null ? null : hashMatchFields(target.fields);
+      let changed: boolean;
+      try {
+        changed = repo.replaceMatchSide(
+          match.id,
+          { wallosId: match.wallosId, actualScheduleId: match.actualScheduleId, status: match.status },
+          {
+            side: missingSide,
+            itemId,
+            lastKnownWallosHash: missingSide === 'wallos' ? targetHash : survivorHash,
+            lastKnownActualHash: missingSide === 'actual' ? targetHash : survivorHash,
+            ...(missingSide === 'wallos' ? { firstSeenNextPayment: target.anchorDate ?? null } : {}),
+          },
+        );
+      } catch (error: unknown) {
+        if (isUniqueViolation(error)) return await reply.code(409).send(ALREADY_MATCHED);
+        throw error;
+      }
+      if (!changed) {
+        return await reply.code(400).send({ error: 'invalid_state' });
+      }
+      return await reply.code(200).send({ id: match.id, status: 'LINKED' });
+    } catch (error: unknown) {
+      return sendFailure(reply, error);
+    }
+  });
+
   app.post('/matches/ignore', async (request, reply) => {
     if (request.auth === null) {
       return reply.code(401).send({ error: 'unauthenticated' });

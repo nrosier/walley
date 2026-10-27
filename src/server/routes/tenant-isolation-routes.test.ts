@@ -552,6 +552,25 @@ const CASES: Record<string, Case> = {
       },
     ],
   },
+  'POST /api/matches/:id/relink': {
+    why: "the row lookup is id AND user_id: B's ids give 404 match_not_found before any remote read",
+    attempts: ({ matches: m }) => [
+      {
+        method: 'POST',
+        url: `/api/matches/${m.linked.id}/relink`,
+        payload: { itemId: String(B_SUB_ID) },
+        status: NOT_FOUND,
+        error: 'match_not_found',
+      },
+      {
+        method: 'POST',
+        url: `/api/matches/${m.mismatch.id}/relink`,
+        payload: { itemId: B_SCHEDULE_ID },
+        status: NOT_FOUND,
+        error: 'match_not_found',
+      },
+    ],
+  },
   'GET /api/overrides/:wallosSubscriptionId': {
     why: "the override lookup is user_id AND wallos id: B's subscription id gives 404 for A",
     attempts: () => [
