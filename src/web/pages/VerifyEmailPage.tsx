@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { AUTH_BUTTON, AUTH_INPUT, AuthCard } from '@/components/auth/AuthCard';
+import { Alert } from '@/components/ui/alert';
 import { useT } from '@/i18n';
 import { apiRequest, ApiError } from '@/lib/api';
 import { verifyEmailPageMessages } from './VerifyEmailPage.messages';
@@ -67,10 +69,8 @@ function clearLocationHash(): void {
   window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
 }
 
-const inputClass =
-  'w-full rounded-md border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
-const buttonClass =
-  'w-full rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50';
+const inputClass = AUTH_INPUT;
+const buttonClass = AUTH_BUTTON;
 
 /** Renders one verification state. `onSubmit` receives the password typed into the form. */
 export function VerifyEmailView({
@@ -114,8 +114,7 @@ export function VerifyEmailView({
   }
   const showForm = state.kind === 'form' || state.kind === 'verifying';
   return (
-    <div className="mx-auto max-w-sm space-y-4 rounded-lg border bg-card p-6">
-      <h1 className="text-lg font-semibold">{t('title')}</h1>
+    <AuthCard title={t('title')}>
       {showForm ? (
         <form
           className="space-y-3"
@@ -124,9 +123,9 @@ export function VerifyEmailView({
             onSubmit?.(password);
           }}
         >
-          <p className="text-sm text-muted-foreground">{t('prompt')}</p>
+          <p className="text-sm text-muted">{t('prompt')}</p>
           <label className="block text-sm">
-            <span className="mb-1 block text-muted-foreground">{t('password')}</span>
+            <span className="mb-1 block text-muted">{t('password')}</span>
             <input
               type="password"
               name="password"
@@ -139,34 +138,23 @@ export function VerifyEmailView({
               className={inputClass}
             />
           </label>
-          {message === null ? null : isError ? (
-            <p role="alert" className="text-sm text-warning">
-              {message}
-            </p>
-          ) : (
-            <p role="status" className="text-sm text-muted-foreground">
-              {message}
-            </p>
-          )}
-          <button type="submit" disabled={state.kind === 'verifying'} className={buttonClass}>
+          {message === null ? null : <Alert variant={isError ? 'error' : 'info'}>{message}</Alert>}
+          <button type="submit" disabled={state.kind === 'verifying'} aria-busy={state.kind === 'verifying'} className={buttonClass}>
             {t('submit')}
           </button>
         </form>
-      ) : isError ? (
-        <p role="alert" className="text-sm text-warning">
-          {message}
-        </p>
       ) : (
-        <p role="status" className="text-sm text-muted-foreground">
-          {message}
-        </p>
+        <Alert variant={isError ? 'error' : state.kind === 'success' ? 'success' : 'info'}>{message}</Alert>
       )}
       {showForm ? null : (
-        <a href="/login" className="block text-center text-sm text-foreground underline">
+        <a
+          href="/login"
+          className="flex min-h-11 items-center justify-center rounded-md text-center text-sm text-foreground underline outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
           {t('signIn')}
         </a>
       )}
-    </div>
+    </AuthCard>
   );
 }
 

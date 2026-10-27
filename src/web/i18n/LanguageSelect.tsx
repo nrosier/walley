@@ -8,7 +8,7 @@ export function LanguageSelect({ className, onChange }: { className?: string; on
   const { t } = useT(commonMessages);
   return (
     <label className={className ?? 'block text-sm'}>
-      <span className="mb-1 block text-muted-foreground">
+      <span className="mb-1 block text-muted">
         {t('language.label')} <span className="text-xs">({t('language.scope')})</span>
       </span>
       <select
@@ -21,7 +21,7 @@ export function LanguageSelect({ className, onChange }: { className?: string; on
             onChange?.(next);
           }
         }}
-        className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+        className="min-h-(--control-h) rounded-md border border-input-border bg-background px-2 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         {LOCALES.map((code) => (
           <option key={code} value={code} lang={code}>

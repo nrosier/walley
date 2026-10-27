@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { errorText, I18nProvider, type Locale } from '@/i18n';
 import { PASSWORD_MAX_CODE_POINTS, PASSWORD_MIN_CODE_POINTS } from '../../lib/password-policy';
 import { LoginForm } from './LoginPage';
+import loginSrc from './LoginPage.tsx?raw';
 import { loginPageMessages } from './LoginPage.messages';
 import { checkRegistration, registerErrorMessage } from './LoginPage.register';
 
@@ -57,7 +58,7 @@ describe('LoginPage error messages', () => {
   it('renders the account_not_linked message exactly (en)', () => {
     const html = render('oidc', false, 'account_not_linked');
     expect(html).toContain(NOT_LINKED_EN);
-    expect(html).toContain('text-warning');
+    expect(html).toContain('data-slot="alert" data-variant="error"');
   });
 
   it('renders account_not_linked in Dutch', () => {
@@ -149,5 +150,31 @@ describe('LoginPage register form', () => {
   it('falls back to the generic message for unknown codes', () => {
     expect(registerErrorMessage('nonsense', 'en')).toBe('Something went wrong. Try again.');
     expect(registerErrorMessage('constructor', 'en')).toBe('Something went wrong. Try again.');
+  });
+});
+
+describe('LoginPage layout', () => {
+  it('is a vertically centred card with the W brand mark, in both modes', () => {
+    for (const mode of ['local', 'oidc'] as const) {
+      const html = render(mode, false);
+      expect(html).toContain('min-h-dvh items-center justify-center');
+      expect(html).toMatch(/data-slot="brand-mark"[^>]*>W</);
+    }
+  });
+  it('uses 44px inputs and button', () => {
+    const html = render('local', true);
+    expect(html.match(/<input[^>]*class="h-11 /g)).toHaveLength(2);
+    expect(html).toMatch(/<button type="submit"[^>]*class="[^"]*h-11/);
+  });
+  it('puts the error alert above the submit button', () => {
+    const html = render('local', false, 'oidc_failed');
+    expect(html.indexOf('data-slot="alert"')).toBeGreaterThan(-1);
+    expect(html.indexOf('data-slot="alert"')).toBeLessThan(html.indexOf('type="submit"'));
+    expect(loginSrc.indexOf("failure !== null ? (")).toBeLessThan(loginSrc.indexOf('<button type="submit"'));
+  });
+  it('has a "Signing in..." busy label in en and nl, used while the request runs', () => {
+    expect(loginPageMessages.en.signingIn).toBe('Signing in...');
+    expect(loginPageMessages.nl.signingIn).not.toBe(loginPageMessages.en.signingIn);
+    expect(loginSrc).toContain("busy ? t('signingIn') : t('signIn')");
   });
 });

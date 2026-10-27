@@ -109,7 +109,7 @@ describe('VerifyEmailView', () => {
   it('shows the expiry message for an invalid token', () => {
     const html = render({ kind: 'invalid' });
     expect(html).toContain('24 hours');
-    expect(html).toContain('text-warning');
+    expect(html).toContain('data-variant="error"');
   });
   it('shows the disabled message', () => {
     expect(render({ kind: 'disabled' })).toContain('Password sign-in is turned off');
@@ -124,5 +124,17 @@ describe('VerifyEmailView', () => {
     expect(render({ kind: 'form' }, 'nl')).toContain('Voer het wachtwoord in');
     expect(render({ kind: 'success' }, 'nl')).toContain('Uw e-mailadres is bevestigd.');
     expect(render({ kind: 'invalid' }, 'nl')).toContain('24 uur');
+  });
+});
+
+describe('VerifyEmailView styling', () => {
+  it('uses the same centred auth card, brand mark, 44px controls and alert as the login page', () => {
+    const html = render({ kind: 'form', wrongPassword: true });
+    expect(html).toContain('min-h-dvh items-center justify-center');
+    expect(html).toMatch(/data-slot="brand-mark"[^>]*>W</);
+    expect(html).toMatch(/<input[^>]*class="h-11 /);
+    expect(html).toMatch(/<button type="submit"[^>]*class="[^"]*h-11/);
+    expect(html.indexOf('data-slot="alert"')).toBeLessThan(html.indexOf('type="submit"'));
+    expect(render({ kind: 'success' })).toContain('data-variant="success"');
   });
 });

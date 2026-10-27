@@ -1,4 +1,6 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
+import { AUTH_BUTTON, AUTH_INPUT, AuthCard } from '@/components/auth/AuthCard';
+import { Alert } from '@/components/ui/alert';
 import { errorText, LanguageSelect, useT, type Locale } from '@/i18n';
 import { commonMessages } from '@/i18n/common.messages';
 import { apiRequest, ApiError } from '@/lib/api';
@@ -41,10 +43,8 @@ function failureCode(err: unknown, login: boolean): string {
   return 'request_failed';
 }
 
-const inputClass =
-  'w-full rounded-md border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
-const buttonClass =
-  'w-full rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50';
+const inputClass = AUTH_INPUT;
+const buttonClass = AUTH_BUTTON;
 
 export interface LoginFormProps {
   config: AuthConfig;
@@ -68,18 +68,13 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
 
   if (config.mode === 'oidc') {
     return (
-      <div className="mx-auto max-w-sm space-y-4 rounded-lg border bg-card p-6">
-        <h1 className="text-lg font-semibold">{t('title')}</h1>
-        {pageError !== null ? (
-          <p role="alert" className="text-sm text-warning">
-            {pageError}
-          </p>
-        ) : null}
-        <a href="/api/auth/oidc/login" className={buttonClass + ' block text-center'}>
+      <AuthCard title={t('title')}>
+        {pageError !== null ? <Alert variant="error">{pageError}</Alert> : null}
+        <a href="/api/auth/oidc/login" className={buttonClass}>
           {t('sso')}
         </a>
         <LanguageSelect />
-      </div>
+      </AuthCard>
     );
   }
 
@@ -121,16 +116,11 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
   };
 
   return (
-    <div className="mx-auto max-w-sm space-y-4 rounded-lg border bg-card p-6">
-      <h1 className="text-lg font-semibold">{registering ? t('registerTitle') : t('title')}</h1>
-      {pageError !== null ? (
-        <p role="alert" className="text-sm text-warning">
-          {pageError}
-        </p>
-      ) : null}
+    <AuthCard title={registering ? t('registerTitle') : t('title')}>
+      {pageError !== null ? <Alert variant="error">{pageError}</Alert> : null}
       <form className="space-y-3" onSubmit={onSubmit}>
         <label className="block text-sm">
-          <span className="mb-1 block text-muted-foreground">{t('email')}</span>
+          <span className="mb-1 block text-muted">{t('email')}</span>
           <input
             type="email"
             name="email"
@@ -144,7 +134,7 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
           />
         </label>
         <label className="block text-sm">
-          <span className="mb-1 block text-muted-foreground">{t('password')}</span>
+          <span className="mb-1 block text-muted">{t('password')}</span>
           <input
             type="password"
             name="password"
@@ -159,7 +149,7 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
         </label>
         {registering ? (
           <label className="block text-sm">
-            <span className="mb-1 block text-muted-foreground">{t('confirmPassword')}</span>
+            <span className="mb-1 block text-muted">{t('confirmPassword')}</span>
             <input
               type="password"
               name="confirmPassword"
@@ -174,17 +164,11 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
           </label>
         ) : null}
         {failure !== null ? (
-          <p role="alert" className="text-sm text-warning">
-            {registering ? registerErrorMessage(failure, locale) : errorFor(failure)}
-          </p>
+          <Alert variant="error">{registering ? registerErrorMessage(failure, locale) : errorFor(failure)}</Alert>
         ) : null}
-        {sent ? (
-          <p role="status" className="text-sm text-muted-foreground">
-            {t('registerSent')}
-          </p>
-        ) : null}
-        <button type="submit" disabled={busy} className={buttonClass}>
-          {registering ? t('createAccount') : t('signIn')}
+        {sent ? <Alert variant="info">{t('registerSent')}</Alert> : null}
+        <button type="submit" disabled={busy} aria-busy={busy} className={buttonClass}>
+          {registering ? (busy ? t('creatingAccount') : t('createAccount')) : busy ? t('signingIn') : t('signIn')}
         </button>
       </form>
       {config.registration ? (
@@ -195,13 +179,13 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
             setFailure(null);
             setSent(false);
           }}
-          className="w-full text-center text-sm text-foreground underline"
+          className="flex min-h-11 w-full items-center justify-center rounded-md text-center text-sm text-foreground underline outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           {registering ? t('backToSignIn') : t('showRegister')}
         </button>
       ) : null}
       <LanguageSelect />
-    </div>
+    </AuthCard>
   );
 }
 
@@ -228,13 +212,19 @@ export function LoginPage() {
   }, []);
 
   if (state.status === 'loading') {
-    return <p className="text-sm text-muted-foreground">{t('loading')}</p>;
+    return (
+      <AuthCard title={t('title')}>
+        <p role="status" className="text-sm text-muted">
+          {t('loading')}
+        </p>
+      </AuthCard>
+    );
   }
   if (state.status === 'error') {
     return (
-      <p role="alert" className="text-sm text-warning">
-        {t('configFailed')}
-      </p>
+      <AuthCard title={t('title')}>
+        <Alert variant="error">{t('configFailed')}</Alert>
+      </AuthCard>
     );
   }
   return <LoginForm config={state.config} errorCode={errorCode} />;
