@@ -6,6 +6,7 @@ import { buildActualBody } from '../dashboard/create-submit';
 import { catalogues } from '@/i18n/catalogues';
 import type { SyncItem } from '../../../lib/sync-check-types';
 import src from './RelinkDialog.tsx?raw';
+import dialogSrc from '../ui/dialog.tsx?raw';
 import { orderRelinkItems } from './relink-order';
 import { relinkDialogMessages } from './RelinkDialog.messages';
 
@@ -47,6 +48,12 @@ describe('Relink client and failure display', () => {
   });
   it('builds on DialogShell', () => {
     expect(src).toContain('<DialogShell');
+  });
+  it('close control is a 44px touch target below 768px', () => {
+    // DialogShell renders DialogContent, whose close button carries the sizing.
+    const close = /data-slot="dialog-close"\s+className="([^"]*)"/.exec(dialogSrc)?.[1] ?? '';
+    expect(close).toContain('max-md:min-h-(--control-h)');
+    expect(close).toContain('max-md:min-w-(--control-h)');
   });
 });
 
