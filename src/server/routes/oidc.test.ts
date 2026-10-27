@@ -8,6 +8,8 @@ import { OidcError, type OidcFlow, type OidcIdentity, type OidcProvider } from '
 import { CSRF_COOKIE, SESSION_COOKIE } from '../auth/sessions.js';
 import { deriveFlowKey } from '../crypto/keys.js';
 import { createUser } from '../db/accounts.js';
+import { createUserRepo } from '../db/repo.js';
+import { setRegistrationEnabled } from '../db/app-settings.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../db/client.js';
 import { makeClock, signIn } from '../test/auth-helpers.js';
 
@@ -85,11 +87,14 @@ function setup(
   opts: {
     mode?: AuthMode;
     allowRegistration?: boolean;
+    /** The stored admin toggle. Default on, so `allowRegistration` alone decides. */
+    registrationEnabled?: boolean;
     outcome?: Outcome;
     logStream?: NodeJS.WritableStream;
   } = {},
 ) {
   const db = openDatabase(':memory:');
+  setRegistrationEnabled(db, opts.registrationEnabled ?? true);
   const clock = makeClock();
   const provider = fakeProvider(opts.outcome ?? identity());
   const mode = opts.mode ?? 'oidc';
@@ -482,6 +487,65 @@ describe('GET /api/auth/oidc/callback success paths', () => {
     expect(count(t.db, 'user_identities')).toBe(0);
     expect(sessions(t.db)).toHaveLength(0);
     expectFlowCleared(res);
+  });
+
+  it('toggle off with the ceiling on: a first sign-in with no account is refused, nothing created', async () => {
+    const t = setup({ allowRegistration: true, registrationEnabled: false, outcome: identity({ email: 'new@x.com' }) });
+    const res = await callback(t, { flowCookie: (await login(t)).flowCookie });
+    expect(res.headers.location).toBe('/login?error=account_not_linked');
+    expect(cookieOf(res, SESSION_COOKIE)).toBeUndefined();
+    expect(count(t.db, 'users')).toBe(0);
+    expect(count(t.db, 'user_identities')).toBe(0);
+    expect(sessions(t.db)).toHaveLength(0);
+  });
+
+  it('toggle off: a known identity still signs in', async () => {
+    const t = setup({ allowRegistration: true, registrationEnabled: false, outcome: identity({ email: 'kate@x.com' }) });
+    const kate = createUser(t.db, { email: 'kate@x.com', passwordHash: null });
+    createUserRepo(t.db, kate.id).linkIdentity(ISS, 'sub-1');
+    const res = await callback(t, { flowCookie: (await login(t)).flowCookie });
+    expect(res.headers.location).toBe('/');
+    expect(sessions(t.db)[0]?.userId).toBe(kate.id);
+  });
+
+  it('toggle off: verified-email linking of an existing account still signs in', async () => {
+    const t = setup({ allowRegistration: true, registrationEnabled: false, outcome: identity({ email: 'kate@x.com' }) });
+    const kate = createUser(t.db, { email: 'kate@x.com', passwordHash: 'h' });
+    const res = await callback(t, { flowCookie: (await login(t)).flowCookie });
+    expect(res.headers.location).toBe('/');
+    expect(sessions(t.db)[0]?.userId).toBe(kate.id);
+    expect(count(t.db, 'user_identities')).toBe(1);
+  });
+
+  it('runtime flip with no restart: refused while off, created once an admin turns it on, refused after off again', async () => {
+    const t = setup({ allowRegistration: true, registrationEnabled: false, outcome: identity({ email: 'new@x.com' }) });
+    const first = await callback(t, { flowCookie: (await login(t)).flowCookie });
+    expect(first.headers.location).toBe('/login?error=account_not_linked');
+    expect(count(t.db, 'users')).toBe(0);
+
+    setRegistrationEnabled(t.db, true);
+    const second = await callback(t, {
+      flowCookie: (await login(t)).flowCookie,
+      query: '?code=c&state=state-secret-2',
+    });
+    expect(second.headers.location).toBe('/');
+    expect(count(t.db, 'users')).toBe(1);
+
+    t.provider.outcome = identity({ email: 'other@x.com', subject: 'sub-2' });
+    setRegistrationEnabled(t.db, false);
+    const third = await callback(t, {
+      flowCookie: (await login(t)).flowCookie,
+      query: '?code=c&state=state-secret-3',
+    });
+    expect(third.headers.location).toBe('/login?error=account_not_linked');
+    expect(count(t.db, 'users')).toBe(1);
+  });
+
+  it('ceiling off with the toggle on: a first sign-in with no account is refused', async () => {
+    const t = setup({ allowRegistration: false, registrationEnabled: true, outcome: identity({ email: 'new@x.com' }) });
+    const res = await callback(t, { flowCookie: (await login(t)).flowCookie });
+    expect(res.headers.location).toBe('/login?error=account_not_linked');
+    expect(count(t.db, 'users')).toBe(0);
   });
 
   it('creation with registration on but email_verified false: refused, no user', async () => {

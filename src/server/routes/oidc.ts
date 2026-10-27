@@ -9,6 +9,7 @@ import {
 } from '../auth/rate-limit.js';
 import { OIDC_FLOW_COOKIE, OIDC_FLOW_TTL_MS, openFlow, sealFlow } from '../auth/oidc-flow.js';
 import { resolveOidcLogin } from '../auth/oidc-link.js';
+import { isRegistrationOpen } from '../auth/registration.js';
 import type { OidcRuntime } from '../auth/oidc.js';
 import { OidcError } from '../auth/oidc.js';
 import { createSession, deleteSession, setSessionCookies } from '../auth/sessions.js';
@@ -17,6 +18,7 @@ import type { AppDatabase } from '../db/client.js';
 export interface OidcRoutesOptions {
   readonly db: AppDatabase;
   readonly secureCookies: boolean;
+  /** The ALLOW_REGISTRATION ceiling; first-login creation also needs the stored admin toggle. */
   readonly allowRegistration: boolean;
   /** Clock in ms since the epoch, the same one the session hook uses. */
   readonly now: () => number;
@@ -135,7 +137,9 @@ export function registerOidcRoutes(app: FastifyInstance, options: OidcRoutesOpti
         const queryStart = request.url.indexOf('?');
         currentUrl.search = queryStart === -1 ? '' : request.url.slice(queryStart);
         const identity = await oidc.provider.finish(currentUrl, flow);
-        const result = resolveOidcLogin(db, identity, { allowRegistration });
+        const result = resolveOidcLogin(db, identity, {
+          allowRegistration: isRegistrationOpen(db, allowRegistration),
+        });
         if (result.kind === 'refused') {
           request.log.info({ outcome: 'refused' }, 'oidc sign-in refused');
           return await go(reply, NOT_LINKED);
