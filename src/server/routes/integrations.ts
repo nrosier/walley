@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyReply } from 'fastify';
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { CurrencyConversionError } from '../../lib/currency-convert.js';
 import { FrequencyMappingError } from '../../lib/frequency-mapper.js';
 import { ActualSessionError } from '../integrations/actual/session.js';
@@ -89,6 +89,34 @@ export function sendFailure(reply: FastifyReply, error: unknown): FastifyReply {
   return send(500, 'internal_error');
 }
 
+/** Only a plain upper-case code (e.g. SQLITE_FULL) is logged; anything else becomes UNKNOWN. */
+function errorCode(error: unknown): string {
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code) ? code : 'UNKNOWN';
+}
+
+/**
+ * The remote item already exists, so a failed match insert must not become a 500 (the retry would
+ * create a duplicate). Answer with matchCreated false and no matchId, and log one fixed line:
+ * route and error code only, never ids or credentials.
+ */
+async function linkAfterCreate(
+  request: FastifyRequest,
+  route: string,
+  deps: CreateDeps,
+  userId: string,
+  wallosId: string,
+  scheduleId: string,
+): Promise<Record<string, unknown>> {
+  try {
+    const linked = await linkCreatedPair(deps, userId, wallosId, scheduleId);
+    return linked === null ? {} : { ...linked };
+  } catch (error: unknown) {
+    request.log.warn({ route, code: errorCode(error) }, 'match insert failed after create');
+    return { matchCreated: false };
+  }
+}
+
 export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = async (app, opts) => {
   const { deps } = opts;
 
@@ -115,14 +143,21 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
         payee,
         ...(categoryId === undefined ? {} : { categoryId }),
       });
-      const linked = await linkCreatedPair(deps, request.auth.userId, body['wallosSubscriptionId'], result.scheduleId);
+      const linked = await linkAfterCreate(
+        request,
+        'actual-schedules',
+        deps,
+        request.auth.userId,
+        body['wallosSubscriptionId'],
+        result.scheduleId,
+      );
       return await reply.code(201).send({
         scheduleId: result.scheduleId,
         payeeId: result.payeeId,
         payeeCreated: result.payeeCreated,
         categoryApplied: result.categoryApplied,
         ...(result.categoryError === true ? { categoryError: true } : {}),
-        ...(linked === null ? {} : linked),
+        ...linked,
       });
     } catch (error: unknown) {
       return await Promise.resolve(sendFailure(reply, error));
@@ -141,10 +176,17 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
       const result = await createWallosSubscriptionFromActualSchedule(deps, request.auth.userId, {
         scheduleId: body['scheduleId'],
       });
-      const linked = await linkCreatedPair(deps, request.auth.userId, result.wallosSubscriptionId, body['scheduleId']);
+      const linked = await linkAfterCreate(
+        request,
+        'wallos-subscriptions',
+        deps,
+        request.auth.userId,
+        result.wallosSubscriptionId,
+        body['scheduleId'],
+      );
       return await reply.code(201).send({
         wallosSubscriptionId: result.wallosSubscriptionId,
-        ...(linked === null ? {} : linked),
+        ...linked,
       });
     } catch (error: unknown) {
       return await Promise.resolve(sendFailure(reply, error));

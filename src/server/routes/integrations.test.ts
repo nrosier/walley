@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 /** Two users, each with their own Wallos subscriptions and Actual schedules behind the mocks. */
-function setup(overrides: Partial<CreateDeps> = {}) {
+function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert = false) {
   const t = makeAuthApp({ mailer: createCapturingMailer() });
   const owned: Record<string, { subs: number[]; schedules: string[] }> = {};
   const createSchedule = vi.fn(async () => ({
@@ -59,7 +59,16 @@ function setup(overrides: Partial<CreateDeps> = {}) {
   } as unknown as WallosClient;
   const deps: CreateDeps = {
     wallos,
-    repoFor: (id) => createUserRepo(t.db, id),
+    repoFor: (id) => {
+      const repo = createUserRepo(t.db, id);
+      if (!failMatchInsert) return repo;
+      return {
+        ...repo,
+        insertMatch: () => {
+          throw Object.assign(new Error('disk full 12.50 Netflix'), { code: 'SQLITE_FULL' });
+        },
+      };
+    },
     withActual: (id, use) =>
       use({
         getPreferences: async () => ({ defaultCurrencyCode: 'EUR' }),
@@ -423,6 +432,30 @@ describe('create saves the pair as a LINKED match (#108)', () => {
     const { app, sa, a, db } = setup({ createSchedule: () => Promise.reject(new ActualWriteError('x', 'sync_failed')) });
     const res = await injectAs(app, sa, { method: 'POST', url: SCHED_URL, payload: SCHED_BODY });
     expect(res.statusCode).toBe(502);
+    expect(createUserRepo(db, a).listMatches()).toEqual([]);
+  });
+
+  it('returns 201 with the created id when the match insert fails (actual-schedules)', async () => {
+    const { app, sa, a, db } = setup({
+      createSchedule: async () => ({ scheduleId: 'sch-a', payeeId: 'p1', payeeCreated: true, categoryApplied: false }),
+    }, true);
+    const res = await injectAs(app, sa, { method: 'POST', url: SCHED_URL, payload: SCHED_BODY });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<Record<string, unknown>>();
+    expect(body['scheduleId']).toBe('sch-a');
+    expect(body).not.toHaveProperty('matchId');
+    expect(body['matchCreated']).toBe(false);
+    expect(createUserRepo(db, a).listMatches()).toEqual([]);
+  });
+
+  it('returns 201 with the created id when the match insert fails (wallos-subscriptions)', async () => {
+    const { app, sa, a, db } = setup({}, true);
+    const res = await injectAs(app, sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a' } });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<Record<string, unknown>>();
+    expect(body['wallosSubscriptionId']).toBe('55');
+    expect(body).not.toHaveProperty('matchId');
+    expect(body['matchCreated']).toBe(false);
     expect(createUserRepo(db, a).listMatches()).toEqual([]);
   });
 });
