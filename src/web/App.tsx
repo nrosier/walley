@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { useT } from '@/i18n';
 import { apiRequest } from '@/lib/api';
@@ -7,6 +7,7 @@ import { navigate, useRoute, type Route } from '@/lib/route';
 import { syncStore } from '@/lib/sync-check';
 import { checkSession, type SessionUser } from '@/lib/session';
 import { applyTheme, readTheme, toggleTheme, writeTheme, type Theme } from '@/lib/theme';
+import { ThemeControlContext } from '@/lib/theme-context';
 import { LoginPage } from '@/pages/LoginPage';
 import { Matches } from '@/pages/Matches';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -60,11 +61,14 @@ function Shell({ route }: { route: ShellRoute }) {
     applyTheme(theme);
   }, [theme]);
 
-  const onToggleTheme = useCallback(() => {
-    const next = toggleTheme(theme);
+  const chooseTheme = useCallback((next: Theme) => {
     writeTheme(next);
     setTheme(next);
-  }, [theme]);
+  }, []);
+  const onToggleTheme = useCallback(() => {
+    chooseTheme(toggleTheme(theme));
+  }, [theme, chooseTheme]);
+  const themeControl = useMemo(() => ({ theme, setTheme: chooseTheme }), [theme, chooseTheme]);
 
   const onLogout = useCallback(() => {
     void requestLogout().then((ok) => {
@@ -95,6 +99,7 @@ function Shell({ route }: { route: ShellRoute }) {
     );
   }
   return (
+    <ThemeControlContext.Provider value={themeControl}>
     <AppShell
       route={route}
       theme={theme}
@@ -110,6 +115,7 @@ function Shell({ route }: { route: ShellRoute }) {
       ) : null}
       <Page key={`${route}-${String(pageKey)}`} route={route} />
     </AppShell>
+    </ThemeControlContext.Provider>
   );
 }
 

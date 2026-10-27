@@ -1,4 +1,5 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
+import { SaveFooter, SettingsCard } from '@/components/settings/SettingsCard';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
 import { ApiError, apiRequest } from '@/lib/api';
@@ -15,7 +16,7 @@ import { actualSettingsMessages } from './ActualSettings.messages';
 import { settingsPageMessages } from './SettingsPage.messages';
 
 const FIELD =
-  'h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 type Status = { kind: 'none' } | { kind: 'busy'; text: 'saving' | 'loadingBudgets' } | { kind: 'ok'; text: 'saved' | 'budgetSaved' } | { kind: 'error'; code: string };
 
@@ -33,6 +34,10 @@ export interface ActualSettingsViewProps {
   currency?: string | null;
   detecting?: boolean;
   status?: Status;
+  /** Anything in the card (URL, a typed secret, sync-key removal, budget pick) differs from what is saved. */
+  dirty?: boolean;
+  /** The picked budget is not saved yet. */
+  budgetDirty?: boolean;
   onUrl?: (value: string) => void;
   onPassword?: (value: string) => void;
   onSyncKey?: (value: string) => void;
@@ -60,10 +65,21 @@ export function ActualSettingsView(props: ActualSettingsViewProps) {
     else statusText = errorText(status.code);
   }
   return (
-    <form onSubmit={submit} className="max-w-md space-y-3" aria-labelledby="actual-settings-heading">
-      <h2 id="actual-settings-heading" className="text-sm font-semibold">
-        {tPage('sections.actual')}
-      </h2>
+    <SettingsCard
+      id="settings-actual"
+      headingId="actual-settings-heading"
+      title={tPage('sections.actual')}
+      scope="account"
+      footer={
+        <SaveFooter
+          formId="actual-settings-form"
+          dirty={props.dirty === true}
+          busy={busy}
+          label={status.kind === 'busy' && status.text === 'saving' ? t('saving') : t('save')}
+        />
+      }
+    >
+    <form id="actual-settings-form" onSubmit={submit} className="max-w-md space-y-3" aria-labelledby="actual-settings-heading">
       <div className="space-y-1">
         <label htmlFor="actual-url" className="text-xs font-medium">
           {t('url')}
@@ -124,17 +140,12 @@ export function ActualSettingsView(props: ActualSettingsViewProps) {
           </label>
         ) : null}
       </div>
-      <div className="flex items-center gap-2">
-        <Button type="submit" size="sm" disabled={busy}>
-          {status.kind === 'busy' && status.text === 'saving' ? t('saving') : t('save')}
-        </Button>
-        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={props.onLoadBudgets}>
-          {t('loadBudgets')}
-        </Button>
-      </div>
+      <Button type="button" variant="outline" className="min-h-(--control-h)" disabled={busy} onClick={props.onLoadBudgets}>
+        {t('loadBudgets')}
+      </Button>
       {props.budgets !== null ? (
         props.budgets.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{t('noBudgets')}</p>
+          <p className="text-xs text-muted">{t('noBudgets')}</p>
         ) : (
           <div className="space-y-1">
             <label htmlFor="actual-budget" className="text-xs font-medium">
@@ -157,16 +168,17 @@ export function ActualSettingsView(props: ActualSettingsViewProps) {
                 </option>
               ))}
             </select>
+            {props.budgetDirty === true ? <p className="text-xs text-muted">{t('budgetPending')}</p> : null}
           </div>
         )
       ) : null}
       {props.budgetId !== null ? (
         <p className="text-xs">
-          <span className="text-muted-foreground">{t('baseCurrency')}: </span>
+          <span className="text-muted">{t('baseCurrency')}: </span>
           {props.detecting === true ? (
-            <span className="text-muted-foreground">{t('detecting')}</span>
+            <span className="text-muted">{t('detecting')}</span>
           ) : props.currency === undefined ? null : props.currency === null ? (
-            <span className="text-muted-foreground">{t('notSet')}</span>
+            <span className="text-muted">{t('notSet')}</span>
           ) : (
             <span className="font-mono">{props.currency}</span>
           )}
@@ -180,6 +192,7 @@ export function ActualSettingsView(props: ActualSettingsViewProps) {
         {statusText}
       </p>
     </form>
+    </SettingsCard>
   );
 }
 
@@ -192,6 +205,7 @@ export function ActualSettings() {
   const [hasPassword, setHasPassword] = useState(false);
   const [hasSyncKey, setHasSyncKey] = useState(false);
   const [budgetId, setBudgetId] = useState<string | null>(null);
+  const [savedBudgetId, setSavedBudgetId] = useState<string | null>(null);
   const [budgets, setBudgets] = useState<BudgetOption[] | null>(null);
   const [currency, setCurrency] = useState<string | null | undefined>(undefined);
   const [detecting, setDetecting] = useState(false);
@@ -203,6 +217,7 @@ export function ActualSettings() {
     setUrl(data.actualUrl);
     setSavedUrl(data.actualUrl);
     setBudgetId(data.actualBudgetId);
+    setSavedBudgetId(data.actualBudgetId);
     setHasPassword(data.hasActualPassword);
     setHasSyncKey(data.hasActualSyncKey);
   };
@@ -238,20 +253,41 @@ export function ActualSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const credentialsDirty = url !== savedUrl || password !== '' || syncKey !== '' || clearSyncKey;
+  const budgetDirty = budgetId !== savedBudgetId;
+
+  /** Saves the picked budget through the existing budget-choice request, then re-detects the currency. */
+  const saveBudget = (id: string) =>
+    saveBudgetChoice(savedUrl, id).then((data) => {
+      apply(data);
+      detect();
+    });
+
+  /**
+   * The card's one Save. Credentials go through the settings PUT; a changed budget pick goes through the
+   * budget-choice PUT (both existing request shapes). A new URL clears the budget on the server, so the pick
+   * is only sent while the URL is unchanged.
+   */
   const save = () => {
     setStatus({ kind: 'busy', text: 'saving' });
-    saveActualSettings({ url, password, syncKey, clearSyncKey })
-      .then((data) => {
-        const urlChanged = data.actualUrl !== savedUrl;
-        apply(data);
-        setPassword('');
-        setSyncKey('');
-        setClearSyncKey(false);
-        if (urlChanged) {
-          setBudgets(null);
-          setCurrency(undefined);
-        }
-        setStatus({ kind: 'ok', text: 'saved' });
+    const pick = budgetDirty && budgetId !== null && url === savedUrl ? budgetId : null;
+    const credentials = credentialsDirty || pick === null
+      ? saveActualSettings({ url, password, syncKey, clearSyncKey }).then((data) => {
+          const urlChanged = data.actualUrl !== savedUrl;
+          apply(data);
+          setPassword('');
+          setSyncKey('');
+          setClearSyncKey(false);
+          if (urlChanged) {
+            setBudgets(null);
+            setCurrency(undefined);
+          }
+        })
+      : Promise.resolve();
+    credentials
+      .then(() => (pick === null ? undefined : saveBudget(pick)))
+      .then(() => {
+        setStatus({ kind: 'ok', text: pick === null ? 'saved' : 'budgetSaved' });
       })
       .catch(fail);
   };
@@ -266,15 +302,10 @@ export function ActualSettings() {
       .catch(fail);
   };
 
+  // A pick only changes the form; the card's Save sends it.
   const pickBudget = (id: string) => {
-    setStatus({ kind: 'busy', text: 'saving' });
-    saveBudgetChoice(savedUrl, id)
-      .then((data) => {
-        apply(data);
-        setStatus({ kind: 'ok', text: 'budgetSaved' });
-        detect();
-      })
-      .catch(fail);
+    setBudgetId(id);
+    setStatus({ kind: 'none' });
   };
 
   return (
@@ -290,6 +321,8 @@ export function ActualSettings() {
       currency={currency}
       detecting={detecting}
       status={status}
+      dirty={credentialsDirty || budgetDirty}
+      budgetDirty={budgetDirty}
       onUrl={setUrl}
       onPassword={setPassword}
       onSyncKey={setSyncKey}

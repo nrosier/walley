@@ -32,7 +32,7 @@ describe('WallosSettingsView', () => {
     expect(html).toContain('for="wallos-api-key"');
     expect(html).toContain('Wallos API key');
     expect(html).toContain('Test Connection');
-    expect(html).toContain('>Save<');
+    expect(html).toContain('>Save Wallos<');
     expect(html).toContain(HELP_EN);
   });
 
@@ -69,7 +69,7 @@ describe('WallosSettingsView', () => {
   it('renders the Dutch help text and labels', () => {
     const html = render('nl', { url: '', apiKey: '', hasKey: true });
     expect(html).toContain(HELP_NL);
-    expect(html).toContain('Opslaan');
+    expect(html).toContain('Wallos opslaan');
     expect(html).toContain('Verbinding testen');
     expect(html).not.toContain(HELP_EN);
   });
@@ -99,5 +99,18 @@ describe('runConnectionTest', () => {
     const failing: typeof fetch = () => Promise.reject(new TypeError('network down'));
     const state = await runConnectionTest(failing);
     expect(state).toEqual({ kind: 'error', code: 'request_failed' });
+  });
+});
+
+describe('WallosSettingsView card', () => {
+  it('is a card with the account scope pill and one footer Save with the unsaved status', () => {
+    const clean = render('en', { url: '', apiKey: '', hasKey: true });
+    expect(clean).toContain('data-scope="account"');
+    expect(clean).toContain('No unsaved changes');
+    expect(clean.match(/type="submit"/g)).toHaveLength(1);
+    expect(clean).toContain('form="wallos-settings-form"');
+    const dirty = render('en', { url: '', apiKey: 'typed', hasKey: true, dirty: true });
+    expect(dirty).toContain('Unsaved changes');
+    expect(dirty).not.toContain('No unsaved changes');
   });
 });

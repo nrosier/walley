@@ -7,7 +7,7 @@ const en = {
   apiKeySaved: '•••••••• saved',
   help: 'Test Connection uses your saved settings. Save first.',
   actions: {
-    save: 'Save',
+    save: 'Save Wallos',
     saving: 'Saving...',
     test: 'Test Connection',
     testing: 'Testing...',
@@ -30,7 +30,7 @@ const nl: typeof en = {
   apiKeySaved: '•••••••• opgeslagen',
   help: 'Verbinding testen gebruikt uw opgeslagen instellingen. Sla eerst op.',
   actions: {
-    save: 'Opslaan',
+    save: 'Wallos opslaan',
     saving: 'Opslaan...',
     test: 'Verbinding testen',
     testing: 'Testen...',

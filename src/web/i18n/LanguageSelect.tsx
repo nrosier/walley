@@ -1,9 +1,9 @@
 import { commonMessages } from './common.messages';
 import { useLocale, useT } from './context';
-import { LOCALES, parseLocale } from './locale';
+import { LOCALES, parseLocale, type Locale } from './locale';
 
 /** Labelled language picker. The choice is stored per device (localStorage). */
-export function LanguageSelect({ className }: { className?: string }) {
+export function LanguageSelect({ className, onChange }: { className?: string; onChange?: (locale: Locale) => void }) {
   const { locale, setLocale } = useLocale();
   const { t } = useT(commonMessages);
   return (
@@ -16,7 +16,10 @@ export function LanguageSelect({ className }: { className?: string }) {
         value={locale}
         onChange={(e) => {
           const next = parseLocale(e.target.value);
-          if (next !== null) setLocale(next);
+          if (next !== null) {
+            setLocale(next);
+            onChange?.(next);
+          }
         }}
         className="rounded-md border border-border bg-background px-2 py-1 text-sm"
       >

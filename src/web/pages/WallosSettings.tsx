@@ -1,4 +1,5 @@
 import { useEffect, useState, type SyntheticEvent } from 'react';
+import { SaveFooter, SettingsCard } from '@/components/settings/SettingsCard';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
 import { ApiError, apiRequest } from '@/lib/api';
@@ -22,7 +23,7 @@ export interface Notice {
 }
 
 const FIELD =
-  'h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 /** Only url and hasKey are taken from a response. The key itself is never read back. */
 // Exported for tests; the module is otherwise a component file.
@@ -49,6 +50,8 @@ export interface WallosSettingsViewProps {
   saving?: boolean;
   saveNotice?: Notice | null;
   test?: TestState;
+  /** The form differs from what is saved: the URL changed or a key was typed. */
+  dirty?: boolean;
   onUrl?: (value: string) => void;
   onApiKey?: (value: string) => void;
   onSave?: () => void;
@@ -70,64 +73,71 @@ export function WallosSettingsView(props: WallosSettingsViewProps) {
         ? { tone: 'warning', text: errorText(test.code) }
         : null;
   return (
-    <form onSubmit={submit} className="max-w-md space-y-3" aria-labelledby="wallos-settings-title">
-      <h2 id="wallos-settings-title" className="text-sm font-semibold">
-        {t('title')}
-      </h2>
-      <div className="space-y-1">
-        <label htmlFor="wallos-url" className="text-xs font-medium">
-          {t('fields.url')}
-        </label>
-        <input
-          id="wallos-url"
-          name="wallosUrl"
-          type="url"
-          className={FIELD}
-          value={props.url}
-          onChange={(e) => props.onUrl?.(e.target.value)}
-          autoComplete="off"
-          required
+    <SettingsCard
+      id="settings-wallos"
+      headingId="wallos-settings-title"
+      title={t('title')}
+      scope="account"
+      footer={
+        <SaveFooter
+          formId="wallos-settings-form"
+          dirty={props.dirty === true}
+          busy={props.saving === true}
+          label={props.saving === true ? t('actions.saving') : t('actions.save')}
         />
-      </div>
-      <div className="space-y-1">
-        <label htmlFor="wallos-api-key" className="text-xs font-medium">
-          {t('fields.apiKey')}
-        </label>
-        <div className="flex items-center gap-2">
+      }
+    >
+      <form id="wallos-settings-form" onSubmit={submit} className="max-w-md space-y-3" aria-labelledby="wallos-settings-title">
+        <div className="space-y-1">
+          <label htmlFor="wallos-url" className="text-xs font-medium">
+            {t('fields.url')}
+          </label>
           <input
-            id="wallos-api-key"
-            name="apiKey"
-            type="password"
+            id="wallos-url"
+            name="wallosUrl"
+            type="url"
             className={FIELD}
-            value={props.apiKey}
-            onChange={(e) => props.onApiKey?.(e.target.value)}
-            autoComplete="new-password"
+            value={props.url}
+            onChange={(e) => props.onUrl?.(e.target.value)}
+            autoComplete="off"
+            required
           />
-          {props.hasKey && props.apiKey === '' ? (
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">{t('apiKeySaved')}</span>
-          ) : null}
         </div>
-      </div>
-      <p className="text-xs text-muted-foreground">{t('help')}</p>
-      <div className="flex items-center gap-2">
-        <Button type="submit" size="sm" disabled={props.saving === true}>
-          {props.saving === true ? t('actions.saving') : t('actions.save')}
-        </Button>
+        <div className="space-y-1">
+          <label htmlFor="wallos-api-key" className="text-xs font-medium">
+            {t('fields.apiKey')}
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="wallos-api-key"
+              name="apiKey"
+              type="password"
+              className={FIELD}
+              value={props.apiKey}
+              onChange={(e) => props.onApiKey?.(e.target.value)}
+              autoComplete="new-password"
+            />
+            {props.hasKey && props.apiKey === '' ? (
+              <span className="shrink-0 font-mono text-xs text-muted">{t('apiKeySaved')}</span>
+            ) : null}
+          </div>
+        </div>
+        <p className="text-xs text-muted">{t('help')}</p>
         <Button
           type="button"
-          size="sm"
           variant="outline"
+          className="min-h-(--control-h)"
           disabled={test.kind === 'testing'}
           onClick={props.onTest}
         >
           {test.kind === 'testing' ? t('actions.testing') : t('actions.test')}
         </Button>
-      </div>
-      <div role="status" aria-live="polite" className="min-h-4 space-y-1 text-xs">
-        {props.saveNotice ? <p className={noticeClass(props.saveNotice)}>{props.saveNotice.text}</p> : null}
-        {testNotice ? <p className={noticeClass(testNotice)}>{testNotice.text}</p> : null}
-      </div>
-    </form>
+        <div role="status" aria-live="polite" className="min-h-4 space-y-1 text-xs">
+          {props.saveNotice ? <p className={noticeClass(props.saveNotice)}>{props.saveNotice.text}</p> : null}
+          {testNotice ? <p className={noticeClass(testNotice)}>{testNotice.text}</p> : null}
+        </div>
+      </form>
+    </SettingsCard>
   );
 }
 
@@ -138,6 +148,7 @@ function noticeClass(notice: Notice): string {
 export function WallosSettings() {
   const { t, errorText } = useT(wallosSettingsMessages);
   const [url, setUrl] = useState('');
+  const [savedUrl, setSavedUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [hasKey, setHasKey] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -150,6 +161,7 @@ export function WallosSettings() {
       .then((data) => {
         const loaded = loadedSettings(data);
         setUrl(loaded.url);
+        setSavedUrl(loaded.url);
         setHasKey(loaded.hasKey);
       })
       .catch(() => {
@@ -173,6 +185,7 @@ export function WallosSettings() {
       .then((data) => {
         const loaded = loadedSettings(data);
         setUrl(loaded.url);
+        setSavedUrl(loaded.url);
         setHasKey(loaded.hasKey);
         setApiKey('');
         setSaveNotice({ tone: 'success', text: t('status.saved') });
@@ -202,6 +215,7 @@ export function WallosSettings() {
       saving={saving}
       saveNotice={saveNotice}
       test={test}
+      dirty={url !== savedUrl || apiKey !== ''}
       onUrl={setUrl}
       onApiKey={setApiKey}
       onSave={save}

@@ -9,6 +9,7 @@ import {
   parseTolerance,
   saveTolerance,
 } from './MatchingSettings';
+import matchingSrc from './MatchingSettings.tsx?raw';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -136,5 +137,17 @@ describe('saveTolerance', () => {
       throw new TypeError('offline');
     }) as unknown as typeof fetch;
     await expect(saveTolerance('10', fetchImpl)).resolves.toEqual({ kind: 'error', code: 'request_failed' });
+  });
+});
+
+describe('MatchingSettings card', () => {
+  it('saves only through the footer Save (no save on blur or slider release) and shows the unsaved status', () => {
+    const html = renderView({ dirty: true });
+    expect(html).toContain('Unsaved changes');
+    expect(html).toContain('form="matching-settings-form"');
+    expect(html).toContain('>Save Matching<');
+    expect(html).toContain('data-scope="account"');
+    expect(renderView({ dirty: false })).toContain('No unsaved changes');
+    expect(matchingSrc).not.toMatch(/onBlur|onPointerUp|onKeyUp/);
   });
 });

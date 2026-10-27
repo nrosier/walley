@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import { ActualSettings, ActualSettingsView, type ActualSettingsViewProps } from './ActualSettings';
+import actualSrc from './ActualSettings.tsx?raw';
 import { fetchBaseCurrency, fetchBudgets, saveActualSettings, saveBudgetChoice, viewStateFrom } from './ActualSettings.api';
 
 interface Call {
@@ -136,5 +137,25 @@ describe('ActualSettings', () => {
     const html = renderToStaticMarkup(<ActualSettings />);
     expect(inputTag(html, 'actual-password')).not.toMatch(/value="[^"]+"/);
     expect(inputTag(html, 'actual-sync-key')).not.toMatch(/value="[^"]+"/);
+  });
+});
+
+describe('ActualSettings card', () => {
+  it('has one footer Save covering credentials and the budget pick, with the unsaved status', () => {
+    const html = render({ budgets: [{ id: 'b1', name: 'Home' }], budgetId: 'b1', dirty: true, budgetDirty: true });
+    expect(html.match(/type="submit"/g)).toHaveLength(1);
+    expect(html).toContain('form="actual-settings-form"');
+    expect(html).toContain('>Save Actual Budget<');
+    expect(html).toContain('Unsaved changes');
+    expect(html).toContain('Budget choice is saved with Save Actual Budget.');
+    expect(html).toContain('data-scope="account"');
+    expect(render({})).toContain('No unsaved changes');
+  });
+  it('a budget pick only changes the form; Save sends it through the existing budget-choice request', () => {
+    const pick = actualSrc.slice(actualSrc.indexOf('const pickBudget'), actualSrc.indexOf('return (\n    <ActualSettingsView'));
+    expect(pick).not.toContain('saveBudgetChoice');
+    const save = actualSrc.slice(actualSrc.indexOf('const save = '), actualSrc.indexOf('const loadBudgets'));
+    expect(save).toContain('saveBudget(pick)');
+    expect(save).toContain('saveActualSettings(');
   });
 });

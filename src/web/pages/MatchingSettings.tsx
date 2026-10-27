@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
+import { SaveFooter, SettingsCard } from '@/components/settings/SettingsCard';
 import { useT } from '@/i18n';
 import { ApiError, apiRequest } from '@/lib/api';
 import { matchingSettingsMessages } from './MatchingSettings.messages';
@@ -10,10 +11,9 @@ export const MIN_TOLERANCE_PERCENT = 0;
 export const MAX_TOLERANCE_PERCENT = 50;
 
 const ENDPOINT = '/api/settings/matching';
-const SLIDER_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'];
 
 const FIELD =
-  'h-9 w-full rounded-md border bg-background px-3 font-mono text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'min-h-(--control-h) w-full rounded-md border bg-background px-3 font-mono text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 /** The value as a number when it is finite and within 0 to 50 inclusive; otherwise null. */
 // eslint-disable-next-line react-refresh/only-export-components -- exported for tests
@@ -70,11 +70,14 @@ export interface MatchingSettingsViewProps {
   status: MatchingStatus;
   /** Resolved message for the error status. */
   message?: string;
+  /** The value differs from the saved one. */
+  dirty?: boolean;
   onTextChange?: (raw: string) => void;
+  /** The card's Save (footer button or Enter in the input). */
   onCommit?: (raw: string) => void;
 }
 
-/** Presentational control. Input and slider share one value; each commit saves through onCommit. */
+/** Presentational control. Input and slider share one value; the footer Save sends it through onCommit. */
 export function MatchingSettingsView(props: MatchingSettingsViewProps) {
   const { t } = useT(matchingSettingsMessages);
   const { t: tSettings } = useT(settingsPageMessages);
@@ -92,73 +95,77 @@ export function MatchingSettingsView(props: MatchingSettingsViewProps) {
           ? (props.message ?? '')
           : '';
 
-  const onInputKey = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      props.onCommit?.(event.currentTarget.value);
-    }
+  const submit = (event: SyntheticEvent) => {
+    event.preventDefault();
+    props.onCommit?.(props.text);
   };
 
   return (
-    <section className="max-w-md space-y-3" aria-labelledby="matching-settings-heading">
-      <h2 id="matching-settings-heading" className="text-sm font-semibold">
-        {tSettings('sections.matching')}
-      </h2>
-      <div className="space-y-1">
-        <label id={labelId} htmlFor={inputId} className="text-xs font-medium">
-          {t('label')}
-        </label>
-        <div className="flex items-center gap-3">
+    <SettingsCard
+      id="settings-matching"
+      headingId="matching-settings-heading"
+      title={tSettings('sections.matching')}
+      scope="account"
+      footer={
+        <SaveFooter
+          formId="matching-settings-form"
+          dirty={props.dirty === true}
+          busy={props.status === 'saving'}
+          label={props.status === 'saving' ? t('status.saving') : t('save')}
+        />
+      }
+    >
+      <form id="matching-settings-form" onSubmit={submit} className="max-w-md space-y-3" aria-labelledby="matching-settings-heading">
+        <div className="space-y-1">
+          <label id={labelId} htmlFor={inputId} className="text-xs font-medium">
+            {t('label')}
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              id={inputId}
+              name="tolerancePercent"
+              type="number"
+              inputMode="numeric"
+              min={MIN_TOLERANCE_PERCENT}
+              max={MAX_TOLERANCE_PERCENT}
+              step={1}
+              className={`${FIELD} w-24 ${props.invalid ? 'border-warning' : 'border-input-border'}`}
+              value={props.text}
+              aria-invalid={props.invalid}
+              aria-describedby={props.invalid ? `${errorId} ${hintId}` : hintId}
+              onChange={(e) => props.onTextChange?.(e.target.value)}
+            />
+            <span className="text-xs text-muted">{t('unit')}</span>
+          </div>
           <input
-            id={inputId}
-            name="tolerancePercent"
-            type="number"
-            inputMode="numeric"
+            type="range"
+            aria-labelledby={labelId}
+            aria-describedby={hintId}
             min={MIN_TOLERANCE_PERCENT}
             max={MAX_TOLERANCE_PERCENT}
             step={1}
-            className={`${FIELD} w-24 ${props.invalid ? 'border-warning' : 'border-border'}`}
-            value={props.text}
-            aria-invalid={props.invalid}
-            aria-describedby={props.invalid ? `${errorId} ${hintId}` : hintId}
+            className="h-11 w-full accent-primary"
+            value={props.sliderValue}
             onChange={(e) => props.onTextChange?.(e.target.value)}
-            onBlur={(e) => props.onCommit?.(e.currentTarget.value)}
-            onKeyDown={onInputKey}
           />
-          <span className="text-xs text-muted-foreground">{t('unit')}</span>
-        </div>
-        <input
-          type="range"
-          aria-labelledby={labelId}
-          aria-describedby={hintId}
-          min={MIN_TOLERANCE_PERCENT}
-          max={MAX_TOLERANCE_PERCENT}
-          step={1}
-          className="h-11 w-full accent-primary"
-          value={props.sliderValue}
-          onChange={(e) => props.onTextChange?.(e.target.value)}
-          onPointerUp={(e) => props.onCommit?.(e.currentTarget.value)}
-          onKeyUp={(e) => {
-            if (SLIDER_KEYS.includes(e.key)) props.onCommit?.(e.currentTarget.value);
-          }}
-        />
-        <p id={hintId} className="text-xs text-muted-foreground">
-          {t('hint')}
-        </p>
-        {props.invalid ? (
-          <p id={errorId} className="text-xs text-warning">
-            {t('range', { min: MIN_TOLERANCE_PERCENT, max: MAX_TOLERANCE_PERCENT })}
+          <p id={hintId} className="text-xs text-muted">
+            {t('hint')}
           </p>
-        ) : null}
-      </div>
-      <p role="status" aria-live="polite" className="min-h-4 text-xs">
-        {statusText}
-      </p>
-    </section>
+          {props.invalid ? (
+            <p id={errorId} className="text-xs text-warning">
+              {t('range', { min: MIN_TOLERANCE_PERCENT, max: MAX_TOLERANCE_PERCENT })}
+            </p>
+          ) : null}
+        </div>
+        <p role="status" aria-live="polite" className="min-h-4 text-xs">
+          {statusText}
+        </p>
+      </form>
+    </SettingsCard>
   );
 }
 
-/** Matching settings: one tolerance value (0 to 50 percent) saved on commit. */
+/** Matching settings: one tolerance value (0 to 50 percent) saved by the card's Save. */
 export function MatchingSettings() {
   const { errorText } = useT(matchingSettingsMessages);
   const [text, setText] = useState(String(DEFAULT_TOLERANCE_PERCENT));
@@ -167,12 +174,14 @@ export function MatchingSettings() {
   const [status, setStatus] = useState<MatchingStatus>('idle');
   const [message, setMessage] = useState('');
   const savedRef = useRef(DEFAULT_TOLERANCE_PERCENT);
+  const [saved, setSaved] = useState(DEFAULT_TOLERANCE_PERCENT);
 
   useEffect(() => {
     const controller = new AbortController();
     loadTolerance({ signal: controller.signal })
       .then((value) => {
         savedRef.current = value;
+        setSaved(value);
         setText(String(value));
         setSliderValue(value);
       })
@@ -189,6 +198,7 @@ export function MatchingSettings() {
 
   const onTextChange = (raw: string) => {
     setText(raw);
+    if (status === 'saved') setStatus('idle');
     const value = parseTolerance(raw);
     if (value !== null) setSliderValue(value);
   };
@@ -202,6 +212,7 @@ export function MatchingSettings() {
     void saveTolerance(raw).then((outcome) => {
       if (outcome.kind === 'saved') {
         savedRef.current = outcome.value;
+        setSaved(outcome.value);
         setText(String(outcome.value));
         setSliderValue(outcome.value);
         setStatus('saved');
@@ -217,6 +228,7 @@ export function MatchingSettings() {
       text={text}
       sliderValue={sliderValue}
       invalid={touched && parseTolerance(text) === null}
+      dirty={parseTolerance(text) !== saved}
       status={status}
       message={message}
       onTextChange={onTextChange}

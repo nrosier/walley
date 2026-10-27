@@ -1,6 +1,7 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useEffect, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { apiRequest, ApiError } from '@/lib/api';
 import { useT } from '@/i18n';
+import { SettingsCard } from '@/components/settings/SettingsCard';
 import { PASSWORD_MIN_CODE_POINTS } from '../../lib/password-policy';
 import { accountSettingsMessages } from './AccountSettings.messages';
 
@@ -36,9 +37,9 @@ export async function changePassword(
 }
 
 const inputClass =
-  'w-full rounded-md border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary';
+  'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 const buttonClass =
-  'rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50';
+  'min-h-(--control-h) rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50';
 
 function PasswordForm() {
   const { t, errorText } = useT(accountSettingsMessages);
@@ -77,16 +78,16 @@ function PasswordForm() {
   return (
     <form className="max-w-sm space-y-3" onSubmit={onSubmit}>
       <label className="block text-sm">
-        <span className="mb-1 block text-muted-foreground">{t('password.current')}</span>
+        <span className="mb-1 block text-muted">{t('password.current')}</span>
         <input type="password" name="currentPassword" autoComplete="current-password" required value={current} onChange={(e) => { setCurrent(e.target.value); }} className={inputClass} />
       </label>
       {/* minLength matches the server limit in src/lib/password-policy.ts (also used by src/server/auth/passwords.ts). */}
       <label className="block text-sm">
-        <span className="mb-1 block text-muted-foreground">{t('password.next')}</span>
+        <span className="mb-1 block text-muted">{t('password.next')}</span>
         <input type="password" name="newPassword" autoComplete="new-password" required minLength={PASSWORD_MIN_CODE_POINTS} value={next} onChange={(e) => { setNext(e.target.value); }} className={inputClass} />
       </label>
       <label className="block text-sm">
-        <span className="mb-1 block text-muted-foreground">{t('password.confirm')}</span>
+        <span className="mb-1 block text-muted">{t('password.confirm')}</span>
         <input type="password" name="confirmPassword" autoComplete="new-password" required value={confirm} onChange={(e) => { setConfirm(e.target.value); }} className={inputClass} />
       </label>
       <div aria-live="polite" role="status">
@@ -98,28 +99,38 @@ function PasswordForm() {
   );
 }
 
+function AccountCard({ children }: { children: ReactNode }) {
+  const { t } = useT(accountSettingsMessages);
+  return (
+    <SettingsCard id="settings-account" headingId="account-heading" title={t('heading')} scope="account">
+      {children}
+    </SettingsCard>
+  );
+}
+
 /** Renders the account section for a known account. Local mode: change-password form. OIDC mode: note and identities. */
 export function AccountSettingsView({ account }: { account: AccountInfo }) {
   const { t } = useT(accountSettingsMessages);
   return (
-    <section aria-labelledby="account-heading" className="space-y-3">
-      <h2 id="account-heading" className="text-base font-semibold">{t('heading')}</h2>
-      <p className="text-sm text-muted-foreground">{t('signedInAs', { email: account.email })}</p>
-      {account.mode === 'local' ? <PasswordForm /> : <p className="text-sm">{t('oidcNote')}</p>}
-      {account.identities.length > 0 ? (
-        <div>
-          <h3 className="mb-1 text-sm font-medium">{t('identities.heading')}</h3>
-          <ul className="space-y-1 text-xs">
-            {account.identities.map((identity) => (
-              <li key={`${identity.issuer}\n${identity.subject}`} className="font-mono">
-                <span className="text-muted-foreground">{t('identities.issuer')}</span> {identity.issuer}{' '}
-                <span className="text-muted-foreground">{t('identities.subject')}</span> {identity.subject}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </section>
+    <AccountCard>
+      <div className="space-y-3">
+        <p className="text-sm text-muted">{t('signedInAs', { email: account.email })}</p>
+        {account.mode === 'local' ? <PasswordForm /> : <p className="text-sm">{t('oidcNote')}</p>}
+        {account.identities.length > 0 ? (
+          <div>
+            <h3 className="mb-1 text-sm font-medium">{t('identities.heading')}</h3>
+            <ul className="space-y-1 text-xs">
+              {account.identities.map((identity) => (
+                <li key={`${identity.issuer}\n${identity.subject}`} className="font-mono">
+                  <span className="text-muted">{t('identities.issuer')}</span> {identity.issuer}{' '}
+                  <span className="text-muted">{t('identities.subject')}</span> {identity.subject}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </AccountCard>
   );
 }
 
@@ -142,7 +153,7 @@ export function AccountSettings() {
       controller.abort();
     };
   }, []);
-  if (state.status === 'loading') return <p className="text-sm text-muted-foreground">{t('loading')}</p>;
-  if (state.status === 'error') return <p role="alert" className="text-sm text-warning">{t('loadError')}</p>;
+  if (state.status === 'loading') return <AccountCard><p className="text-sm text-muted">{t('loading')}</p></AccountCard>;
+  if (state.status === 'error') return <AccountCard><p role="alert" className="text-sm text-warning">{t('loadError')}</p></AccountCard>;
   return <AccountSettingsView account={state.account} />;
 }
