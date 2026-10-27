@@ -2,15 +2,21 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuthMode } from '../../lib/auth-mode.js';
 import { buildApp } from '../app.js';
+import { hashPassword } from '../auth/passwords.js';
 import { isAdminEmail } from '../auth/registration.js';
 import { SIGN_IN_MAX_PER_IP } from '../auth/rate-limit.js';
 import { getRegistrationEnabled } from '../db/app-settings.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../db/client.js';
 import { createCapturingMailer, type CapturingMailer } from '../mail/index.js';
 import { injectAs, makeClock, makeUser, signIn, TEST_ORIGIN } from '../test/auth-helpers.js';
+
+vi.mock('../auth/passwords.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../auth/passwords.js')>();
+  return { ...actual, hashPassword: vi.fn(actual.hashPassword) };
+});
 
 const ADMIN = 'admin@example.test';
 const PASSWORD = 'correct horse battery staple';
@@ -123,6 +129,20 @@ describe('POST /api/auth/register', () => {
     expect(res.json()).toEqual({ error: 'registration_disabled' });
     expect(env.mailer.sent).toHaveLength(0);
     expect(userCount(env)).toBe(0);
+  });
+
+  it('refused registration does no hashing, mail or token work', async () => {
+    const env = setup(true);
+    const count = (table: string) =>
+      (env.db.$client.prepare(`select count(*) as n from ${table}`).get() as { n: number }).n;
+    vi.mocked(hashPassword).mockClear();
+    const res = await register(env);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'registration_disabled' });
+    expect(hashPassword).toHaveBeenCalledTimes(0);
+    expect(env.mailer.sent).toHaveLength(0);
+    expect(userCount(env)).toBe(0);
+    expect(count('email_verifications')).toBe(0);
   });
 
   it('ceiling off with the toggle on: 403 registration_disabled', async () => {
