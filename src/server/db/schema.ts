@@ -203,6 +203,16 @@ export const overwriteSnapshots = sqliteTable(
   ],
 );
 
+/**
+ * Server-wide settings, one row per key. Not tenant data: it has no user_id and is the one
+ * documented exception to the user_id scoping rule. Today it holds `registration_enabled`
+ * ('true' or 'false'); a missing row means off.
+ */
+export const appSettings = sqliteTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});
+
 export type UserRow = typeof users.$inferSelect;
 export type UserIdentityRow = typeof userIdentities.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;

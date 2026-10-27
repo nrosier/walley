@@ -51,6 +51,7 @@ describe('migration', () => {
       .prepare("select name from sqlite_master where type = 'table' and name not like '%migrations' order by name")
       .all() as { name: string }[];
     expect(rows.map((r) => r.name)).toEqual([
+      'app_settings',
       'email_verifications',
       'matches',
       'overwrite_snapshots',

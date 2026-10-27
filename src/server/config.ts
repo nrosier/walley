@@ -16,6 +16,8 @@ interface BaseConfig {
   /** Root for per-user Actual Budget data. Each user gets DATA_DIR/actual/<userId>. */
   readonly dataDir: string;
   readonly allowRegistration: boolean;
+  /** Lowercased emails allowed to change the server-wide registration toggle. Empty: nobody can. */
+  readonly adminEmails: readonly string[];
   /** The origin browsers use to reach Walley, e.g. https://walley.example.com. No trailing slash. */
   readonly publicOrigin: string;
   readonly serveWeb: boolean;
@@ -323,6 +325,16 @@ export function loadConfig(env: Env): AppConfig {
     }
   }
 
+  // Optional. Comma-separated, case-insensitive; blank entries are dropped and duplicates collapse.
+  const adminEmails = [
+    ...new Set(
+      (present(env, 'ADMIN_EMAILS') ?? '')
+        .split(',')
+        .map((entry) => entry.trim().toLowerCase())
+        .filter((entry) => entry !== ''),
+    ),
+  ];
+
   let trustProxy: string[] | false = false;
   const rawTrustProxy = present(env, 'TRUST_PROXY');
   if (rawTrustProxy !== undefined) {
@@ -446,6 +458,7 @@ export function loadConfig(env: Env): AppConfig {
     databasePath,
     dataDir,
     allowRegistration,
+    adminEmails,
     publicOrigin,
     serveWeb,
     secureCookies,

@@ -44,6 +44,31 @@ describe('loadConfig defaults', () => {
   });
 });
 
+describe('ADMIN_EMAILS', () => {
+  it('defaults to nobody when unset', () => {
+    expect(loadConfig(base).adminEmails).toEqual([]);
+  });
+
+  it('treats empty and whitespace-only values as nobody', () => {
+    expect(loadConfig({ ...base, ADMIN_EMAILS: '' }).adminEmails).toEqual([]);
+    expect(loadConfig({ ...base, ADMIN_EMAILS: '   ' }).adminEmails).toEqual([]);
+    expect(loadConfig({ ...base, ADMIN_EMAILS: ' , ,' }).adminEmails).toEqual([]);
+  });
+
+  it('lowercases, trims and splits on commas', () => {
+    const config = loadConfig({ ...base, ADMIN_EMAILS: ' Admin@Example.COM ,ops@example.com,, ' });
+    expect(config.adminEmails).toEqual(['admin@example.com', 'ops@example.com']);
+  });
+
+  it('collapses duplicates that differ only by case', () => {
+    expect(loadConfig({ ...base, ADMIN_EMAILS: 'a@x.test,A@X.TEST' }).adminEmails).toEqual(['a@x.test']);
+  });
+
+  it('is not required and does not change the auth mode', () => {
+    expect(loadConfig({ ...base, ...oidcAll, ADMIN_EMAILS: 'a@x.test' }).authMode).toBe('oidc');
+  });
+});
+
 describe('PUBLIC_ORIGIN', () => {
   const REQUIRED = 'PUBLIC_ORIGIN is required';
   const INVALID =

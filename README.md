@@ -60,6 +60,7 @@ Copy `.env.example` to `.env` and set the values below. Walley refuses to start 
 | `PORT` | No | `3000` | Port to listen on, an integer from 1 to 65535 |
 | `HOST` | No | `127.0.0.1` | Address to bind. Docker deployments set `0.0.0.0` in compose. |
 | `ALLOW_REGISTRATION` | No | `false` | Set to `true` to allow new accounts. In local mode this opens the register form, and requires `SMTP_URL` and `MAIL_FROM`. In OIDC mode it lets a first single sign-on create an account. |
+| `ADMIN_EMAILS` | No | none | Comma-separated emails (case-insensitive) of the admins who can switch registration on or off in Settings. Empty means nobody can, so registration stays off. See `ALLOW_REGISTRATION`. |
 | `SMTP_URL` | Local mode with registration only | none | SMTP connection URL for verification mail, for example `smtps://user:password@smtp.example.com:465`. Use `smtp:` or `smtps:`. The URL can hold credentials: keep it out of logs and version control. |
 | `MAIL_FROM` | Local mode with registration only | none | From address on verification mail, for example `Walley <walley@example.com>` or `walley@example.com`. |
 | `NODE_ENV` | No | unset | Set to `production` to serve the built web app from `dist/web`. Any other value, or none, serves the API only. Use it for built or Docker runs. |
