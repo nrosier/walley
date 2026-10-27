@@ -59,7 +59,7 @@ Copy `.env.example` to `.env` and set the values below. Walley refuses to start 
 | `PUBLIC_ORIGIN` | Yes | none | Required. Public origin of Walley, for example `https://walley.example.com`. Use https, or http only for `localhost`, `127.0.0.1` or `[::1]`. No path, query, fragment, credentials or trailing dot. |
 | `PORT` | No | `3000` | Port to listen on, an integer from 1 to 65535 |
 | `HOST` | No | `127.0.0.1` | Address to bind. Docker deployments set `0.0.0.0` in compose. |
-| `ALLOW_REGISTRATION` | No | `false` | Set to `true` to allow new accounts. In local mode this opens the register form, and requires `SMTP_URL` and `MAIL_FROM`. In OIDC mode it lets a first single sign-on create an account. |
+| `ALLOW_REGISTRATION` | No | `false` | The ceiling for new accounts. Set to `true` to let an admin turn registration on in Settings; with `false` registration stays off whatever the setting says. In local mode this opens the register form, and requires `SMTP_URL` and `MAIL_FROM`. In OIDC mode it lets a first single sign-on create an account. |
 | `ADMIN_EMAILS` | No | none | Comma-separated emails (case-insensitive) of the admins who can switch registration on or off in Settings. Empty means nobody can, so registration stays off. See `ALLOW_REGISTRATION`. |
 | `SMTP_URL` | Local mode with registration only | none | SMTP connection URL for verification mail, for example `smtps://user:password@smtp.example.com:465`. Use `smtp:` or `smtps:`. The URL can hold credentials: keep it out of logs and version control. |
 | `MAIL_FROM` | Local mode with registration only | none | From address on verification mail, for example `Walley <walley@example.com>` or `walley@example.com`. |
@@ -80,10 +80,10 @@ For Docker, copy `compose.example.yml` to `compose.yml`, then fill in `.env`, in
 
 Walley uses one of two sign-in modes, depending on the OIDC variables.
 
-- **Local mode** (no OIDC variables set): people sign in with an email and password. New accounts can register only when `ALLOW_REGISTRATION` is `true` and mail is configured (`SMTP_URL` and `MAIL_FROM`). Registering does not sign you in: Walley answers with the same message whatever the outcome, and you must open the verification link in the email before you can sign in.
-- **OIDC mode** (all four OIDC variables set): single sign-on is the only way in. Password login, registration and password change are turned off. A first sign-on creates a new account only when `ALLOW_REGISTRATION` is `true`.
+- **Local mode** (no OIDC variables set): people sign in with an email and password. New accounts can register only when `ALLOW_REGISTRATION` is `true`, an admin has turned registration on in Settings, and mail is configured (`SMTP_URL` and `MAIL_FROM`). Registering does not sign you in: Walley answers with the same message whatever the outcome, and you must open the verification link in the email before you can sign in.
+- **OIDC mode** (all four OIDC variables set): single sign-on is the only way in. Password login, registration and password change are turned off. A first sign-on creates a new account only when registration is effectively on (`ALLOW_REGISTRATION` is `true` and an admin has turned it on in Settings). Known identities and verified-email linking still sign in.
 
-Registration is off by default. Turn it on only for an instance you trust, or to create the first account and then turn it off again.
+Registration is off by default. `ALLOW_REGISTRATION` is a ceiling: new accounts can be created only when it is `true` AND an admin has turned registration on in Settings (the stored setting starts off). Admins are the emails in `ADMIN_EMAILS`. The switch applies at once, with no restart, and is kept across restarts.
 
 ### First run in local mode
 
@@ -92,7 +92,7 @@ Registration is off by default. Turn it on only for an instance you trust, or to
 3. Open the app, choose **Create an account**, and enter your email and password. The page says to check your email whatever the outcome, and it does not sign you in.
 4. Open the verification link in the email. It opens `/verify-email` with the token in the URL fragment, and the page sends it to `POST /api/auth/verify-email`. The link expires after 24 hours.
 5. Sign in with your email and password.
-6. Set `ALLOW_REGISTRATION=false` and restart Walley, so no one else can register.
+6. To close registration again, an admin (an email in `ADMIN_EMAILS`) turns it off in Settings under **Account / Security**. No restart is needed. Known gap (issue 118): the stored setting starts off and only a signed-in admin can change it, so on a database with no accounts steps 1 to 3 are refused with `registration_disabled` until the owner decides how the first admin account is created.
 
 ### OIDC provider setup
 
