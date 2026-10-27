@@ -4,6 +4,7 @@
       "Read(.env)",
       "Read(.env.*)",
       "Read(!.env.example)",
+      "Read(!.env.test)",
       "Read(*.db)",
       "Read(*.db-journal)",
       "Read(*.db-wal)",
