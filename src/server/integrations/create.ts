@@ -27,7 +27,8 @@ export type CreateFlowErrorCode =
   | 'base_currency_missing'
   | 'wallos_subscription_not_found'
   | 'schedule_not_found'
-  | 'invalid_state';
+  | 'invalid_state'
+  | 'match_not_found';
 
 const MESSAGES: Record<CreateFlowErrorCode, string> = {
   range_amount_unsupported: 'A schedule with an amount range cannot be created in Wallos',
@@ -35,6 +36,7 @@ const MESSAGES: Record<CreateFlowErrorCode, string> = {
   wallos_subscription_not_found: 'The Wallos subscription was not found',
   schedule_not_found: 'The Actual schedule was not found',
   invalid_state: 'The match is no longer in a state that allows this action',
+  match_not_found: 'The match was not found',
 };
 
 /** Fixed messages only. */

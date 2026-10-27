@@ -20,6 +20,7 @@ import {
 } from '../integrations/wallos/client.js';
 import { WallosMappingError } from '../integrations/wallos/map.js';
 import { linkCreatedPair } from '../matching/link-created.js';
+import { checkRecreate, repointAfterRecreate, type OrphanRow, type RecreateTarget } from '../matching/relink-orphan.js';
 
 export interface IntegrationRoutesOptions {
   readonly deps: CreateDeps;
@@ -117,6 +118,29 @@ async function linkAfterCreate(
   }
 }
 
+/**
+ * #109 Recreate: the remote item exists, so a failed repoint must not become a 500. Answer 201 with
+ * matchRelinked false and log route and code only. The existing row id is always reported.
+ */
+async function repointAfterCreate(
+  request: FastifyRequest,
+  route: string,
+  deps: CreateDeps,
+  userId: string,
+  row: OrphanRow,
+  target: RecreateTarget,
+  newItemId: string,
+): Promise<Record<string, unknown>> {
+  try {
+    const relinked = await repointAfterRecreate(deps, userId, row, target, newItemId);
+    if (!relinked) request.log.warn({ route, code: 'NOT_RELINKED' }, 'match repoint failed after create');
+    return { matchId: row.id, matchCreated: false, matchRelinked: relinked };
+  } catch (error: unknown) {
+    request.log.warn({ route, code: errorCode(error) }, 'match repoint failed after create');
+    return { matchId: row.id, matchCreated: false, matchRelinked: false };
+  }
+}
+
 export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = async (app, opts) => {
   const { deps } = opts;
 
@@ -132,25 +156,34 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
       !isId(body['wallosSubscriptionId']) ||
       !isId(body['accountId']) ||
       payee === null ||
-      (categoryId !== undefined && !isId(categoryId))
+      (categoryId !== undefined && !isId(categoryId)) ||
+      (body['matchId'] !== undefined && !isId(body['matchId']))
     ) {
       return reply.code(400).send(INVALID);
     }
+    const matchId = body['matchId'];
     try {
+      const row =
+        matchId === undefined
+          ? undefined
+          : await checkRecreate(deps, request.auth.userId, matchId, 'actual', body['wallosSubscriptionId']);
       const result = await createActualScheduleFromWallos(deps, request.auth.userId, {
         wallosSubscriptionId: body['wallosSubscriptionId'],
         accountId: body['accountId'],
         payee,
         ...(categoryId === undefined ? {} : { categoryId }),
       });
-      const linked = await linkAfterCreate(
-        request,
-        'actual-schedules',
-        deps,
-        request.auth.userId,
-        body['wallosSubscriptionId'],
-        result.scheduleId,
-      );
+      const linked =
+        row === undefined
+          ? await linkAfterCreate(
+              request,
+              'actual-schedules',
+              deps,
+              request.auth.userId,
+              body['wallosSubscriptionId'],
+              result.scheduleId,
+            )
+          : await repointAfterCreate(request, 'actual-schedules', deps, request.auth.userId, row, 'actual', result.scheduleId);
       return await reply.code(201).send({
         scheduleId: result.scheduleId,
         payeeId: result.payeeId,
@@ -169,21 +202,37 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
       return reply.code(401).send({ error: 'unauthenticated' });
     }
     const body: unknown = request.body;
-    if (!isRecord(body) || !isId(body['scheduleId'])) {
+    if (!isRecord(body) || !isId(body['scheduleId']) || (body['matchId'] !== undefined && !isId(body['matchId']))) {
       return reply.code(400).send(INVALID);
     }
+    const matchId = body['matchId'];
     try {
+      const row =
+        matchId === undefined
+          ? undefined
+          : await checkRecreate(deps, request.auth.userId, matchId, 'wallos', body['scheduleId']);
       const result = await createWallosSubscriptionFromActualSchedule(deps, request.auth.userId, {
         scheduleId: body['scheduleId'],
       });
-      const linked = await linkAfterCreate(
-        request,
-        'wallos-subscriptions',
-        deps,
-        request.auth.userId,
-        result.wallosSubscriptionId,
-        body['scheduleId'],
-      );
+      const linked =
+        row === undefined
+          ? await linkAfterCreate(
+              request,
+              'wallos-subscriptions',
+              deps,
+              request.auth.userId,
+              result.wallosSubscriptionId,
+              body['scheduleId'],
+            )
+          : await repointAfterCreate(
+              request,
+              'wallos-subscriptions',
+              deps,
+              request.auth.userId,
+              row,
+              'wallos',
+              result.wallosSubscriptionId,
+            );
       return await reply.code(201).send({
         wallosSubscriptionId: result.wallosSubscriptionId,
         ...linked,

@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 /** Two users, each with their own Wallos subscriptions and Actual schedules behind the mocks. */
-function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert = false) {
+function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert: boolean | 'repoint' = false) {
   const t = makeAuthApp({ mailer: createCapturingMailer() });
   const owned: Record<string, { subs: number[]; schedules: string[] }> = {};
   const createSchedule = vi.fn(async () => ({
@@ -61,7 +61,8 @@ function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert = false) {
     wallos,
     repoFor: (id) => {
       const repo = createUserRepo(t.db, id);
-      if (!failMatchInsert) return repo;
+      if (failMatchInsert === false) return repo;
+      if (failMatchInsert === 'repoint') return { ...repo, replaceMatchSide: () => false };
       return {
         ...repo,
         insertMatch: () => {
@@ -458,5 +459,120 @@ describe('create saves the pair as a LINKED match (#108)', () => {
     expect(body).not.toHaveProperty('matchId');
     expect(body['matchCreated']).toBe(false);
     expect(createUserRepo(db, a).listMatches()).toEqual([]);
+  });
+});
+
+describe('Recreate an orphaned match side with matchId (#109)', () => {
+  const NEW_SCHEDULE = { scheduleId: 'sch-a', payeeId: 'p1', payeeCreated: true, categoryApplied: false };
+  // The read-back may store the H14 anchor on an existing row, so compare identity, not every column.
+  const rowsOf = (db: AppDatabase, u: string) =>
+    createUserRepo(db, u)
+      .listMatches()
+      .map(({ id, wallosId, actualScheduleId, status, lastKnownWallosHash, lastKnownActualHash }) => ({
+        id, wallosId, actualScheduleId, status, lastKnownWallosHash, lastKnownActualHash,
+      }));
+
+  async function syncLinked(app: ReturnType<typeof setup>['app'], s: ReturnType<typeof setup>['sa']) {
+    const check = await injectAs(app, s, { method: 'POST', url: '/api/sync/check', payload: {} });
+    expect(check.statusCode).toBe(200);
+    return check.json<{ linked: { matchId: string; orphan: string | null; status: string }[] }>().linked;
+  }
+
+  it('Recreate in Actual keeps the match id, and the next sync check shows it linked with orphan null', async () => {
+    const t = setup({ createSchedule: async () => NEW_SCHEDULE });
+    const row = createUserRepo(t.db, t.a).insertMatch({ wallosId: '7', actualScheduleId: 'gone', status: 'LINKED' });
+    const res = await injectAs(t.app, t.sa, { method: 'POST', url: SCHED_URL, payload: { ...SCHED_BODY, matchId: row.id } });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ scheduleId: 'sch-a', matchId: row.id, matchCreated: false, matchRelinked: true });
+    const rows = rowsOf(t.db, t.a);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: row.id, wallosId: '7', actualScheduleId: 'sch-a', status: 'LINKED' });
+    expect(rows[0]?.lastKnownActualHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(await syncLinked(t.app, t.sa)).toEqual([expect.objectContaining({ matchId: row.id, orphan: null, status: 'LINKED' })]);
+  });
+
+  it('Recreate in Wallos keeps the match id, and the next sync check shows it linked with orphan null', async () => {
+    const t = setup();
+    const row = createUserRepo(t.db, t.a).insertMatch({ wallosId: '99', actualScheduleId: 'sch-a', status: 'MISMATCH_DETECTED' });
+    const res = await injectAs(t.app, t.sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a', matchId: row.id } });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toEqual({ wallosSubscriptionId: '55', matchId: row.id, matchCreated: false, matchRelinked: true });
+    const rows = rowsOf(t.db, t.a);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: row.id, wallosId: '55', actualScheduleId: 'sch-a', status: 'LINKED' });
+    expect(await syncLinked(t.app, t.sa)).toEqual([expect.objectContaining({ matchId: row.id, orphan: null, status: 'LINKED' })]);
+  });
+
+  it.each([
+    ['a mismatched source id', { wallosId: '7', actual: 'gone', status: 'LINKED' as const, source: '8' }],
+    ['orphaned_both', { wallosId: '99', actual: 'gone', status: 'LINKED' as const, source: '99' }],
+    ['a non-orphan row', { wallosId: '7', actual: 'sch-a', status: 'LINKED' as const, source: '7' }],
+    ['an IGNORED row', { wallosId: '7', actual: 'gone', status: 'IGNORED_WALLOS' as const, source: '7' }],
+  ])('Recreate in Actual refuses %s with 400 and creates nothing', async (_name, c) => {
+    const t = setup({ createSchedule: vi.fn(async () => NEW_SCHEDULE) });
+    const row = createUserRepo(t.db, t.a).insertMatch({ wallosId: c.wallosId, actualScheduleId: c.actual, status: c.status });
+    const before = rowsOf(t.db, t.a);
+    const res = await injectAs(t.app, t.sa, {
+      method: 'POST',
+      url: SCHED_URL,
+      payload: { ...SCHED_BODY, wallosSubscriptionId: c.source, matchId: row.id },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_state' });
+    expect(t.createSubscription).not.toHaveBeenCalled();
+    expect(rowsOf(t.db, t.a)).toEqual(before);
+  });
+
+  it.each([
+    ['a mismatched source id', { wallosId: 'x', actual: 'sch-a', status: 'LINKED' as const, source: 'sch-other' }],
+    ['orphaned_both', { wallosId: 'x', actual: 'gone', status: 'LINKED' as const, source: 'gone' }],
+    ['a non-orphan row', { wallosId: '7', actual: 'sch-a', status: 'LINKED' as const, source: 'sch-a' }],
+    ['an IGNORED row', { wallosId: 'x', actual: 'sch-a', status: 'IGNORED_ACTUAL' as const, source: 'sch-a' }],
+  ])('Recreate in Wallos refuses %s with 400 and creates nothing', async (_name, c) => {
+    const createSchedule = vi.fn(async () => NEW_SCHEDULE);
+    const t = setup({ createSchedule });
+    const row = createUserRepo(t.db, t.a).insertMatch({ wallosId: c.wallosId, actualScheduleId: c.actual, status: c.status });
+    const before = rowsOf(t.db, t.a);
+    const res = await injectAs(t.app, t.sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: c.source, matchId: row.id } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_state' });
+    expect(t.createSubscription).not.toHaveBeenCalled();
+    expect(createSchedule).not.toHaveBeenCalled();
+    expect(rowsOf(t.db, t.a)).toEqual(before);
+  });
+
+  it("two users: B sending A's matchId gets 404, no create runs and A's row is unchanged", async () => {
+    const createSchedule = vi.fn(async () => NEW_SCHEDULE);
+    const t = setup({ createSchedule });
+    const row = createUserRepo(t.db, t.a).insertMatch({ wallosId: '7', actualScheduleId: 'gone', status: 'LINKED' });
+    const before = rowsOf(t.db, t.a);
+    const r1 = await injectAs(t.app, t.sb, { method: 'POST', url: SCHED_URL, payload: { ...SCHED_BODY, wallosSubscriptionId: '8', matchId: row.id } });
+    const r2 = await injectAs(t.app, t.sb, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-b', matchId: row.id } });
+    for (const r of [r1, r2]) {
+      expect(r.statusCode).toBe(404);
+      expect(r.json()).toEqual({ error: 'match_not_found' });
+    }
+    expect(createSchedule).not.toHaveBeenCalled();
+    expect(t.createSubscription).not.toHaveBeenCalled();
+    expect(rowsOf(t.db, t.a)).toEqual(before);
+    expect(rowsOf(t.db, t.b)).toEqual([]);
+  });
+
+  it('an unknown matchId answers 404 match_not_found', async () => {
+    const t = setup();
+    const res = await injectAs(t.app, t.sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a', matchId: 'nope' } });
+    expect(res.statusCode).toBe(404);
+    expect(t.createSubscription).not.toHaveBeenCalled();
+  });
+
+  it('when the repoint fails the create still answers 201 with matchRelinked false and no extra row', async () => {
+    const t = setup({ createSchedule: async () => NEW_SCHEDULE }, 'repoint');
+    const row = createUserRepo(t.db, t.a).insertMatch({ wallosId: '7', actualScheduleId: 'gone', status: 'LINKED' });
+    const res = await injectAs(t.app, t.sa, { method: 'POST', url: SCHED_URL, payload: { ...SCHED_BODY, matchId: row.id } });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ scheduleId: 'sch-a', matchId: row.id, matchCreated: false, matchRelinked: false });
+    const rows = rowsOf(t.db, t.a);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: row.id, actualScheduleId: 'gone' });
   });
 });
