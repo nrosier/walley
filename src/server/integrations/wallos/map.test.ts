@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   buildCurrencyMap,
@@ -5,7 +6,7 @@ import {
   resolveCurrencyCode,
   WallosMappingError,
 } from './map.js';
-import type { WallosCurrency, WallosSubscription } from './types.js';
+import type { WallosCurrency, WallosSubscription, WallosSubscriptionsResponse } from './types.js';
 
 /** Copy of the fixture with one key removed, to simulate Wallos omitting it. */
 function without(sub: WallosSubscription, key: keyof WallosSubscription): WallosSubscription {
@@ -79,6 +80,61 @@ const FIXTURE_INACTIVE: WallosSubscription = {
   payment_method_name: 'Credit Card',
   replacement_subscription_id: 1,
 };
+
+describe('saved Wallos subscriptions response fixture', () => {
+  // Sanitized, invented sample of the documented /api/subscriptions response shape.
+  const saved = JSON.parse(
+    readFileSync(new URL('./__fixtures__/wallos-subscriptions.json', import.meta.url), 'utf8'),
+  ) as WallosSubscriptionsResponse;
+  const currencies = buildCurrencyMap([
+    { id: 1, name: 'US Dollar', code: 'USD' },
+    { id: 2, name: 'Japanese Yen', code: 'JPY' },
+    { id: 3, name: 'Euro', code: 'EUR' },
+  ]);
+
+  const expected = [
+    {
+      wallosId: '101', name: 'Sample Streaming Plan', priceCents: -1250, currency: 'USD',
+      interval: { type: 'monthly', every: 1 }, recurrence: { frequency: 'monthly', interval: 1 },
+      nextPaymentDate: '2026-11-15', startDate: '2025-01-15', active: true,
+    },
+    {
+      wallosId: '102', name: 'Sample Cloud Storage', priceCents: -9999, currency: 'EUR',
+      interval: { type: 'yearly', every: 1 }, recurrence: { frequency: 'yearly', interval: 1 },
+      nextPaymentDate: '2027-03-01', startDate: '2024-03-01', active: true,
+    },
+    {
+      wallosId: '103', name: 'Sample Meal Box', priceCents: -120000, currency: 'JPY',
+      interval: { type: 'weekly', every: 2 }, recurrence: { frequency: 'weekly', interval: 2 },
+      nextPaymentDate: '2026-11-03', startDate: '2025-06-02', active: true,
+    },
+    {
+      wallosId: '104', name: 'Sample Parking Pass', priceCents: -420, currency: 'USD',
+      interval: { type: 'custom_days', days: 30 }, recurrence: { frequency: 'daily', interval: 30 },
+      nextPaymentDate: '2026-11-09', startDate: '2026-02-10', active: false,
+    },
+  ];
+
+  it('maps every subscription in the saved response', () => {
+    expect(saved.success).toBe(true);
+    const subs = saved.subscriptions ?? [];
+    expect(subs).toHaveLength(expected.length);
+    expected.forEach((want, i) => {
+      const sub = subs[i];
+      if (!sub) throw new Error(`fixture is missing subscription ${String(i)}`);
+      const { currency, ...rest } = want;
+      const mapped = mapWallosSubscription(sub);
+      expect(mapped).toMatchObject(rest);
+      expect(mapped.name).toBe(rest.name);
+      expect(mapped.priceCents).toBe(rest.priceCents);
+      expect(resolveCurrencyCode(currencies, mapped.currencyId)).toBe(currency);
+      expect(mapped.interval).toEqual(rest.interval);
+      expect(mapped.nextPaymentDate).toBe(rest.nextPaymentDate);
+      expect(mapped.startDate).toBe(rest.startDate);
+      expect(mapped.active).toBe(rest.active);
+    });
+  });
+});
 
 describe('mapWallosSubscription', () => {
   it('maps the saved active fixture to the internal model', () => {
