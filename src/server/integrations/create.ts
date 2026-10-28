@@ -324,6 +324,9 @@ export async function createWallosSubscriptionFromActualSchedule(
   return { wallosSubscriptionId };
 }
 
+/** Wallos's built-in, non-removable category. Its name is localised, its id is not. */
+const WALLOS_DEFAULT_CATEGORY_ID = '1';
+
 /** Option for the prefill selects. Id is a digit string. */
 export interface WallosChoice {
   readonly id: string;
@@ -340,10 +343,16 @@ export async function readWallosChoices(
 ): Promise<{ readonly paymentMethods: WallosChoice[]; readonly categories: WallosChoice[] }> {
   const pick = (items: readonly { id: string; name: string }[]): WallosChoice[] =>
     items.map((i) => ({ id: i.id, name: i.name }));
-  const [paymentMethods, categories] = await Promise.all([
-    deps.wallos.listPaymentMethods(userId).then(pick, () => []),
+  const [methodsRead, categories] = await Promise.all([
+    deps.wallos.listPaymentMethods(userId).then(pick, () => undefined),
     deps.wallos.listCategories(userId).then(pick, () => []),
   ]);
+  const paymentMethods = methodsRead ?? [];
+  // Nothing to choose: no payment methods (read succeeded) and only Wallos's non-removable default
+  // category (id 1, localised name, so matched by id). Both lists go empty and the UI hides both selects.
+  // Only the prefill changes; checkChosenIds still reads the real lists for any id a client sends.
+  const onlyDefaultCategory = categories.length === 1 && categories[0]?.id === WALLOS_DEFAULT_CATEGORY_ID;
+  if (methodsRead?.length === 0 && onlyDefaultCategory) return { paymentMethods: [], categories: [] };
   return { paymentMethods, categories };
 }
 

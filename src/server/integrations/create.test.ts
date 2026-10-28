@@ -348,6 +348,56 @@ describe('pre-fill previews', () => {
     expect(wallos.createSubscription).not.toHaveBeenCalled();
   });
 
+  it('no payment methods and only the default category id 1 give empty prefill lists, whatever its name', async () => {
+    wallos.listPaymentMethods.mockResolvedValue([]);
+    wallos.listCategories.mockResolvedValue([{ id: '1', name: 'Geen categorie' }]);
+    await expect(readWallosChoices(deps(), userId)).resolves.toEqual({ paymentMethods: [], categories: [] });
+  });
+
+  it('payment methods present keep both lists even when the only category is id 1', async () => {
+    wallos.listPaymentMethods.mockResolvedValue([{ id: '3', name: 'Card' }]);
+    wallos.listCategories.mockResolvedValue([{ id: '1', name: 'No category' }]);
+    await expect(readWallosChoices(deps(), userId)).resolves.toEqual({
+      paymentMethods: [{ id: '3', name: 'Card' }],
+      categories: [{ id: '1', name: 'No category' }],
+    });
+  });
+
+  it('any category besides id 1 keeps the category list when payment methods are empty', async () => {
+    wallos.listPaymentMethods.mockResolvedValue([]);
+    wallos.listCategories.mockResolvedValue([
+      { id: '1', name: 'No category' },
+      { id: '5', name: 'Streaming' },
+    ]);
+    await expect(readWallosChoices(deps(), userId)).resolves.toEqual({
+      paymentMethods: [],
+      categories: [
+        { id: '1', name: 'No category' },
+        { id: '5', name: 'Streaming' },
+      ],
+    });
+  });
+
+  it('a failed payment method read does not hide the lone default category', async () => {
+    wallos.listPaymentMethods.mockRejectedValue(new Error('down'));
+    wallos.listCategories.mockResolvedValue([{ id: '1', name: 'No category' }]);
+    await expect(readWallosChoices(deps(), userId)).resolves.toEqual({
+      paymentMethods: [],
+      categories: [{ id: '1', name: 'No category' }],
+    });
+  });
+
+  it('an explicit category id 1 is still accepted when the prefill hid it', async () => {
+    apiState.schedules = [
+      { id: 'sch-1', name: 'S', amount: -100, amountOp: 'is', date: { frequency: 'monthly', start: '2026-02-01' } },
+    ];
+    wallos.listPaymentMethods.mockResolvedValue([]);
+    wallos.listCategories.mockResolvedValue([{ id: '1', name: 'No category' }]);
+    await expect(
+      createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', categoryId: '1' }),
+    ).resolves.toEqual({ wallosSubscriptionId: '99' });
+  });
+
   it('both list reads failing give empty choices and the create still proceeds with no ids', async () => {
     apiState.schedules = [
       { id: 'sch-1', name: 'S', amount: -100, amountOp: 'is', date: { frequency: 'monthly', start: '2026-02-01' } },
