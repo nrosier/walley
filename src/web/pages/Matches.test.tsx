@@ -8,6 +8,13 @@ import { Matches, MatchesView, type MatchesViewProps } from './Matches';
 import { matchesMessages } from './Matches.messages';
 import { checkIfEmpty, createSyncStore, restoreAndRecheck, syncStore } from '@/lib/sync-check';
 import { performResolve } from '@/lib/resolve-mismatch';
+import { catalogues } from '@/i18n/catalogues';
+import { MoreActionsMenu } from '../components/ui/more-actions-menu';
+import { UnlinkDialog } from '../components/matches/UnlinkDialog';
+import { unlinkDialogMessages } from '../components/matches/UnlinkDialog.messages';
+import { diffModalMessages } from '../components/matches/DiffModal.messages';
+import unlinkDialogSrc from '../components/matches/UnlinkDialog.tsx?raw';
+import menuSrc from '../components/ui/more-actions-menu.tsx?raw';
 
 // The test environment is node, so useSyncExternalStore has no server snapshot. Matches is rendered
 // with a hook that reads the real shared store's current state once, which is all SSR needs.
@@ -410,15 +417,15 @@ describe('Matches orphan actions menu', () => {
   ];
   const html = render({ result: fixture({ linked: orphanRows, ignored: [] }), onReview: () => undefined });
 
-  it('shows the actions menu only on single-side orphan rows, named for the surviving item', () => {
-    expect(html.match(/aria-label="More actions for /g)).toHaveLength(2);
+  it('shows the orphan actions menu only on single-side orphan rows, named for the surviving item', () => {
+    // Two orphan menus plus the Unlink menu of the one Synced row (o5).
+    expect(html.match(/aria-label="More actions for /g)).toHaveLength(3);
     expect(html).toContain('aria-label="More actions for Lost Actual"');
     expect(html).toContain('aria-label="More actions for Lost Wallos"');
   });
 
-  it('shows no actions on orphaned_both, mismatch or synced rows', () => {
+  it('shows no actions on orphaned_both or mismatch rows', () => {
     expect(html).not.toContain('More actions for Drifted');
-    expect(html).not.toContain('More actions for Fine');
     expect(html).not.toContain('More actions for —');
   });
 
@@ -455,5 +462,114 @@ describe('Matches and diff modal checklist (issue 113)', () => {
     expect(empty).toContain('href="/sync"');
     expect(empty).toContain('Open Sync Dashboard');
     expect(empty.match(/>Run Sync Check</g)).toHaveLength(1);
+  });
+});
+
+describe('Issue 137: Unlink a Synced pair from the Matches page', () => {
+  const rows = [
+    linkedRow({ matchId: 's1', wallosId: 'w1', actualScheduleId: 'a1', wallosName: 'Synced One', actualName: 'SYNCED.ONE' }),
+    linkedRow({ matchId: 's2', wallosId: 'w2', actualScheduleId: 'a2', status: 'MISMATCH_DETECTED', wallosName: 'Drifted Two' }),
+    linkedRow({ matchId: 's3', wallosId: 'w3', actualScheduleId: 'a3', orphan: 'orphaned_actual', wallosName: 'Orphan Three', actualName: null }),
+    linkedRow({ matchId: 's4', wallosId: 'w4', actualScheduleId: 'a4', orphan: 'orphaned_both', wallosName: null, actualName: null }),
+  ];
+  const html = render({ result: fixture({ linked: rows, ignored: IGNORED }), showIgnored: true, onReview: () => undefined });
+
+  it('137 a Synced pair has a row menu named for the pair, and the Unlink item is in the catalogue in en and nl', () => {
+    expect(html).toContain('aria-label="More actions for Synced One"');
+    expect(diffModalMessages.en.unlink).toBe('Unlink');
+    expect(diffModalMessages.nl.unlink).toBe('Ontkoppelen');
+    expect(matchesSrc).toContain("items={[{ id: 'unlink', label: unlinkLabel, onSelect: () => onUnlink?.(row) }]}");
+  });
+
+  it('137 the Unlink menu appears only on LINKED rows, not on mismatch, orphaned or ignored rows', () => {
+    expect(matchesSrc).toContain("row.status === 'LINKED' && row.orphan === null");
+    expect(html).not.toContain('More actions for Drifted Two');
+    expect(html).not.toContain('More actions for —');
+    // Orphan menu keeps Recreate and Link only; the ignored row keeps Restore only.
+    expect(html).toContain('aria-label="More actions for Orphan Three"');
+    expect(html).toContain('aria-label="More actions for Old Magazine"');
+    expect(html.match(/aria-label="More actions for /g)).toHaveLength(3);
+    expect(matchesSrc.match(/id: 'unlink'/g)).toHaveLength(1);
+  });
+
+  it('137 a Synced row carries the data hook the dialog uses to return focus to its menu button', () => {
+    expect(html).toContain('data-linked-id="s1"');
+  });
+
+  it('137 the confirmation is an AlertDialog that names both items and says nothing changes in Wallos or Actual', () => {
+    expect(unlinkDialogSrc).toContain('AlertDialogContent');
+    expect(unlinkDialogSrc).toContain("from '../ui/dialog'");
+    expect(unlinkDialogSrc).toContain("t('description', { wallos: row.wallosName ?? '', actual: row.actualName ?? '' })");
+    const en = unlinkDialogMessages.en.description.replace('{wallos}', 'Netflix').replace('{actual}', 'NETFLIX.COM');
+    expect(en).toContain('Netflix (Wallos)');
+    expect(en).toContain('NETFLIX.COM (Actual Budget)');
+    expect(en).toContain('Nothing changes in Wallos or Actual Budget.');
+    expect(unlinkDialogMessages.nl.description).toContain('In Wallos en Actual Budget verandert niets.');
+    // Closed when no row is set: nothing is rendered.
+    const closed = renderToStaticMarkup(
+      <I18nProvider initialLocale="en">
+        <UnlinkDialog row={null} onConfirm={() => undefined} onCancel={() => undefined} />
+      </I18nProvider>,
+    );
+    expect(closed).not.toContain('Unlink this pair?');
+  });
+
+  it('137 confirming sends the existing resolve unlink action for that match; cancelling sends nothing', () => {
+    expect(unlinkDialogSrc).toMatch(/AlertDialogAction[\s\S]*?onConfirm\(row\)/);
+    expect(unlinkDialogSrc).toContain('<AlertDialogCancel>');
+    expect(matchesSrc).toMatch(/performResolve\([\s\S]*?row\.matchId, 'unlink', syncStore\.requestRun\)/);
+    expect(matchesSrc).toContain("<UnlinkDialog");
+  });
+
+  it('137 a successful unlink drops the row at once and triggers one sync check', async () => {
+    const f = vi.fn(async (url: string) => {
+      if (url === '/api/sync/check') return Response.json(fixture());
+      return Response.json({ status: 'UNLINKED' });
+    });
+    const store = createSyncStore(f as unknown as typeof fetch);
+    store.setResult(fixture({ linked: rows }));
+    const out = await performResolve(() => store.getState().result, store.setResult, 's1', 'unlink', store.requestRun, f as unknown as typeof fetch);
+    expect(out).toEqual({ ok: true });
+    expect(store.getState().result?.linked.map((l) => l.matchId)).not.toContain('s1');
+    const resolveCall = f.mock.calls.find((c) => (c)[0].endsWith('/resolve')) as unknown as [string, RequestInit];
+    expect(resolveCall[0]).toBe('/api/matches/s1/resolve');
+    expect(JSON.parse(resolveCall[1].body as string)).toEqual({ action: 'unlink', confirm: true });
+    expect(f.mock.calls.filter((c) => (c)[0] === '/api/sync/check')).toHaveLength(1);
+  });
+
+  it('137 a refused unlink restores the row and shows the error code text', async () => {
+    const f = vi.fn(async () => Response.json({ error: 'invalid_state' }, { status: 400 }));
+    const store = createSyncStore(f);
+    store.setResult(fixture({ linked: rows }));
+    const out = await performResolve(() => store.getState().result, store.setResult, 's1', 'unlink', store.requestRun, f);
+    expect(out).toEqual({ ok: false, code: 'invalid_state' });
+    expect(store.getState().result?.linked.map((l) => l.matchId)).toContain('s1');
+    expect(render({ result: fixture({ linked: rows }), unlinkErrorMessage: 'Could not unlink Synced One.' })).toContain('role="alert"');
+  });
+
+  it('137 the row menu is the shared MoreActionsMenu: Radix dropdown, which opens and closes by keyboard and returns focus to the trigger', () => {
+    expect(matchesSrc).toContain("import { MoreActionsMenu } from '../components/ui/more-actions-menu'");
+    expect(menuSrc).toContain("import { DropdownMenu } from 'radix-ui'");
+    expect(menuSrc).toContain('<DropdownMenu.Trigger');
+    const menu = renderToStaticMarkup(
+      <I18nProvider initialLocale="en">
+        <MoreActionsMenu name="Synced One" items={[{ id: 'unlink', label: 'Unlink', onSelect: () => undefined }]} />
+      </I18nProvider>,
+    );
+    expect(menu).toContain('aria-haspopup="menu"');
+    expect(menu).toContain('aria-expanded="false"');
+    expect(menu).toContain('<button');
+    // Manual keyboard check (Enter/Space opens, Escape closes, focus returns to the trigger) is pending: no DOM in the node test environment.
+  });
+
+  it('137 the new en and nl unlink dialog strings have identical keys and are registered for the parity test', () => {
+    const keys = (o: object): string[] => Object.keys(o).sort();
+    expect(keys(unlinkDialogMessages.nl)).toEqual(keys(unlinkDialogMessages.en));
+    expect(catalogues['unlinkDialog']).toBe(unlinkDialogMessages);
+  });
+
+  it('137 the diff-modal Unlink is unchanged and the unlink route stays the single resolve path', () => {
+    expect(matchesSrc).toContain("onUnlink={(id) => { resolve(id, 'unlink'); }}");
+    expect(matchesSrc).not.toMatch(/fetch\(|apiRequest/);
   });
 });

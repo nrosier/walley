@@ -9,6 +9,7 @@ import { authCardMessages } from '../components/auth/AuthCard.messages';
 import { createModalMessages } from '../components/dashboard/CreateModal.messages';
 import { diffModalMessages } from '../components/matches/DiffModal.messages';
 import { relinkDialogMessages } from '../components/matches/RelinkDialog.messages';
+import { unlinkDialogMessages } from '../components/matches/UnlinkDialog.messages';
 import { controlsMessages } from '../components/ui/controls.messages';
 import { dialogMessages } from '../components/ui/dialog.messages';
 import { healthStatusMessages } from '../components/HealthStatus.messages';
@@ -33,6 +34,7 @@ export const catalogues: Readonly<Record<string, Catalogue<object>>> = {
   dialog: dialogMessages,
   diffModal: diffModalMessages,
   relinkDialog: relinkDialogMessages,
+  unlinkDialog: unlinkDialogMessages,
   createModal: createModalMessages,
   healthStatus: healthStatusMessages,
   statusBadge: statusBadgeMessages,

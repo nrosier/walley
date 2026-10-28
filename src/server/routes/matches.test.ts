@@ -132,7 +132,7 @@ function setup() {
   const noWrites = () => {
     for (const fn of Object.values(writes)) expect(fn).not.toHaveBeenCalled();
   };
-  return { app, sa: signIn(ctx, a), userId: a, deps, remote, reads, repoA, repoB, row, noCalls, noWrites };
+  return { app, sa: signIn(ctx, a), sb: signIn(ctx, b), userId: a, deps, remote, reads, repoA, repoB, row, noCalls, noWrites };
 }
 
 const url = (id: string) => `/api/matches/${encodeURIComponent(id)}/resolve`;
@@ -310,5 +310,78 @@ describe('POST /api/matches/:id/resolve', () => {
       }
       expect(repoA.getMatch(m.id)?.status).toBe(status);
     }
+  });
+});
+
+describe('issue 137: unlink a Synced pair from the Matches page', () => {
+  it('137 unlink on a LINKED row is accepted, deletes only that row and never calls Wallos or Actual (write spy)', async () => {
+    const { app, sa, row, repoA, noCalls } = setup();
+    const m = row('LINKED');
+    const res = await injectAs(app, sa, { method: 'POST', url: url(m.id), payload: { action: 'unlink', confirm: true } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status: 'UNLINKED' });
+    expect(repoA.getMatch(m.id)).toBeUndefined();
+    noCalls();
+  });
+
+  it('137 after unlink a sync check lists both items as unlinked again', async () => {
+    const { app, sa, row, repoA, userId, deps, noWrites } = setup();
+    const m = row('LINKED');
+    const before = await runSyncCheck({ ...deps, now: () => 0 }, userId);
+    expect(before.unlinkedWallos).toEqual([]);
+    expect(before.unlinkedActual).toEqual([]);
+    const res = await injectAs(app, sa, { method: 'POST', url: url(m.id), payload: { action: 'unlink', confirm: true } });
+    expect(res.statusCode).toBe(200);
+    expect(repoA.listMatches()).toEqual([]);
+    const after = await runSyncCheck({ ...deps, now: () => 0 }, userId);
+    expect(after.unlinkedWallos.map((i) => i.id)).toEqual(['7']);
+    expect(after.unlinkedActual.map((i) => i.id)).toEqual(['sch-a']);
+    expect(after.linked).toEqual([]);
+    noWrites();
+  });
+
+  it("137 user B cannot unlink user A's LINKED pair: 404 match_not_found and the row is unchanged", async () => {
+    const { app, sb, row, repoA, noCalls } = setup();
+    const ma = row('LINKED', repoA);
+    const res = await injectAs(app, sb, { method: 'POST', url: url(ma.id), payload: { action: 'unlink', confirm: true } });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'match_not_found' });
+    expect(res.body).not.toContain(ma.id);
+    expect(repoA.getMatch(ma.id)).toMatchObject({ status: 'LINKED', lastKnownWallosHash: H1, lastKnownActualHash: H2 });
+    noCalls();
+  });
+
+  it('137 unlinking an already unlinked pair returns a clear 404 match_not_found and changes nothing', async () => {
+    const { app, sa, row, repoA, noCalls } = setup();
+    const m = row('LINKED');
+    const first = await injectAs(app, sa, { method: 'POST', url: url(m.id), payload: { action: 'unlink', confirm: true } });
+    expect(first.statusCode).toBe(200);
+    const other = row('IGNORED_ACTUAL');
+    const again = await injectAs(app, sa, { method: 'POST', url: url(m.id), payload: { action: 'unlink', confirm: true } });
+    expect(again.statusCode).toBe(404);
+    expect(again.json()).toEqual({ error: 'match_not_found' });
+    expect(repoA.listMatches().map((r) => r.id)).toEqual([other.id]);
+    noCalls();
+  });
+
+  it('137 unlinking an ignored pair returns 400 invalid_state and changes nothing', async () => {
+    const { app, sa, row, repoA, noCalls } = setup();
+    for (const status of ['IGNORED_WALLOS', 'IGNORED_ACTUAL'] as const) {
+      const m = row(status);
+      const res = await injectAs(app, sa, { method: 'POST', url: url(m.id), payload: { action: 'unlink', confirm: true } });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: 'invalid_state' });
+      expect(repoA.getMatch(m.id)?.status).toBe(status);
+    }
+    noCalls();
+  });
+
+  it('137 unlink still needs confirm: true on a LINKED row', async () => {
+    const { app, sa, row, repoA } = setup();
+    const m = row('LINKED');
+    const res = await injectAs(app, sa, { method: 'POST', url: url(m.id), payload: { action: 'unlink' } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'confirmation_required' });
+    expect(repoA.getMatch(m.id)).toBeDefined();
   });
 });

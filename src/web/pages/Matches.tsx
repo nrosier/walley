@@ -16,6 +16,8 @@ import { CreateWallosModal } from '../components/dashboard/CreateWallosModal';
 import { NoticeToast } from '../components/dashboard/NoticeToast';
 import { RelinkDialog } from '../components/matches/RelinkDialog';
 import { DiffModal } from '../components/matches/DiffModal';
+import { UnlinkDialog } from '../components/matches/UnlinkDialog';
+import { unlinkDialogMessages } from '../components/matches/UnlinkDialog.messages';
 import { diffModalMessages, isOverwriteErrorCode } from '../components/matches/DiffModal.messages';
 import { Button } from '../components/ui/button';
 import { MoreActionsMenu } from '../components/ui/more-actions-menu';
@@ -40,6 +42,10 @@ export interface MatchesViewProps {
   onRecreate?: (row: SyncLinked) => void;
   /** Link a single-side orphan to another unlinked item. */
   onRelink?: (row: SyncLinked) => void;
+  /** Unlink a Synced pair (opens the confirmation dialog). */
+  onUnlink?: (row: SyncLinked) => void;
+  /** Resolved text of the last failed unlink. */
+  unlinkErrorMessage?: string | null;
   /** Case-insensitive name filter over both sides of a pair. */
   query?: string;
   onQueryChange?: (query: string) => void;
@@ -78,6 +84,8 @@ export function MatchesView({
   onReview,
   onRecreate,
   onRelink,
+  onUnlink,
+  unlinkErrorMessage,
   query = '',
   onQueryChange,
   onRun,
@@ -86,6 +94,7 @@ export function MatchesView({
   onRetryCheck,
 }: MatchesViewProps) {
   const { t, locale } = useT(matchesMessages);
+  const unlinkLabel = useT(diffModalMessages).t('unlink');
   const money = (cents: number | null, currency: string): string =>
     cents === null ? DASH : formatMoney(cents, currency, locale);
   const baseCurrency = result?.baseCurrency ?? '';
@@ -157,7 +166,7 @@ export function MatchesView({
               const differs = amountsDiffer(row);
               const label = row.wallosName ?? row.actualName ?? DASH;
               return (
-                <tr key={`${row.wallosId}:${row.actualScheduleId}`} data-match-row className="group">
+                <tr key={`${row.wallosId}:${row.actualScheduleId}`} data-match-row data-linked-id={row.matchId} className="group">
                   <td className={cn(CELL, 'border-b font-medium', STICKY_COL)}>
                     <Value muted={row.wallosName === null}>{row.wallosName ?? DASH}</Value>
                   </td>
@@ -198,6 +207,13 @@ export function MatchesView({
                           },
                           { id: 'relink', label: t('orphan.link'), onSelect: () => onRelink?.(row) },
                         ]}
+                      />
+                    ) : null}
+                    {row.status === 'LINKED' && row.orphan === null ? (
+                      <MoreActionsMenu
+                        name={label}
+                        className="ml-1 align-middle"
+                        items={[{ id: 'unlink', label: unlinkLabel, onSelect: () => onUnlink?.(row) }]}
                       />
                     ) : null}
                   </td>
@@ -259,6 +275,11 @@ export function MatchesView({
           <Button type="button" size="xs" variant="outline" onClick={() => onRetryCheck?.()}>
             {t('retry')}
           </Button>
+        </p>
+      ) : null}
+      {unlinkErrorMessage != null ? (
+        <p role="alert" className="mb-2 text-xs text-warning">
+          {unlinkErrorMessage}
         </p>
       ) : null}
       {body}
@@ -345,6 +366,9 @@ export function Matches() {
   const [working, setWorking] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const modalT = useT(diffModalMessages).t;
+  const [unlinking, setUnlinking] = useState<SyncLinked | null>(null);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const unlinkT = useT(unlinkDialogMessages).t;
   const [orphanAction, setOrphanAction] = useState<{ kind: 'recreate' | 'relink'; row: SyncLinked } | null>(null);
 
   // Opening Matches with no result starts a check; the Dashboard never does this.
@@ -367,6 +391,19 @@ export function Matches() {
           ? modalT(`overwriteErrors.${outcome.code}`)
           : errorText(outcome.code);
       setResolveError(`${modalT('failed', { name })} ${reason}`);
+    });
+  };
+
+  /** Unlink a Synced pair after the confirmation. The server deletes only Walley's match row; the check then lists both items as unlinked. */
+  const unlink = (row: SyncLinked) => {
+    const name = row.wallosName ?? row.actualName ?? row.matchId;
+    setUnlinkError(null);
+    void performResolve(() => syncStore.getState().result, syncStore.setResult, row.matchId, 'unlink', syncStore.requestRun).then((outcome) => {
+      if (outcome.ok) return;
+      const stale = outcome.code === 'invalid_state' || outcome.code === 'match_not_found';
+      setUnlinkError(`${unlinkT('failed', { name })} ${stale ? unlinkT('stale') : errorText(outcome.code)}`);
+      // The pair changed elsewhere: show the current state.
+      if (stale) void syncStore.requestRun();
     });
   };
 
@@ -417,6 +454,13 @@ export function Matches() {
       onRetryCheck={() => { void syncStore.requestRun(); }}
       onRecreate={(row) => { setOrphanAction({ kind: 'recreate', row }); }}
       onRelink={(row) => { setOrphanAction({ kind: 'relink', row }); }}
+      onUnlink={(row) => { setUnlinking(row); }}
+      unlinkErrorMessage={unlinkError}
+    />
+    <UnlinkDialog
+      row={unlinking}
+      onConfirm={unlink}
+      onCancel={() => { setUnlinking(null); }}
     />
     {orphanAction?.kind === 'recreate' && orphanAction.row.orphan === 'orphaned_actual' ? (
       <CreateActualModal
