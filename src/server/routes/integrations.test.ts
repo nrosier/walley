@@ -32,6 +32,12 @@ afterEach(async () => {
 function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert: boolean | 'repoint' = false) {
   const t = makeAuthApp({ mailer: createCapturingMailer() });
   const owned: Record<string, { subs: number[]; schedules: string[] }> = {};
+  // Per-user Wallos payment methods and categories (#111), keyed by user id. Empty unless seeded.
+  type Named = { id: string; name: string }[];
+  const choices: { methods: Record<string, Named>; categories: Record<string, Named> } = {
+    methods: {},
+    categories: {},
+  };
   const createSchedule = vi.fn(async () => ({
     scheduleId: 's1',
     payeeId: 'p1',
@@ -54,8 +60,8 @@ function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert: boolean | '
         next_payment: '2026-11-03',
         inactive: 0,
       })),
-    listPaymentMethods: async () => [],
-    listCategories: async () => [],
+    listPaymentMethods: async (id: string) => choices.methods[id] ?? [],
+    listCategories: async (id: string) => choices.categories[id] ?? [],
     listCurrencies: async () => [{ id: 1, code: 'EUR', rate: '1' }],
     createSubscription,
   } as unknown as WallosClient;
@@ -109,7 +115,13 @@ function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert: boolean | '
   owned[a] = { subs: [7], schedules: ['sch-a'] };
   owned[b] = { subs: [8], schedules: ['sch-b'] };
   const ctx = { db: t.db, clock: t.clock };
-  return { app, a, b, sa: signIn(ctx, a), sb: signIn(ctx, b), createSchedule, createSubscription, db: t.db };
+  const seedChoices = (): void => {
+    choices.methods[a] = [{ id: '3', name: 'Card' }];
+    choices.categories[a] = [{ id: '4', name: 'Fun' }];
+    choices.methods[b] = [{ id: '9', name: 'Cash' }];
+    choices.categories[b] = [{ id: '8', name: 'Bills' }];
+  };
+  return { app, a, b, sa: signIn(ctx, a), sb: signIn(ctx, b), createSchedule, createSubscription, db: t.db, seedChoices };
 }
 
 
@@ -217,6 +229,90 @@ describe('POST /api/integrations/wallos-subscriptions', () => {
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: 'schedule_not_found' });
     expect(createSubscription).not.toHaveBeenCalled();
+  });
+});
+
+describe('wallos-subscriptions payment method and category ids (#111)', () => {
+  it('a valid digit-string pair reaches Wallos', async () => {
+    const { app, a, sa, createSubscription, seedChoices } = setup();
+    seedChoices();
+    const res = await injectAs(app, sa, {
+      method: 'POST',
+      url: SUB_URL,
+      payload: { scheduleId: 'sch-a', paymentMethodId: '3', categoryId: '4' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(createSubscription).toHaveBeenCalledWith(
+      a,
+      expect.objectContaining({ payment_method_id: '3', category_id: '4' }),
+    );
+  });
+
+  it('null ids mean not chosen and send neither field', async () => {
+    const { app, sa, createSubscription } = setup();
+    const res = await injectAs(app, sa, {
+      method: 'POST',
+      url: SUB_URL,
+      payload: { scheduleId: 'sch-a', paymentMethodId: null, categoryId: null },
+    });
+    expect(res.statusCode).toBe(201);
+    const payload = (createSubscription.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
+    expect(payload).not.toHaveProperty('payment_method_id');
+    expect(payload).not.toHaveProperty('category_id');
+  });
+
+  it.each([
+    { paymentMethodId: 5 },
+    { categoryId: 5 },
+    { paymentMethodId: 5, categoryId: 5 },
+    { paymentMethodId: 'abc' },
+    { categoryId: '1a' },
+    { paymentMethodId: '' },
+    { categoryId: ' 4' },
+    { paymentMethodId: '-1' },
+    { categoryId: '1.5' },
+    { paymentMethodId: ['3'] },
+    { categoryId: {} },
+    { paymentMethodId: '1'.repeat(201) },
+  ])('400 invalid_request for %j, no Wallos call', async (extra) => {
+    const { app, sa, createSubscription, seedChoices } = setup();
+    seedChoices();
+    const res = await injectAs(app, sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a', ...extra } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
+  it("two users: A cannot use B's payment method or category, and nothing is written", async () => {
+    const { app, sa, sb, b, createSubscription, seedChoices } = setup();
+    seedChoices();
+    const pm = await injectAs(app, sa, {
+      method: 'POST',
+      url: SUB_URL,
+      payload: { scheduleId: 'sch-a', paymentMethodId: '9' },
+    });
+    expect(pm.statusCode).toBe(400);
+    expect(pm.json()).toEqual({ error: 'invalid_payment_method' });
+    const cat = await injectAs(app, sa, {
+      method: 'POST',
+      url: SUB_URL,
+      payload: { scheduleId: 'sch-a', categoryId: '8' },
+    });
+    expect(cat.statusCode).toBe(400);
+    expect(cat.json()).toEqual({ error: 'invalid_category' });
+    expect(createSubscription).not.toHaveBeenCalled();
+    // B's own ids still work for B, so the refusal above was about ownership.
+    const ok = await injectAs(app, sb, {
+      method: 'POST',
+      url: SUB_URL,
+      payload: { scheduleId: 'sch-b', paymentMethodId: '9', categoryId: '8' },
+    });
+    expect(ok.statusCode).toBe(201);
+    expect(createSubscription).toHaveBeenCalledTimes(1);
+    expect(createSubscription).toHaveBeenCalledWith(
+      b,
+      expect.objectContaining({ payment_method_id: '9', category_id: '8' }),
+    );
   });
 });
 

@@ -33,6 +33,12 @@ function isId(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '' && value.length <= MAX_ID_LENGTH;
 }
 
+/** Optional Wallos id: absent or null means "not chosen"; otherwise digit strings only (no numbers). */
+function readOptionalDigitId(value: unknown): string | undefined | false {
+  if (value === undefined || value === null) return undefined;
+  return typeof value === 'string' && value.length <= MAX_ID_LENGTH && /^\d+$/.test(value) ? value : false;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -205,6 +211,9 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
     if (!isRecord(body) || !isId(body['scheduleId']) || (body['matchId'] !== undefined && !isId(body['matchId']))) {
       return reply.code(400).send(INVALID);
     }
+    const paymentMethodId = readOptionalDigitId(body['paymentMethodId']);
+    const categoryId = readOptionalDigitId(body['categoryId']);
+    if (paymentMethodId === false || categoryId === false) return reply.code(400).send(INVALID);
     const matchId = body['matchId'];
     try {
       const row =
@@ -213,6 +222,8 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
           : await checkRecreate(deps, request.auth.userId, matchId, 'wallos', body['scheduleId']);
       const result = await createWallosSubscriptionFromActualSchedule(deps, request.auth.userId, {
         scheduleId: body['scheduleId'],
+        ...(paymentMethodId === undefined ? {} : { paymentMethodId }),
+        ...(categoryId === undefined ? {} : { categoryId }),
       });
       const linked =
         row === undefined
