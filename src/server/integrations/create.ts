@@ -28,7 +28,9 @@ export type CreateFlowErrorCode =
   | 'wallos_subscription_not_found'
   | 'schedule_not_found'
   | 'invalid_state'
-  | 'match_not_found';
+  | 'match_not_found'
+  | 'invalid_payment_method'
+  | 'invalid_category';
 
 const MESSAGES: Record<CreateFlowErrorCode, string> = {
   range_amount_unsupported: 'A schedule with an amount range cannot be created in Wallos',
@@ -37,6 +39,8 @@ const MESSAGES: Record<CreateFlowErrorCode, string> = {
   schedule_not_found: 'The Actual schedule was not found',
   invalid_state: 'The match is no longer in a state that allows this action',
   match_not_found: 'The match was not found',
+  invalid_payment_method: 'The payment method is not one of your Wallos payment methods',
+  invalid_category: 'The category is not one of your Wallos categories',
 };
 
 /** Fixed messages only. */
@@ -274,15 +278,73 @@ export async function planWallosSubscriptionFromSchedule(
   return { payload, currencyCode: baseEntry.code };
 }
 
+export interface CreateWallosSubscriptionRequest {
+  readonly scheduleId: string;
+  /** Digit string. Must be in the caller's own enabled Wallos payment methods. */
+  readonly paymentMethodId?: string;
+  /** Digit string. Must be in the caller's own Wallos categories. */
+  readonly categoryId?: string;
+}
+
+/**
+ * Reads only the lists that an id was sent for, through the caller's own Wallos client, and refuses
+ * an id that is not in them. A disabled payment method is not in the list. Runs before any write.
+ */
+async function checkChosenIds(
+  deps: CreateDeps,
+  userId: string,
+  request: CreateWallosSubscriptionRequest,
+): Promise<void> {
+  const { paymentMethodId, categoryId } = request;
+  const [methods, categories] = await Promise.all([
+    paymentMethodId === undefined ? undefined : deps.wallos.listPaymentMethods(userId),
+    categoryId === undefined ? undefined : deps.wallos.listCategories(userId),
+  ]);
+  if (methods !== undefined && !methods.some((m) => m.id === paymentMethodId)) {
+    throw new CreateFlowError('invalid_payment_method');
+  }
+  if (categories !== undefined && !categories.some((c) => c.id === categoryId)) {
+    throw new CreateFlowError('invalid_category');
+  }
+}
+
 /** #30: Actual schedule -> Wallos subscription. */
 export async function createWallosSubscriptionFromActualSchedule(
   deps: CreateDeps,
   userId: string,
-  request: { readonly scheduleId: string },
+  request: CreateWallosSubscriptionRequest,
 ): Promise<{ readonly wallosSubscriptionId: string }> {
   const { payload } = await planWallosSubscriptionFromSchedule(deps, userId, request.scheduleId);
-  const wallosSubscriptionId = await deps.wallos.createSubscription(userId, payload);
+  await checkChosenIds(deps, userId, request);
+  const wallosSubscriptionId = await deps.wallos.createSubscription(userId, {
+    ...payload,
+    ...(request.paymentMethodId === undefined ? {} : { payment_method_id: request.paymentMethodId }),
+    ...(request.categoryId === undefined ? {} : { category_id: request.categoryId }),
+  });
   return { wallosSubscriptionId };
+}
+
+/** Option for the prefill selects. Id is a digit string. */
+export interface WallosChoice {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * The caller's enabled payment methods and categories for the prefill. A failed read gives an empty
+ * list for that field only (the UI hides it); the create itself still proceeds.
+ */
+export async function readWallosChoices(
+  deps: CreateDeps,
+  userId: string,
+): Promise<{ readonly paymentMethods: WallosChoice[]; readonly categories: WallosChoice[] }> {
+  const pick = (items: readonly { id: string; name: string }[]): WallosChoice[] =>
+    items.map((i) => ({ id: i.id, name: i.name }));
+  const [paymentMethods, categories] = await Promise.all([
+    deps.wallos.listPaymentMethods(userId).then(pick, () => []),
+    deps.wallos.listCategories(userId).then(pick, () => []),
+  ]);
+  return { paymentMethods, categories };
 }
 
 export interface WallosSubscriptionPrefill {
@@ -295,6 +357,8 @@ export interface WallosSubscriptionPrefill {
   readonly frequency: number;
   readonly startDate: string | null;
   readonly nextPayment: string;
+  readonly paymentMethods: WallosChoice[];
+  readonly categories: WallosChoice[];
 }
 
 /** Read-only preview for the create-subscription modal. Calls no create client. */
@@ -304,6 +368,7 @@ export async function prefillWallosSubscriptionFromSchedule(
   request: { readonly scheduleId: string },
 ): Promise<WallosSubscriptionPrefill> {
   const { payload, currencyCode } = await planWallosSubscriptionFromSchedule(deps, userId, request.scheduleId);
+  const choices = await readWallosChoices(deps, userId);
   return {
     name: payload.name,
     price: payload.price,
@@ -312,6 +377,7 @@ export async function prefillWallosSubscriptionFromSchedule(
     frequency: Number(payload.frequency),
     startDate: payload.start_date ?? null,
     nextPayment: payload.next_payment,
+    ...choices,
   };
 }
 

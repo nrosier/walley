@@ -161,6 +161,83 @@ describe('createWallosSubscriptionFromActualSchedule', () => {
     });
   });
 
+  describe('chosen payment method and category', () => {
+    const OWN_METHODS = [{ id: '3', name: 'Card' }];
+    const OWN_CATEGORIES = [{ id: '5', name: 'Streaming' }];
+    beforeEach(() => {
+      apiState.schedules = [schedule()];
+      wallos.listPaymentMethods.mockResolvedValue(OWN_METHODS);
+      wallos.listCategories.mockResolvedValue(OWN_CATEGORIES);
+    });
+
+    it('sends the chosen ids on the add payload when both are in the caller lists', async () => {
+      await createWallosSubscriptionFromActualSchedule(deps(), userId, {
+        scheduleId: 'sch-1',
+        paymentMethodId: '3',
+        categoryId: '5',
+      });
+      expect(wallos.listPaymentMethods).toHaveBeenCalledWith(userId);
+      expect(wallos.listCategories).toHaveBeenCalledWith(userId);
+      expect(wallos.createSubscription).toHaveBeenCalledTimes(1);
+      expect(wallos.createSubscription.mock.calls[0]?.[1]).toMatchObject({
+        payment_method_id: '3',
+        category_id: '5',
+      });
+    });
+
+    it('refuses a payment method id absent from the caller list and makes no Wallos write', async () => {
+      await expect(
+        createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', paymentMethodId: '99' }),
+      ).rejects.toMatchObject({ code: 'invalid_payment_method' });
+      expect(wallos.createSubscription).toHaveBeenCalledTimes(0);
+    });
+
+    it('refuses a category id that belongs only to another user and makes no Wallos write', async () => {
+      // The fake answers per user: another account owns category 8, the caller does not.
+      wallos.listCategories = vi.fn(async (id: string) =>
+        id === userId ? OWN_CATEGORIES : [{ id: '8', name: 'Other' }],
+      );
+      await expect(
+        createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', categoryId: '8' }),
+      ).rejects.toMatchObject({ code: 'invalid_category' });
+      expect(wallos.createSubscription).toHaveBeenCalledTimes(0);
+    });
+
+    it('refuses a disabled payment method id because the client list does not contain it', async () => {
+      // listPaymentMethods drops enabled: 0 rows, so a disabled id (4) is simply not listed.
+      await expect(
+        createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', paymentMethodId: '4' }),
+      ).rejects.toMatchObject({ code: 'invalid_payment_method' });
+      expect(wallos.createSubscription).toHaveBeenCalledTimes(0);
+    });
+
+    it('refuses without a write when one id is valid and the other is foreign', async () => {
+      await expect(
+        createWallosSubscriptionFromActualSchedule(deps(), userId, {
+          scheduleId: 'sch-1',
+          paymentMethodId: '3',
+          categoryId: '77',
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_category' });
+      expect(wallos.createSubscription).toHaveBeenCalledTimes(0);
+    });
+
+    it('does not read either list when no ids are sent, and the payload is unchanged', async () => {
+      await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1' });
+      expect(wallos.listPaymentMethods).not.toHaveBeenCalled();
+      expect(wallos.listCategories).not.toHaveBeenCalled();
+      const sent = wallos.createSubscription.mock.calls[0]?.[1] as Record<string, string>;
+      expect(Object.keys(sent)).not.toContain('payment_method_id');
+      expect(Object.keys(sent)).not.toContain('category_id');
+    });
+
+    it('reads only the list for the id that was sent', async () => {
+      await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', categoryId: '5' });
+      expect(wallos.listPaymentMethods).not.toHaveBeenCalled();
+      expect(wallos.listCategories).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('rejects a range schedule', async () => {
     apiState.schedules = [schedule({ amountOp: 'isbetween', amount: { num1: -100, num2: -200 } })];
     await expect(
@@ -239,10 +316,35 @@ describe('pre-fill previews', () => {
       frequency: 2,
       startDate: '2026-02-01',
       nextPayment: '2026-12-01',
+      paymentMethods: [],
+      categories: [],
     });
     await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1' });
     const sent = wallos.createSubscription.mock.calls[0]?.[1] as Record<string, string>;
     expect(sent).toMatchObject({ name: preview.name, price: preview.price, next_payment: preview.nextPayment });
+  });
+
+  it('wallos preview returns the caller lists as id strings and names', async () => {
+    apiState.schedules = [
+      { id: 'sch-1', name: 'S', amount: -100, amountOp: 'is', date: { frequency: 'monthly', start: '2026-02-01' } },
+    ];
+    wallos.listPaymentMethods.mockResolvedValue([{ id: '3', name: 'Card' }]);
+    wallos.listCategories.mockResolvedValue([{ id: '5', name: 'Streaming' }]);
+    const preview = await prefillWallosSubscriptionFromSchedule(deps(), userId, { scheduleId: 'sch-1' });
+    expect(preview.paymentMethods).toEqual([{ id: '3', name: 'Card' }]);
+    expect(preview.categories).toEqual([{ id: '5', name: 'Streaming' }]);
+  });
+
+  it('wallos preview hides only the field whose list read failed and still succeeds', async () => {
+    apiState.schedules = [
+      { id: 'sch-1', name: 'S', amount: -100, amountOp: 'is', date: { frequency: 'monthly', start: '2026-02-01' } },
+    ];
+    wallos.listPaymentMethods.mockRejectedValue(new Error('down'));
+    wallos.listCategories.mockResolvedValue([{ id: '5', name: 'Streaming' }]);
+    const preview = await prefillWallosSubscriptionFromSchedule(deps(), userId, { scheduleId: 'sch-1' });
+    expect(preview.paymentMethods).toEqual([]);
+    expect(preview.categories).toEqual([{ id: '5', name: 'Streaming' }]);
+    expect(wallos.createSubscription).not.toHaveBeenCalled();
   });
 
   it('wallos preview rejects a range schedule and an unknown schedule', async () => {

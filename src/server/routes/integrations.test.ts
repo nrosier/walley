@@ -254,6 +254,8 @@ describe('pre-fill routes', () => {
       frequency: 1,
       startDate: '2026-01-01',
       nextPayment: '2026-01-01',
+      paymentMethods: [],
+      categories: [],
     });
     expect(createSchedule).not.toHaveBeenCalled();
     expect(createSubscription).not.toHaveBeenCalled();
