@@ -8,6 +8,7 @@ import {
   createActualScheduleFromWallos,
   createWallosSubscriptionFromActualSchedule,
   CreateFlowError,
+  readWallosChoices,
   prefillActualScheduleFromWallos,
   prefillWallosSubscriptionFromSchedule,
   type CreateDeps,
@@ -345,6 +346,18 @@ describe('pre-fill previews', () => {
     expect(preview.paymentMethods).toEqual([]);
     expect(preview.categories).toEqual([{ id: '5', name: 'Streaming' }]);
     expect(wallos.createSubscription).not.toHaveBeenCalled();
+  });
+
+  it('both list reads failing give empty choices and the create still proceeds with no ids', async () => {
+    apiState.schedules = [
+      { id: 'sch-1', name: 'S', amount: -100, amountOp: 'is', date: { frequency: 'monthly', start: '2026-02-01' } },
+    ];
+    wallos.listPaymentMethods.mockRejectedValue(new Error('down'));
+    wallos.listCategories.mockRejectedValue(new Error('timeout'));
+    await expect(readWallosChoices(deps(), userId)).resolves.toEqual({ paymentMethods: [], categories: [] });
+    const out = await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1' });
+    expect(out).toEqual({ wallosSubscriptionId: '99' });
+    expect(wallos.createSubscription).toHaveBeenCalledTimes(1);
   });
 
   it('wallos preview rejects a range schedule and an unknown schedule', async () => {

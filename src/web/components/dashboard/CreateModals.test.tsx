@@ -161,7 +161,28 @@ describe('CreateWallosForm payment method and category', () => {
     await createWallosSubscription('s1', g, undefined, undefined, { paymentMethodId: '', categoryId: '' });
     expect(JSON.parse(g.mock.calls[0]?.[1]?.body as string)).toEqual({ scheduleId: 's1' });
   });
+  it('buildWallosBody sends both chosen ids as digit strings', () => {
+    const body = buildWallosBody('s1', undefined, { paymentMethodId: '4', categoryId: '7' });
+    expect(body).toEqual({ scheduleId: 's1', paymentMethodId: '4', categoryId: '7' });
+    expect(body.paymentMethodId).toMatch(/^\d+$/);
+    expect(body.categoryId).toMatch(/^\d+$/);
+  });
+  it('buildWallosBody sends only the one chosen id', () => {
+    expect(buildWallosBody('s1', undefined, { paymentMethodId: '4', categoryId: '' })).toEqual({ scheduleId: 's1', paymentMethodId: '4' });
+    expect(buildWallosBody('s1', undefined, { paymentMethodId: '', categoryId: '7' })).toEqual({ scheduleId: 's1', categoryId: '7' });
+  });
+  it('an empty selection (fields hidden) builds the body it always did: scheduleId only', () => {
+    expect(buildWallosBody('s1', undefined, { paymentMethodId: '', categoryId: '' })).toEqual({ scheduleId: 's1' });
+    expect(Object.keys(buildWallosBody('s1', undefined, { paymentMethodId: '', categoryId: '' }))).toEqual(['scheduleId']);
+  });
+  it('renders no payment method or category select when both lists are empty', () => {
+    const html = render(<CreateWallosForm prefill={{ ...wallos, paymentMethods: [], categories: [] }} scheduleId="s1" />);
+    expect(html).not.toContain('<select');
+    expect(html).not.toContain('Payment method');
+    expect(html).not.toContain('No category');
+  });
   it('the form passes its two selected values into the create call', () => {
+    // Secondary, static-source check: no DOM is available, so the submit handler itself is not executed.
     expect(wallosSrc).toMatch(/\{ paymentMethodId: paymentMethod, categoryId: category \}/);
     expect(wallosSrc).toMatch(/prefill\.paymentMethods\.length > 0/);
     expect(wallosSrc).toMatch(/prefill\.categories\.length > 0/);
