@@ -8,7 +8,7 @@ import type {
   APIPayeeEntity,
   APIScheduleEntity,
 } from '@actual-app/api/models';
-import { actualToWallos, FrequencyMappingError } from '../../lib/frequency-mapper.js';
+import { actualToWallos, FrequencyMappingError, type ActualRecurrence, type WallosIntervalType } from '../../lib/frequency-mapper.js';
 import type { UserRepoFor, WallosClient } from './wallos/client.js';
 import { createActualSchedule, type CreateScheduleResult, type PayeeChoice } from './actual/write.js';
 import { readAccounts, readBaseCurrency, readCategories, readPayees, readSchedules } from './actual/read.js';
@@ -19,6 +19,7 @@ import {
   type PreparedScheduleInput,
 } from './prepare.js';
 import type { WallosSubscriptionPayload } from './wallos/write.js';
+import { nextPaymentFor, priceToMinorUnits, recurrenceWithBillingCycle } from './wallos/create-fields.js';
 import { buildCurrencyMap, mapWallosSubscription, resolveCurrencyCode, WallosMappingError } from './wallos/map.js';
 import type { CreateScheduleInput } from './actual/write.js';
 
@@ -28,6 +29,7 @@ export type CreateFlowErrorCode =
   | 'wallos_subscription_not_found'
   | 'schedule_not_found'
   | 'invalid_state'
+  | 'invalid_request'
   | 'match_not_found'
   | 'invalid_payment_method'
   | 'invalid_category';
@@ -38,6 +40,7 @@ const MESSAGES: Record<CreateFlowErrorCode, string> = {
   wallos_subscription_not_found: 'The Wallos subscription was not found',
   schedule_not_found: 'The Actual schedule was not found',
   invalid_state: 'The match is no longer in a state that allows this action',
+  invalid_request: 'A value of the request is not valid for this account',
   match_not_found: 'The match was not found',
   invalid_payment_method: 'The payment method is not one of your Wallos payment methods',
   invalid_category: 'The category is not one of your Wallos categories',
@@ -206,6 +209,18 @@ export interface WallosSubscriptionPlan {
 }
 
 /**
+ * #133: values the user edited in the Wallos create modal. Already validated by the route (title
+ * trimmed, price a positive decimal string in the account currency, cycle one of the mapper's
+ * Wallos values, start date a real YYYY-MM-DD). An absent field keeps the derived value.
+ */
+export interface WallosCreateOverrides {
+  readonly title?: string;
+  readonly price?: string;
+  readonly billingCycle?: WallosIntervalType;
+  readonly startDate?: string;
+}
+
+/**
  * Shared by the submit and the pre-fill preview. Actual schedule -> Wallos `add` payload. The new
  * subscription is created in the Wallos currency whose code is the budget's base currency, so the
  * amount needs no rate and keeps its cents. Range schedules are rejected, not guessed.
@@ -214,6 +229,7 @@ export async function planWallosSubscriptionFromSchedule(
   deps: CreateDeps,
   userId: string,
   scheduleId: string,
+  overrides: WallosCreateOverrides = {},
 ): Promise<WallosSubscriptionPlan> {
   const read = await deps.withActual<ScheduleRead>(userId, async (api) => ({
     schedule: (await readSchedules(api)).find((s) => s.id === scheduleId),
@@ -250,6 +266,14 @@ export async function planWallosSubscriptionFromSchedule(
     throw err;
   }
 
+  // #133: the edited price is checked against the budget currency's minor units before any Wallos call.
+  let overrideCents: number | undefined;
+  if (overrides.price !== undefined) {
+    const minor = priceToMinorUnits(overrides.price, read.baseCode);
+    if (minor === null) throw new CreateFlowError('invalid_request');
+    overrideCents = -minor;
+  }
+
   const currencies = await deps.wallos.listCurrencies(userId);
   const baseUpper = read.baseCode.trim().toUpperCase();
   const baseEntry = currencies.find((c) => c.code.trim().toUpperCase() === baseUpper);
@@ -259,18 +283,29 @@ export async function planWallosSubscriptionFromSchedule(
   // Same lookup the converter uses; keeps the id a plain string of digits.
   const currencyId = [...buildCurrencyMap([baseEntry]).keys()][0] ?? '';
 
+  // #133: overrides replace the derived value before the one shared payload builder runs, so the
+  // conversion, cycle mapping and date checks are the same ones the prefill uses.
+  const priceCents = overrideCents ?? amount;
+  const baseRecurrence: ActualRecurrence = {
+    frequency: recurrence.frequency,
+    ...(recurrence.interval === undefined ? {} : { interval: recurrence.interval }),
+    ...(recurrence.patterns === undefined ? {} : { patterns: recurrence.patterns }),
+  };
+  const startDate = overrides.startDate ?? recurrence.start;
+  const derivedNext = schedule.next_date ?? recurrence.start;
+
   const payload = prepareWallosSubscriptionPayload(
     {
-      name: schedule.name ?? '',
-      priceCents: amount,
+      name: overrides.title ?? schedule.name ?? '',
+      priceCents,
       currencyId,
-      recurrence: {
-        frequency: recurrence.frequency,
-        ...(recurrence.interval === undefined ? {} : { interval: recurrence.interval }),
-        ...(recurrence.patterns === undefined ? {} : { patterns: recurrence.patterns }),
-      },
-      startDate: recurrence.start,
-      nextPaymentDate: schedule.next_date ?? recurrence.start,
+      recurrence:
+        overrides.billingCycle === undefined
+          ? baseRecurrence
+          : recurrenceWithBillingCycle(baseRecurrence, overrides.billingCycle),
+      startDate,
+      // The first payment cannot precede an edited start date.
+      nextPaymentDate: overrides.startDate === undefined ? derivedNext : nextPaymentFor(derivedNext, startDate),
     },
     currencies,
     read.baseCode,
@@ -278,7 +313,7 @@ export async function planWallosSubscriptionFromSchedule(
   return { payload, currencyCode: baseEntry.code };
 }
 
-export interface CreateWallosSubscriptionRequest {
+export interface CreateWallosSubscriptionRequest extends WallosCreateOverrides {
   readonly scheduleId: string;
   /** Digit string. Must be in the caller's own enabled Wallos payment methods. */
   readonly paymentMethodId?: string;
@@ -314,7 +349,12 @@ export async function createWallosSubscriptionFromActualSchedule(
   userId: string,
   request: CreateWallosSubscriptionRequest,
 ): Promise<{ readonly wallosSubscriptionId: string }> {
-  const { payload } = await planWallosSubscriptionFromSchedule(deps, userId, request.scheduleId);
+  const { payload } = await planWallosSubscriptionFromSchedule(deps, userId, request.scheduleId, {
+    ...(request.title === undefined ? {} : { title: request.title }),
+    ...(request.price === undefined ? {} : { price: request.price }),
+    ...(request.billingCycle === undefined ? {} : { billingCycle: request.billingCycle }),
+    ...(request.startDate === undefined ? {} : { startDate: request.startDate }),
+  });
   await checkChosenIds(deps, userId, request);
   const wallosSubscriptionId = await deps.wallos.createSubscription(userId, {
     ...payload,

@@ -8,8 +8,8 @@ import { SegmentedControl } from '../ui/segmented-control';
 import { CreateFooter } from './CreateFooter';
 import { CreateModalFrame } from './CreateModalFrame';
 import { createModalMessages } from './CreateModal.messages';
-import { CYCLE_UNITS, FIELD_CLASS, cycleKey, cycleUnit } from './create-modal-shared';
-import { submitCreate, wallosSubmitDisabled } from './create-submit';
+import { CYCLE_UNITS, FIELD_CLASS, cycleKey, cycleNumberFor, cycleUnit, type CycleUnit } from './create-modal-shared';
+import { submitCreate, wallosDisabledReason, wallosEdits, wallosSubmitDisabled, type WallosFormFields } from './create-submit';
 
 export interface CreateWallosFormProps {
   prefill: WallosSubscriptionPrefill;
@@ -25,9 +25,10 @@ export interface CreateWallosFormProps {
 }
 
 /**
- * The pre-fill as read-only display (title, price, billing cycle, start date) until the Wallos create endpoint
- * accepts overrides, so nothing typed can be ignored. The payment method and category selects are the only inputs; each is
- * hidden when Wallos returned no options and sends nothing while on its empty choice. Create is locked while the request is in flight.
+ * The four pre-filled fields (title, price, billing cycle, start date) are editable (#133); only values changed from the
+ * pre-fill are sent, through `buildWallosBody`. Payment method and category are selects, each hidden when Wallos returned no
+ * options and sending nothing while on its empty choice. The reason Create is off shows in the footer. Create is locked while
+ * the request is in flight.
  */
 export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, footerHost, onCancel, onCreated }: CreateWallosFormProps) {
   const { t, errorText } = useT(createModalMessages);
@@ -36,22 +37,36 @@ export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, foot
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState('');
   const [category, setCategory] = useState('');
+  const prefillUnit = cycleUnit(prefill.cycle);
+  const [fields, setFields] = useState<WallosFormFields>({
+    title: prefill.name,
+    price: prefill.price,
+    unit: prefillUnit,
+    startDate: prefill.startDate ?? prefill.nextPayment,
+  });
+  const edit = (change: Partial<WallosFormFields>): void => { setFields((f) => ({ ...f, ...change })); };
+  const missing = wallosDisabledReason(fields, prefill.currencyCode);
+  const reasonText =
+    missing === 'title' ? t('wallos.titleInvalid') : missing === 'price' ? t('wallos.priceInvalid') : missing === 'startDate' ? t('wallos.startDateInvalid') : null;
   const formId = useId();
   const reasonId = useId();
+  const titleFieldId = useId();
+  const priceFieldId = useId();
+  const startFieldId = useId();
   const paymentMethodId = useId();
   const categoryId = useId();
-  const cycle = cycleKey(prefill.cycle, prefill.frequency);
+  const cycle = cycleKey(cycleNumberFor(fields.unit), prefill.frequency);
   return (
     <form
       id={formId}
       className="grid gap-4 text-sm"
       onSubmit={(e) => {
         e.preventDefault();
-        if (wallosSubmitDisabled(pending) || created) return;
+        if (missing !== null || wallosSubmitDisabled(pending) || created) return;
         setPending(true);
         setErrorCode(null);
         void submitCreate(
-          () => createWallosSubscription(scheduleId, fetchImpl, undefined, matchId, { paymentMethodId: paymentMethod, categoryId: category }),
+          () => createWallosSubscription(scheduleId, fetchImpl, undefined, matchId, { paymentMethodId: paymentMethod, categoryId: category, ...wallosEdits(prefill, fields, prefillUnit) }),
           () => syncStore.run(),
           {
             onCreated: () => {
@@ -67,29 +82,54 @@ export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, foot
         );
       }}
     >
+      <label htmlFor={titleFieldId} className="grid gap-1">
+        {t('wallos.name')}
+        <input
+          id={titleFieldId}
+          type="text"
+          required
+          maxLength={200}
+          value={fields.title}
+          aria-describedby={missing === 'title' ? reasonId : undefined}
+          onChange={(e) => { edit({ title: e.target.value }); }}
+          className={FIELD_CLASS}
+        />
+      </label>
+      <label htmlFor={priceFieldId} className="grid gap-1">
+        {t('wallos.price')} ({prefill.currencyCode})
+        <input
+          id={priceFieldId}
+          type="text"
+          inputMode="decimal"
+          required
+          value={fields.price}
+          aria-describedby={missing === 'price' ? reasonId : undefined}
+          onChange={(e) => { edit({ price: e.target.value }); }}
+          className={`${FIELD_CLASS} font-mono`}
+        />
+      </label>
       <div className="grid gap-1">
-        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 rounded-md border bg-surface-2 p-3">
-          <dt className="text-muted">{t('wallos.name')}</dt>
-          <dd>{prefill.name}</dd>
-          <dt className="text-muted">{t('wallos.price')}</dt>
-          <dd className="font-mono">
-            {prefill.price} {prefill.currencyCode}
-          </dd>
-          <dt className="text-muted">{t('wallos.cycle')}</dt>
-          <dd className="grid gap-1">
-            <SegmentedControl
-              aria-label={t('wallos.cycle')}
-              value={cycleUnit(prefill.cycle)}
-              onValueChange={() => undefined}
-              options={CYCLE_UNITS.map((unit) => ({ value: unit, label: t(`wallos.cycleUnit.${unit}`), disabled: true }))}
-            />
-            <span>{t(cycle.key, { n: cycle.n })}</span>
-          </dd>
-          <dt className="text-muted">{t('wallos.startDate')}</dt>
-          <dd className="font-mono">{prefill.startDate ?? prefill.nextPayment}</dd>
-        </dl>
-        <p className="text-xs text-muted">{t('readOnlyNote')}</p>
+        <span className="font-medium">{t('wallos.cycle')}</span>
+        <SegmentedControl
+          aria-label={t('wallos.cycle')}
+          value={fields.unit}
+          onValueChange={(unit) => { edit({ unit: unit as CycleUnit }); }}
+          options={CYCLE_UNITS.map((unit) => ({ value: unit, label: t(`wallos.cycleUnit.${unit}`) }))}
+        />
+        <span className="text-xs text-muted">{t(cycle.key, { n: cycle.n })}</span>
       </div>
+      <label htmlFor={startFieldId} className="grid gap-1">
+        {t('wallos.startDate')}
+        <input
+          id={startFieldId}
+          type="date"
+          required
+          value={fields.startDate}
+          aria-describedby={missing === 'startDate' ? reasonId : undefined}
+          onChange={(e) => { edit({ startDate: e.target.value }); }}
+          className={`${FIELD_CLASS} font-mono`}
+        />
+      </label>
       {prefill.paymentMethods.length > 0 ? (
         <label htmlFor={paymentMethodId} className="grid gap-1">
           {t('wallos.paymentMethod')}
@@ -128,7 +168,7 @@ export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, foot
         cancelLabel={t('cancel')}
         submitLabel={pending ? t('creating') : t('submit')}
         onCancel={onCancel}
-        reason={null}
+        reason={reasonText === null ? null : t('wallos.createDisabled', { reason: reasonText })}
         busy={wallosSubmitDisabled(pending) || created}
         host={footerHost}
       />

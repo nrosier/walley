@@ -100,23 +100,48 @@ export function createActualSchedule(
   });
 }
 
+/** Billing cycle values of the create route (the frequency mapper's Wallos interval types). */
+export type WallosBillingCycle = 'monthly' | 'yearly' | 'weekly' | 'custom_days';
+
 export interface WallosCreateChoices {
   /** Digit-string Wallos payment method id; '' or undefined means not chosen. */
   paymentMethodId?: string;
   /** Digit-string Wallos category id; '' or undefined means not chosen. */
   categoryId?: string;
+  /** #133: edited title; sent only when set. */
+  title?: string;
+  /** #133: edited price, a positive decimal string in the prefill's currency; sent only when set. */
+  price?: string;
+  /** #133: edited billing cycle; sent only when set. */
+  billingCycle?: WallosBillingCycle;
+  /** #133: edited start date, YYYY-MM-DD; sent only when set. */
+  startDate?: string;
 }
 
-/** Create body: the optional ids are sent only when chosen, so an empty form sends what it always did. */
-export function buildWallosBody(
-  scheduleId: string,
-  matchId?: string,
-  choices?: WallosCreateChoices,
-): { scheduleId: string; matchId?: string; paymentMethodId?: string; categoryId?: string } {
-  const body: { scheduleId: string; matchId?: string; paymentMethodId?: string; categoryId?: string } = { scheduleId };
+export interface WallosCreateBody {
+  scheduleId: string;
+  matchId?: string;
+  paymentMethodId?: string;
+  categoryId?: string;
+  title?: string;
+  price?: string;
+  billingCycle?: WallosBillingCycle;
+  startDate?: string;
+}
+
+/**
+ * Create body: every optional field is sent only when it has a value, so an empty form sends what it
+ * always did. The four edited fields (#133) are passed through as given; the server validates them.
+ */
+export function buildWallosBody(scheduleId: string, matchId?: string, choices?: WallosCreateChoices): WallosCreateBody {
+  const body: WallosCreateBody = { scheduleId };
   if (matchId !== undefined) body.matchId = matchId;
   if (choices?.paymentMethodId) body.paymentMethodId = choices.paymentMethodId;
   if (choices?.categoryId) body.categoryId = choices.categoryId;
+  if (choices?.title) body.title = choices.title;
+  if (choices?.price) body.price = choices.price;
+  if (choices?.billingCycle) body.billingCycle = choices.billingCycle;
+  if (choices?.startDate) body.startDate = choices.startDate;
   return body;
 }
 

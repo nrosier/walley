@@ -68,19 +68,17 @@ function checkId(value: string, field: 'payment_method_id' | 'category_id'): str
   throw new WallosMappingError('invalid_value', field, `${field} must be a positive id of digits`);
 }
 
-function checkDate(value: string, field: string): string {
+/** True for a real calendar date written exactly as YYYY-MM-DD. */
+export function isIsoDate(value: string): boolean {
   const match = DATE_PATTERN.exec(value);
-  if (match) {
-    const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-    const check = new Date(Date.UTC(year, month - 1, day));
-    if (
-      check.getUTCFullYear() === year &&
-      check.getUTCMonth() === month - 1 &&
-      check.getUTCDate() === day
-    ) {
-      return value;
-    }
-  }
+  if (!match) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const check = new Date(Date.UTC(year, month - 1, day));
+  return check.getUTCFullYear() === year && check.getUTCMonth() === month - 1 && check.getUTCDate() === day;
+}
+
+function checkDate(value: string, field: string): string {
+  if (isIsoDate(value)) return value;
   throw new WallosMappingError('invalid_value', field, `${field} must be a valid YYYY-MM-DD date`);
 }
 

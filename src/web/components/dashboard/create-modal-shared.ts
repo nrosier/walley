@@ -1,4 +1,5 @@
 import type { MessageKey } from '@/i18n/translate';
+import type { WallosBillingCycle } from '@/lib/create.api';
 import type { createModalMessages } from './CreateModal.messages';
 
 /** Form inputs use the stronger input border and the shared control height (44px on narrow screens). */
@@ -31,3 +32,17 @@ export const CYCLE_UNITS: readonly Unit[] = ['day', 'week', 'month', 'year'];
 export function cycleKey(cycle: number, n: number): { key: EveryKey; n: number } {
   return key(CYCLE_UNIT[cycle] ?? 'month', n);
 }
+
+/** #133: billing cycle value the create route takes for each segment of the cycle control. */
+const BILLING_CYCLE: Record<Unit, WallosBillingCycle> = { day: 'custom_days', week: 'weekly', month: 'monthly', year: 'yearly' };
+
+export function billingCycleFor(unit: Unit): WallosBillingCycle {
+  return BILLING_CYCLE[unit];
+}
+
+/** Wallos cycle number (1 days, 2 weeks, 3 months, 4 years) of a segment, for the "Every n ..." text. */
+export function cycleNumberFor(unit: Unit): number {
+  return CYCLE_UNITS.indexOf(unit) + 1;
+}
+
+export type CycleUnit = Unit;

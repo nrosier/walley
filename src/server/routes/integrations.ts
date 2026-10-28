@@ -18,6 +18,7 @@ import {
   WallosNetworkError,
   WallosRejectedError,
 } from '../integrations/wallos/client.js';
+import { readBillingCycle, readPrice, readStartDate, readTitle } from '../integrations/wallos/create-fields.js';
 import { WallosMappingError } from '../integrations/wallos/map.js';
 import { linkCreatedPair } from '../matching/link-created.js';
 import { checkRecreate, repointAfterRecreate, type OrphanRow, type RecreateTarget } from '../matching/relink-orphan.js';
@@ -214,6 +215,14 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
     const paymentMethodId = readOptionalDigitId(body['paymentMethodId']);
     const categoryId = readOptionalDigitId(body['categoryId']);
     if (paymentMethodId === false || categoryId === false) return reply.code(400).send(INVALID);
+    // #133: optional edited values. Absent or null keeps today's behaviour; anything invalid is a 400 before any call.
+    const title = readTitle(body['title']);
+    const price = readPrice(body['price']);
+    const billingCycle = readBillingCycle(body['billingCycle']);
+    const startDate = readStartDate(body['startDate']);
+    if (title === false || price === false || billingCycle === false || startDate === false) {
+      return reply.code(400).send(INVALID);
+    }
     const matchId = body['matchId'];
     try {
       const row =
@@ -224,6 +233,10 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
         scheduleId: body['scheduleId'],
         ...(paymentMethodId === undefined ? {} : { paymentMethodId }),
         ...(categoryId === undefined ? {} : { categoryId }),
+        ...(title === undefined ? {} : { title }),
+        ...(price === undefined ? {} : { price }),
+        ...(billingCycle === undefined ? {} : { billingCycle }),
+        ...(startDate === undefined ? {} : { startDate }),
       });
       const linked =
         row === undefined

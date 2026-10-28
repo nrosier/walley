@@ -52,6 +52,10 @@ const en = {
     paymentMethodNone: 'No payment method',
     category: 'Category',
     categoryNone: 'No category',
+    titleInvalid: 'Enter a title of 1 to 200 characters.',
+    priceInvalid: 'Enter a price above zero with no more decimals than the currency has.',
+    startDateInvalid: 'Enter a valid start date.',
+    createDisabled: 'Create is off: {reason}',
     cycleUnit: {
       day: 'Days',
       week: 'Weeks',
@@ -121,6 +125,10 @@ const nl: typeof en = {
     paymentMethodNone: 'Geen betaalmethode',
     category: 'Categorie',
     categoryNone: 'Geen categorie',
+    titleInvalid: 'Voer een titel in van 1 tot 200 tekens.',
+    priceInvalid: 'Voer een prijs boven nul in met niet meer decimalen dan de valuta heeft.',
+    startDateInvalid: 'Voer een geldige startdatum in.',
+    createDisabled: 'Aanmaken is uitgeschakeld: {reason}',
     cycleUnit: {
       day: 'Dagen',
       week: 'Weken',

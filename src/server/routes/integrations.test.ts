@@ -316,6 +316,139 @@ describe('wallos-subscriptions payment method and category ids (#111)', () => {
   });
 });
 
+describe('wallos-subscriptions edited fields (#133)', () => {
+  const sentPayload = (mock: ReturnType<typeof setup>['createSubscription']): Record<string, unknown> =>
+    (mock.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
+  const post = (ctx: ReturnType<typeof setup>, extra: Record<string, unknown>) =>
+    injectAs(ctx.app, ctx.sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a', ...extra } });
+
+  it('title: a valid value is trimmed and written as name', async () => {
+    const ctx = setup();
+    expect((await post(ctx, { title: '  Music  ' })).statusCode).toBe(201);
+    expect(sentPayload(ctx.createSubscription)).toMatchObject({ name: 'Music' });
+  });
+
+  it('price: a decimal string or number is written with the currency minor units', async () => {
+    const ctx = setup();
+    expect((await post(ctx, { price: '9.9' })).statusCode).toBe(201);
+    expect(sentPayload(ctx.createSubscription)).toMatchObject({ price: '9.90' });
+    const ctx2 = setup();
+    expect((await post(ctx2, { price: 20 })).statusCode).toBe(201);
+    expect(sentPayload(ctx2.createSubscription)).toMatchObject({ price: '20.00' });
+  });
+
+  it.each([
+    ['monthly', '3'],
+    ['yearly', '4'],
+    ['weekly', '2'],
+    ['custom_days', '1'],
+  ])('billing cycle: %s is written as Wallos cycle %s', async (billingCycle, cycle) => {
+    const ctx = setup();
+    expect((await post(ctx, { billingCycle })).statusCode).toBe(201);
+    expect(sentPayload(ctx.createSubscription)).toMatchObject({ cycle, frequency: '1' });
+  });
+
+  it('start date: a valid value is written as start_date', async () => {
+    const ctx = setup();
+    expect((await post(ctx, { startDate: '2026-03-04' })).statusCode).toBe(201);
+    expect(sentPayload(ctx.createSubscription)).toMatchObject({ start_date: '2026-03-04' });
+  });
+
+  it('all four together reach Wallos and the match is still saved', async () => {
+    const ctx = setup();
+    const res = await post(ctx, { title: 'Music', price: '9.90', billingCycle: 'weekly', startDate: '2026-03-04' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ wallosSubscriptionId: '55', matchCreated: true });
+    expect(sentPayload(ctx.createSubscription)).toMatchObject({
+      name: 'Music',
+      price: '9.90',
+      cycle: '2',
+      start_date: '2026-03-04',
+    });
+  });
+
+  it.each([
+    { title: '' },
+    { title: '   ' },
+    { title: 'x'.repeat(201) },
+    { title: 5 },
+    { price: '' },
+    { price: 'abc' },
+    { price: '-1' },
+    { price: '0' },
+    { price: '1e3' },
+    { price: '9.999' },
+    { price: 0 },
+    { price: -3 },
+    { price: {} },
+    { billingCycle: 'daily' },
+    { billingCycle: 'Monthly' },
+    { billingCycle: 3 },
+    { startDate: '2026-02-30' },
+    { startDate: '2026-3-4' },
+    { startDate: '04-03-2026' },
+    { startDate: 20260304 },
+  ])('400 invalid_request for %j, no Wallos call and no match', async (extra) => {
+    const ctx = setup();
+    const res = await post(ctx, extra);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+    expect(ctx.createSubscription).not.toHaveBeenCalled();
+  });
+
+  it('a body naming none of the four fields sends the same payload as before', async () => {
+    const plain = setup();
+    expect((await post(plain, {})).statusCode).toBe(201);
+    const nulls = setup();
+    expect((await post(nulls, { title: null, price: null, billingCycle: null, startDate: null })).statusCode).toBe(201);
+    expect(sentPayload(nulls.createSubscription)).toEqual(sentPayload(plain.createSubscription));
+    expect(sentPayload(plain.createSubscription)).toEqual({
+      name: 'Spotify',
+      price: '12.50',
+      currency_id: '1',
+      cycle: '3',
+      frequency: '1',
+      next_payment: '2026-01-01',
+      start_date: '2026-01-01',
+    });
+  });
+
+  it('two users: the edited values are written only through the caller own Wallos client', async () => {
+    const { app, a, b, sa, sb, createSubscription } = setup();
+    const edit = { title: 'Mine', price: '5', billingCycle: 'yearly', startDate: '2026-03-04' };
+    const asA = await injectAs(app, sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a', ...edit } });
+    expect(asA.statusCode).toBe(201);
+    expect(createSubscription.mock.calls.map((c) => c[0])).toEqual([a]);
+    // A cannot aim the edited values at B's schedule: it is not found, and nothing is written.
+    const cross = await injectAs(app, sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-b', ...edit } });
+    expect(cross.statusCode).toBe(404);
+    expect(createSubscription).toHaveBeenCalledTimes(1);
+    // B's own create goes to B's client only.
+    const asB = await injectAs(app, sb, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-b', title: 'Theirs' } });
+    expect(asB.statusCode).toBe(201);
+    expect(createSubscription.mock.calls.map((c) => c[0])).toEqual([a, b]);
+    expect(sentPayload(createSubscription)).toMatchObject({ name: 'Mine' });
+    expect((createSubscription.mock.calls as unknown[][])[1]?.[1]).toMatchObject({ name: 'Theirs' });
+  });
+
+  it('a price with too many decimals for the currency is a 400 before any Wallos call', async () => {
+    const listCurrencies = vi.fn(async () => [{ id: 1, code: 'EUR', rate: '1' }]);
+    const ctx = setup({ wallos: { listCurrencies } as unknown as WallosClient });
+    const res = await post(ctx, { price: '9.999' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+    expect(listCurrencies).not.toHaveBeenCalled();
+  });
+
+  it('a 400 for a bad value is answered before the Wallos lists are read', async () => {
+    const listCurrencies = vi.fn(async () => [{ id: 1, code: 'EUR', rate: '1' }]);
+    const ctx = setup({ wallos: { listCurrencies } as unknown as WallosClient });
+    const res = await post(ctx, { price: 'abc' });
+    expect(res.statusCode).toBe(400);
+    expect(listCurrencies).not.toHaveBeenCalled();
+  });
+});
+
 describe('pre-fill routes', () => {
   it('actual-schedules/prefill returns the converted preview and the lists, with no write', async () => {
     const { app, sa, a, createSchedule, createSubscription } = setup();

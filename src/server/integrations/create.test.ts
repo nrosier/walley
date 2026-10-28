@@ -162,6 +162,82 @@ describe('createWallosSubscriptionFromActualSchedule', () => {
     });
   });
 
+  describe('edited title, price, billing cycle and start date (#133)', () => {
+    beforeEach(() => {
+      apiState.schedules = [schedule()];
+    });
+    const sent = (): Record<string, unknown> => wallos.createSubscription.mock.calls[0]?.[1] as Record<string, unknown>;
+
+    it('omitted fields send exactly the prefill payload', async () => {
+      const prefill = await prefillWallosSubscriptionFromSchedule(deps(), userId, { scheduleId: 'sch-1' });
+      await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1' });
+      expect(sent()).toMatchObject({
+        name: prefill.name,
+        price: prefill.price,
+        cycle: String(prefill.cycle),
+        frequency: String(prefill.frequency),
+        start_date: prefill.startDate,
+        next_payment: prefill.nextPayment,
+      });
+      expect(Object.keys(sent()).sort()).toEqual(['currency_id', 'cycle', 'frequency', 'name', 'next_payment', 'price', 'start_date']);
+    });
+
+    it('maps the title, price (EUR minor units), cycle and start date onto the Wallos fields', async () => {
+      await createWallosSubscriptionFromActualSchedule(deps(), userId, {
+        scheduleId: 'sch-1',
+        title: 'Music',
+        price: '9.9',
+        billingCycle: 'yearly',
+        startDate: '2026-03-04',
+      });
+      expect(sent()).toEqual({
+        name: 'Music',
+        price: '9.90',
+        currency_id: '1',
+        cycle: '4',
+        frequency: '2',
+        next_payment: '2026-12-01',
+        start_date: '2026-03-04',
+      });
+    });
+
+    it.each([
+      ['monthly', '3'],
+      ['yearly', '4'],
+      ['weekly', '2'],
+      ['custom_days', '1'],
+    ] as const)('billing cycle %s writes Wallos cycle %s and keeps the count', async (billingCycle, cycle) => {
+      await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', billingCycle });
+      expect(sent()).toMatchObject({ cycle, frequency: '2' });
+    });
+
+    it('uses the budget currency exponent: JPY has no decimals', async () => {
+      apiState.baseCurrency = 'JPY';
+      wallos.listCurrencies.mockResolvedValue([{ id: 3, code: 'JPY', rate: '160' }]);
+      apiState.schedules = [schedule({ amount: -500 })];
+      await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', price: '1250' });
+      expect(sent()).toMatchObject({ currency_id: '3', price: '1250' });
+    });
+
+    it('refuses a price with more decimals than the currency has, with no Wallos write', async () => {
+      await expect(
+        createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', price: '9.999' }),
+      ).rejects.toMatchObject({ code: 'invalid_request' });
+      expect(wallos.createSubscription).not.toHaveBeenCalled();
+    });
+
+    it('moves the first payment to an edited start date that is later than it', async () => {
+      await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', startDate: '2027-01-15' });
+      expect(sent()).toMatchObject({ start_date: '2027-01-15', next_payment: '2027-01-15' });
+    });
+
+    it('the preview is unchanged by the overrides', async () => {
+      const before = await prefillWallosSubscriptionFromSchedule(deps(), userId, { scheduleId: 'sch-1' });
+      await createWallosSubscriptionFromActualSchedule(deps(), userId, { scheduleId: 'sch-1', title: 'Other', price: '1' });
+      expect(await prefillWallosSubscriptionFromSchedule(deps(), userId, { scheduleId: 'sch-1' })).toEqual(before);
+    });
+  });
+
   describe('chosen payment method and category', () => {
     const OWN_METHODS = [{ id: '3', name: 'Card' }];
     const OWN_CATEGORIES = [{ id: '5', name: 'Streaming' }];

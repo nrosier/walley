@@ -6,7 +6,7 @@ import { commonMessages } from '@/i18n/common.messages';
 import { buildWallosBody, createActualSchedule, createWallosSubscription, prefillActualSchedule, prefillWallosSubscription, type ActualSchedulePrefill, type WallosSubscriptionPrefill } from '@/lib/create.api';
 import { clearOverride, saveOverride } from '@/lib/overrides.api';
 import { CreateActualForm } from './CreateActualModal';
-import { actualDisabledReason, actualSubmitDisabled, buildActualBody, performCreate, submitCreate, wallosSubmitDisabled } from './create-submit';
+import { actualDisabledReason, actualSubmitDisabled, buildActualBody, performCreate, submitCreate, wallosDisabledReason, wallosEdits, wallosSubmitDisabled } from './create-submit';
 import { createNoticeKinds, createNoticeStore } from '@/lib/notices';
 import { NoticeToastView } from './NoticeToast';
 import { CreateWallosForm } from './CreateWallosModal';
@@ -109,8 +109,9 @@ describe('RateField in CreateActualForm', () => {
 describe('CreateWallosForm', () => {
   it('renders the pre-fill and a Submit that is disabled until an account is chosen', () => {
     const html = render(<CreateWallosForm prefill={wallos} scheduleId="s1" />);
-    expect(html).toContain('Rent');
-    expect(html).toMatch(/font-mono[^>]*>900\.00 EUR/);
+    expect(html).toContain('value="Rent"');
+    expect(html).toContain('value="900.00"');
+    expect(html).toContain('Price (EUR)');
     expect(html).toContain('Every month');
     expect(html).toContain('2026-01-05');
     expect(html).not.toContain('Held:');
@@ -183,9 +184,65 @@ describe('CreateWallosForm payment method and category', () => {
   });
   it('the form passes its two selected values into the create call', () => {
     // Secondary, static-source check: no DOM is available, so the submit handler itself is not executed.
-    expect(wallosSrc).toMatch(/\{ paymentMethodId: paymentMethod, categoryId: category \}/);
+    expect(wallosSrc).toMatch(/paymentMethodId: paymentMethod, categoryId: category, \.\.\.wallosEdits\(prefill, fields, prefillUnit\)/);
     expect(wallosSrc).toMatch(/prefill\.paymentMethods\.length > 0/);
     expect(wallosSrc).toMatch(/prefill\.categories\.length > 0/);
+  });
+});
+
+describe('Wallos edited fields reach the create body (#133)', () => {
+  it('buildWallosBody sends each edited field only when set', () => {
+    expect(buildWallosBody('s1', undefined, { title: 'Music', price: '9.90', billingCycle: 'weekly', startDate: '2026-03-04' })).toEqual({
+      scheduleId: 's1',
+      title: 'Music',
+      price: '9.90',
+      billingCycle: 'weekly',
+      startDate: '2026-03-04',
+    });
+    expect(buildWallosBody('s1', undefined, { title: '', price: '', startDate: '' })).toEqual({ scheduleId: 's1' });
+  });
+  it('createWallosSubscription posts the edited fields as JSON', async () => {
+    const f = jsonFetch({ wallosSubscriptionId: '9' });
+    await createWallosSubscription('s1', f, undefined, 'm1', { title: 'Music', billingCycle: 'custom_days', price: '5', startDate: '2026-03-04' });
+    expect(JSON.parse(f.mock.calls[0]?.[1]?.body as string)).toEqual({
+      scheduleId: 's1',
+      matchId: 'm1',
+      title: 'Music',
+      price: '5',
+      billingCycle: 'custom_days',
+      startDate: '2026-03-04',
+    });
+  });
+  const fields = { title: 'Rent', price: '900.00', unit: 'month', startDate: '2026-01-05' } as const;
+  it('wallosEdits sends nothing for an untouched form, so the body is what it always was', () => {
+    expect(wallosEdits(wallos, fields, 'month')).toEqual({});
+    expect(buildWallosBody('s1', undefined, { paymentMethodId: '', categoryId: '', ...wallosEdits(wallos, fields, 'month') })).toEqual({ scheduleId: 's1' });
+  });
+  it('wallosEdits sends only the changed fields, each cycle segment as its Wallos value', () => {
+    expect(wallosEdits(wallos, { ...fields, title: ' Flat ', price: '12,5', startDate: '2026-02-01' }, 'month')).toEqual({
+      title: 'Flat',
+      price: '12.5',
+      startDate: '2026-02-01',
+    });
+    expect(wallosEdits(wallos, { ...fields, unit: 'day' }, 'month')).toEqual({ billingCycle: 'custom_days' });
+    expect(wallosEdits(wallos, { ...fields, unit: 'week' }, 'month')).toEqual({ billingCycle: 'weekly' });
+    expect(wallosEdits(wallos, { ...fields, unit: 'year' }, 'month')).toEqual({ billingCycle: 'yearly' });
+    expect(wallosEdits(wallos, { ...fields, unit: 'month' }, 'week')).toEqual({ billingCycle: 'monthly' });
+  });
+  it('wallosEdits compares the start date with the next payment when Wallos has no start date', () => {
+    expect(wallosEdits({ ...wallos, startDate: null }, { ...fields, startDate: '2026-11-05' }, 'month')).toEqual({});
+  });
+  it('wallosDisabledReason mirrors the server: title length, price places for the currency, real date', () => {
+    expect(wallosDisabledReason(fields, 'EUR')).toBeNull();
+    expect(wallosDisabledReason({ ...fields, title: ' ' }, 'EUR')).toBe('title');
+    expect(wallosDisabledReason({ ...fields, title: 'x'.repeat(201) }, 'EUR')).toBe('title');
+    expect(wallosDisabledReason({ ...fields, price: '0' }, 'EUR')).toBe('price');
+    expect(wallosDisabledReason({ ...fields, price: '9.999' }, 'EUR')).toBe('price');
+    expect(wallosDisabledReason({ ...fields, price: '12,50' }, 'EUR')).toBeNull();
+    expect(wallosDisabledReason({ ...fields, price: '1250' }, 'JPY')).toBeNull();
+    expect(wallosDisabledReason({ ...fields, price: '12.5' }, 'JPY')).toBe('price');
+    expect(wallosDisabledReason({ ...fields, startDate: '' }, 'EUR')).toBe('startDate');
+    expect(wallosDisabledReason({ ...fields, startDate: '2026-02-30' }, 'EUR')).toBe('startDate');
   });
 });
 
@@ -289,7 +346,7 @@ describe('submit logic', () => {
   });
 });
 
-describe('create modal layout (UI only, pre-fill read-only until the override backend lands)', () => {
+describe('create modal layout (Actual pre-fill read-only until #135; Wallos fields editable, #133)', () => {
   it('Actual: pre-filled name, amount, frequency and start date are read-only display, not inputs', () => {
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" />);
     expect(html).toContain('<dl');
@@ -314,17 +371,47 @@ describe('create modal layout (UI only, pre-fill read-only until the override ba
     expect(actualDisabledReason('a1', 'p1', '')).toBeNull();
     expect(actualDisabledReason('a1', '__new__', 'Netflix')).toBeNull();
   });
-  it('Wallos: title, price, billing cycle (segmented) and start date are read-only display', () => {
+  it('Wallos (#133): title, price, billing cycle (segmented) and start date are editable inputs, pre-filled', () => {
     const html = render(<CreateWallosForm prefill={wallos} scheduleId="s1" onCancel={() => undefined} />);
     expect(html).toContain('role="radiogroup" aria-label="Billing cycle"');
     expect(html.match(/type="radio"/g)).toHaveLength(4);
-    expect(html.match(/type="radio"[^>]*disabled=""|disabled=""[^>]*type="radio"/g)).toHaveLength(4);
+    expect(html).not.toMatch(/type="radio"[^>]*disabled=""|disabled=""[^>]*type="radio"/);
     expect(html).toMatch(/value="month"[^>]*checked=""|checked=""[^>]*value="month"/);
-    expect(html).not.toContain('type="text"');
-    expect(html).toContain('Pre-filled values are shown read-only.');
+    expect(html.match(/<input[^>]*type="text"/g)).toHaveLength(2); // title and price
+    expect(html).toMatch(/<input[^>]*type="text"[^>]*value="Rent"/);
+    expect(html).toMatch(/<input[^>]*inputMode="decimal"[^>]*value="900\.00"/);
+    expect(html).toMatch(/<input[^>]*type="date"[^>]*value="2026-01-05"/);
+    expect(html).not.toContain('<dl');
+    expect(html).not.toContain('Pre-filled values are shown read-only.');
     const footer = html.slice(html.indexOf('data-slot="create-footer"'));
     expect(footer).toContain('>Cancel</button>');
     expect(footer).toContain('>Create</button>');
+  });
+  it('Wallos (#133): the start date falls back to the next payment when Wallos has no start date', () => {
+    const html = render(<CreateWallosForm prefill={{ ...wallos, startDate: null }} scheduleId="s1" />);
+    expect(html).toMatch(/<input[^>]*type="date"[^>]*value="2026-11-05"/);
+  });
+  it('Wallos (#133): renders the four inputs in nl', () => {
+    const html = render(<CreateWallosForm prefill={wallos} scheduleId="s1" />, 'nl');
+    for (const label of ['Titel', 'Prijs (EUR)', 'Factureringscyclus', 'Startdatum']) expect(html).toContain(label);
+    expect(html).toContain('Elke maand');
+  });
+  it('Wallos (#133): Create is off with a reason when a field is invalid', () => {
+    const reasons = [
+      [{ ...wallos, name: '   ' }, 'Create is off: Enter a title of 1 to 200 characters.'],
+      [{ ...wallos, price: '0' }, 'Create is off: Enter a price above zero with no more decimals than the currency has.'],
+      [{ ...wallos, startDate: '2026-02-30' }, 'Create is off: Enter a valid start date.'],
+    ] as const;
+    for (const [prefill, text] of reasons) {
+      const html = render(<CreateWallosForm prefill={prefill} scheduleId="s1" />);
+      expect(html).toContain(text);
+      expect(html.slice(html.indexOf('data-slot="create-footer"'))).toMatch(/<button[^>]*disabled=""[^>]*>Create<\/button>/);
+    }
+  });
+  it('Wallos (#133): the submit builds its body from the form fields through buildWallosBody', () => {
+    expect(wallosSrc).toMatch(/\.\.\.wallosEdits\(prefill, fields, prefillUnit\)/);
+    expect(wallosSrc).toContain('createWallosSubscription(scheduleId, fetchImpl, undefined, matchId,');
+    expect(apiSrc).toMatch(/buildWallosBody\(scheduleId, matchId, choices\)/);
   });
   it('both modals use the shared frame (DialogShell: pinned header and footer, scrolling body, sheet below 768px)', () => {
     expect(frameSrc).toContain('<DialogShell');
