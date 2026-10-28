@@ -33,6 +33,10 @@ export type WallosSubscriptionPayload = {
   readonly next_payment: string;
   /** YYYY-MM-DD. Omitted when absent; Wallos then uses the current date. */
   readonly start_date?: string;
+  /** Wallos payment method id, digits only. Add-only: omitted unless the user chose one. */
+  readonly payment_method_id?: string;
+  /** Wallos category id, digits only. Add-only: omitted unless the user chose one. */
+  readonly category_id?: string;
 };
 
 /** A recurring subscription in the internal model, e.g. from an Actual schedule. */
@@ -48,10 +52,21 @@ export interface RecurringSubscriptionInput {
   startDate: string | null;
   /** `YYYY-MM-DD`. Required by Wallos on add, so null is a typed error. */
   nextPaymentDate: string | null;
+  /** Wallos `payment_method_id`, as a string of digits. Omitted when the user chose none. */
+  paymentMethodId?: string;
+  /** Wallos `category_id`, as a string of digits. Omitted when the user chose none. */
+  categoryId?: string;
 }
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const CURRENCY_ID_PATTERN = /^\d+$/;
+
+function checkId(value: string, field: 'payment_method_id' | 'category_id'): string {
+  if (CURRENCY_ID_PATTERN.test(value) && Number(value) >= 1) {
+    return value;
+  }
+  throw new WallosMappingError('invalid_value', field, `${field} must be a positive id of digits`);
+}
 
 function checkDate(value: string, field: string): string {
   const match = DATE_PATTERN.exec(value);
@@ -136,6 +151,12 @@ export function buildWallosSubscriptionPayload(
   };
   if (input.startDate !== null) {
     payload.start_date = checkDate(input.startDate, 'start_date');
+  }
+  if (input.paymentMethodId !== undefined) {
+    payload.payment_method_id = checkId(input.paymentMethodId, 'payment_method_id');
+  }
+  if (input.categoryId !== undefined) {
+    payload.category_id = checkId(input.categoryId, 'category_id');
   }
   return payload;
 }

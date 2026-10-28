@@ -18,6 +18,7 @@ import {
   buildWallosSubscriptionPayload,
   type RecurringSubscriptionInput,
   type WallosSubscriptionPayload,
+  type WallosSubscriptionUpdate,
 } from './write.js';
 import type { WallosSubscription } from './types.js';
 
@@ -156,6 +157,46 @@ describe('buildWallosSubscriptionPayload', () => {
     }
   });
 
+  it('adds payment_method_id and category_id when given, as digit strings', () => {
+    const payload = buildWallosSubscriptionPayload({
+      ...VALID_INPUT,
+      paymentMethodId: '7',
+      categoryId: '12',
+    });
+    expect(payload).toEqual({
+      name: 'Streaming service',
+      price: '12.50',
+      currency_id: '3',
+      cycle: '3',
+      frequency: '2',
+      next_payment: '2026-11-15',
+      start_date: '2026-01-15',
+      payment_method_id: '7',
+      category_id: '12',
+    });
+  });
+
+  it('omits the ids entirely when none are given, with the exact add keys', () => {
+    const payload = buildWallosSubscriptionPayload(VALID_INPUT);
+    expect(Object.keys(payload).sort()).toEqual(
+      ['currency_id', 'cycle', 'frequency', 'name', 'next_payment', 'price', 'start_date'],
+    );
+    expect(payload).not.toHaveProperty('payment_method_id');
+    expect(payload).not.toHaveProperty('category_id');
+  });
+
+  it('rejects a payment method or category id that is not a positive digit string', () => {
+    for (const bad of ['', '0', '-1', '1.5', 'abc', ' 7']) {
+      expect(
+        captureMappingError({ ...VALID_INPUT, paymentMethodId: bad }),
+      ).toMatchObject({ code: 'invalid_value', field: 'payment_method_id' });
+      expect(captureMappingError({ ...VALID_INPUT, categoryId: bad })).toMatchObject({
+        code: 'invalid_value',
+        field: 'category_id',
+      });
+    }
+  });
+
   it('round-trips a cents amount that float rounding could corrupt', () => {
     const priceCents = toActualCents(1.005, { expense: true });
     const payload = buildWallosSubscriptionPayload({ ...VALID_INPUT, priceCents });
@@ -279,6 +320,52 @@ describe('WallosClient.createSubscription', () => {
     const err = await client.createSubscription(a.userId, payload()).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(WallosRejectedError);
     expect((err as WallosRejectedError).title).toBe('Invalid currency ID');
+  });
+
+  it('sends payment_method_id and category_id in the add form body when given', async () => {
+    const stub = stubFetch(() => json({ success: true, title: 'Subscription added', subscriptionId: 56 }));
+    const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+
+    await client.createSubscription(a.userId, buildWallosSubscriptionPayload({
+      ...VALID_INPUT,
+      paymentMethodId: '7',
+      categoryId: '12',
+    }));
+
+    const form = new URLSearchParams(stub.calls[0]?.body);
+    expect(form.get('action')).toBe('add');
+    expect(form.get('payment_method_id')).toBe('7');
+    expect(form.get('category_id')).toBe('12');
+    expect(form.get('api_key')).toBe(KEY_A);
+  });
+
+  it('sends no id fields in the add form body when none are given', async () => {
+    const stub = stubFetch(() => json({ success: true, title: 'Subscription added', subscriptionId: 57 }));
+    const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+
+    await client.createSubscription(a.userId, payload());
+
+    const form = new URLSearchParams(stub.calls[0]?.body);
+    expect(form.has('payment_method_id')).toBe(false);
+    expect(form.has('category_id')).toBe(false);
+  });
+
+  it('never sends payment_method_id or category_id on an edit', async () => {
+    const stub = stubFetch(() => json({ success: true, title: 'Subscription edited' }));
+    const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+    const fields: WallosSubscriptionUpdate = { next_payment: '2026-12-15', name: 'Renamed', price: '9.99' };
+    // The edit type must not accept the add-only id fields.
+    // @ts-expect-error payment_method_id is not a WallosSubscriptionUpdate field
+    const typeOnly: WallosSubscriptionUpdate = { ...fields, payment_method_id: '7' };
+    expect(typeOnly).toBeDefined();
+
+    await client.updateSubscription(a.userId, '55', fields);
+
+    const form = new URLSearchParams(stub.calls[0]?.body);
+    expect(form.get('action')).toBe('edit');
+    expect(form.get('next_payment')).toBe('2026-12-15');
+    expect(form.has('payment_method_id')).toBe(false);
+    expect(form.has('category_id')).toBe(false);
   });
 
   it('maps a non-2xx answer to WallosHttpError and a thrown fetch to WallosNetworkError', async () => {
