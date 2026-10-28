@@ -283,7 +283,7 @@ export function MatchesView({
                 </thead>
                 <tbody>
                   {ignored.map((row) => (
-                    <tr key={`${row.side}:${row.itemId}`} data-ignored-row data-match-id={row.matchId} tabIndex={-1} className="border-b outline-none last:border-b-0 focus-visible:ring-[3px] focus-visible:ring-ring/50">
+                    <tr key={`${row.side}:${row.itemId}`} data-ignored-row data-match-id={row.matchId} tabIndex={-1} className="border-b outline-none last:border-b-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
                       <td className={cn(CELL, 'font-medium')}>
                         <Value muted={row.name === null}>{row.name ?? DASH}</Value>
                       </td>
