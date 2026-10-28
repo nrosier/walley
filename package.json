@@ -22,7 +22,8 @@
     "start": "node dist/server/index.js",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
-    "db:cleanup-unverified": "tsx scripts/cleanup-unverified-passwords.ts"
+    "db:cleanup-unverified": "tsx scripts/cleanup-unverified-passwords.ts",
+    "seed:test-data": "tsx scripts/seed-test-data.ts"
   },
   "dependencies": {
     "@actual-app/api": "26.10.0",
