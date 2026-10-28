@@ -77,8 +77,9 @@ describe('SettingsPage layout', () => {
     expect(html).toContain('>Save Actual Budget<');
     expect(html).toContain('>Save Matching<');
   });
-  it('keeps the "Save first" help on the Wallos card until typed-value testing lands', () => {
-    expect(render('en')).toContain('Save first.');
+  it('no longer tells the user to save first now that Test connection takes typed values (issue 134)', () => {
+    expect(render('en')).not.toContain('Save first');
+    expect(render('nl')).not.toContain('Sla eerst op');
   });
 });
 

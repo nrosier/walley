@@ -2,10 +2,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { I18nProvider } from '@/i18n';
 import { loadedSettings, runConnectionTest, WallosSettingsView } from './WallosSettings';
+import wallosSrc from './WallosSettings.tsx?raw';
 import { wallosSettingsMessages } from './WallosSettings.messages';
 
-const HELP_EN = 'Test Connection uses your saved settings. Save first.';
-const HELP_NL = 'Verbinding testen gebruikt uw opgeslagen instellingen. Sla eerst op.';
+const TYPED = { url: 'https://w.example', apiKey: '' };
 
 /** Renders the view inside a provider so useT resolves the given locale. */
 function render(locale: 'en' | 'nl', props: Parameters<typeof WallosSettingsView>[0]) {
@@ -25,7 +25,7 @@ const fakeFetch = (status: number, body: unknown): typeof fetch => () =>
   );
 
 describe('WallosSettingsView', () => {
-  it('renders labelled fields, help text and the Test Connection button', () => {
+  it('renders labelled fields and the Test Connection button', () => {
     const html = render('en', { url: 'https://w.example', apiKey: '', hasKey: true });
     expect(html).toContain('for="wallos-url"');
     expect(html).toContain('Wallos URL');
@@ -33,7 +33,7 @@ describe('WallosSettingsView', () => {
     expect(html).toContain('Wallos API key');
     expect(html).toContain('Test Connection');
     expect(html).toContain('>Save Wallos<');
-    expect(html).toContain(HELP_EN);
+    expect(html).not.toContain('Save first');
   });
 
   it('key field is a password input and is never prefilled', () => {
@@ -66,12 +66,11 @@ describe('WallosSettingsView', () => {
     expect(html).toMatch(/role="status"[^>]*aria-live="polite"|aria-live="polite"[^>]*role="status"/);
   });
 
-  it('renders the Dutch help text and labels', () => {
+  it('renders the Dutch labels', () => {
     const html = render('nl', { url: '', apiKey: '', hasKey: true });
-    expect(html).toContain(HELP_NL);
+    expect(html).not.toContain('Sla eerst op');
     expect(html).toContain('Wallos opslaan');
     expect(html).toContain('Verbinding testen');
-    expect(html).not.toContain(HELP_EN);
   });
 });
 
@@ -86,18 +85,18 @@ describe('loadedSettings', () => {
 
 describe('runConnectionTest', () => {
   it('reports success when the test endpoint answers 200', async () => {
-    const state = await runConnectionTest(fakeFetch(200, { ok: true }));
+    const state = await runConnectionTest(TYPED, fakeFetch(200, { ok: true }));
     expect(state).toEqual({ kind: 'ok' });
   });
 
   it('maps a server error code from the response', async () => {
-    const state = await runConnectionTest(fakeFetch(502, { error: 'wallos_unavailable' }));
+    const state = await runConnectionTest(TYPED, fakeFetch(502, { error: 'wallos_unavailable' }));
     expect(state).toEqual({ kind: 'error', code: 'wallos_unavailable' });
   });
 
   it('falls back to request_failed when the error has no code', async () => {
     const failing: typeof fetch = () => Promise.reject(new TypeError('network down'));
-    const state = await runConnectionTest(failing);
+    const state = await runConnectionTest(TYPED, failing);
     expect(state).toEqual({ kind: 'error', code: 'request_failed' });
   });
 });
@@ -112,5 +111,48 @@ describe('WallosSettingsView card', () => {
     const dirty = render('en', { url: '', apiKey: 'typed', hasKey: true, dirty: true });
     expect(dirty).toContain('Unsaved changes');
     expect(dirty).not.toContain('No unsaved changes');
+  });
+});
+
+describe('Test connection sends the typed values (issue 134)', () => {
+  function capture() {
+    const calls: { url: string; method: string; body: unknown }[] = [];
+    const impl = ((url: string, init?: RequestInit) => {
+      calls.push({
+        url,
+        method: init?.method ?? 'GET',
+        body: typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined,
+      });
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    }) as typeof fetch;
+    return { impl, calls };
+  }
+
+  it('The "Save first" helper text can then be removed', () => {
+    for (const locale of ['en', 'nl'] as const) {
+      expect(JSON.stringify(wallosSettingsMessages[locale])).not.toMatch(/save first|sla eerst op/i);
+    }
+    expect(Object.keys(wallosSettingsMessages.en)).toEqual(Object.keys(wallosSettingsMessages.nl));
+    expect(Object.keys(wallosSettingsMessages.en)).not.toContain('help');
+    expect(wallosSrc).not.toContain("t('help')");
+  });
+
+  it('posts the typed URL and key in the body, and only what is typed', async () => {
+    const { impl, calls } = capture();
+    await runConnectionTest({ url: 'https://typed.example', apiKey: 'typed-key' }, impl);
+    expect(calls[0]).toMatchObject({
+      url: '/api/settings/wallos/test',
+      method: 'POST',
+      body: { wallosUrl: 'https://typed.example', apiKey: 'typed-key' },
+    });
+    await runConnectionTest({ url: '  ', apiKey: '' }, impl);
+    expect(calls[1]?.body).toEqual({});
+  });
+
+  it('the Test Connection handler passes the form state and keeps nothing afterwards', () => {
+    const handler = wallosSrc.slice(wallosSrc.indexOf('const runTest'), wallosSrc.indexOf('return (\n    <WallosSettingsView'));
+    expect(handler).toContain('runConnectionTest({ url, apiKey })');
+    expect(handler).not.toContain('setApiKey');
+    expect(handler).not.toMatch(/localStorage|sessionStorage/);
   });
 });

@@ -78,10 +78,22 @@ export interface WallosClientOptions {
   timeoutMs?: number;
 }
 
+/**
+ * Typed, unsaved values for a read-only check (Settings Test connection). A field that is absent
+ * falls back to the saved value of the same user. Nothing here is stored.
+ */
+export interface WallosOverride {
+  readonly url?: string;
+  readonly apiKey?: string;
+}
+
 export interface WallosClient {
   listSubscriptions(userId: string): Promise<WallosSubscription[]>;
-  /** The user's own Wallos currency list, the only source of currency codes. */
-  listCurrencies(userId: string): Promise<WallosCurrency[]>;
+  /**
+   * The user's own Wallos currency list, the only source of currency codes. `override` (typed,
+   * unsaved values) is used by the Settings test only.
+   */
+  listCurrencies(userId: string, override?: WallosOverride): Promise<WallosCurrency[]>;
   /** The user's own enabled Wallos payment methods. Ids are strings of digits. */
   listPaymentMethods(userId: string): Promise<WallosPaymentMethod[]>;
   /** The user's own Wallos categories. Ids are strings of digits. */
@@ -189,28 +201,34 @@ export function createWallosClient(
     userId: string,
     path: string,
     fields: Readonly<Record<string, string>> = {},
+    override: WallosOverride = {},
   ): Promise<{ status: number; body: Record<string, unknown> }> {
     const repo = repoFor(userId);
     if (repo.userId !== userId) {
       throw new WallosConfigMissing();
     }
+    // A typed value wins; an absent one falls back to this user's own saved value.
     const config = repo.getConfig();
-    const storedUrl = config?.wallosUrl;
+    const url = override.url ?? config?.wallosUrl;
     const storedKey = config?.wallosApiKeyEnc;
-    if (!storedUrl || !storedKey) {
+    if (!url || (override.apiKey === undefined && !storedKey)) {
       throw new WallosConfigMissing();
     }
-    const endpoint = buildEndpoint(storedUrl, path);
+    const endpoint = buildEndpoint(url, path);
 
-    const keySalt = repo.getKeySalt();
-    if (keySalt === undefined) {
-      throw new WallosConfigMissing();
-    }
     let apiKey: string;
-    try {
-      apiKey = decryptSecret(storedKey, deriveUserKey(appSecret, keySalt, userId));
-    } catch {
-      throw new WallosConfigMissing();
+    if (override.apiKey !== undefined) {
+      apiKey = override.apiKey;
+    } else {
+      const keySalt = repo.getKeySalt();
+      if (keySalt === undefined || !storedKey) {
+        throw new WallosConfigMissing();
+      }
+      try {
+        apiKey = decryptSecret(storedKey, deriveUserKey(appSecret, keySalt, userId));
+      } catch {
+        throw new WallosConfigMissing();
+      }
     }
     if (apiKey.length === 0) {
       throw new WallosConfigMissing();
@@ -277,8 +295,8 @@ export function createWallosClient(
       return subscriptions;
     },
 
-    async listCurrencies(userId) {
-      const { status, body } = await request(userId, CURRENCIES_PATH);
+    async listCurrencies(userId, override) {
+      const { status, body } = await request(userId, CURRENCIES_PATH, {}, override);
       const envelope = body as { success?: unknown; currencies?: unknown };
       if (typeof envelope.success !== 'boolean') throw new WallosHttpError(status);
       if (!envelope.success) throw new WallosAuthError();

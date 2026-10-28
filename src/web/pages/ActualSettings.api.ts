@@ -40,8 +40,23 @@ export function saveBudgetChoice(savedUrl: string, budgetId: string, fetchImpl?:
   });
 }
 
-export async function fetchBudgets(fetchImpl?: Fetcher): Promise<BudgetOption[]> {
-  const data = await apiRequest<{ budgets: BudgetOption[] }>('/api/settings/actual/budgets', { method: 'POST', fetchImpl });
+/** The values currently typed in the form. They are sent once and not kept. */
+export interface TypedActualValues {
+  url: string;
+  password: string;
+  syncKey: string;
+}
+
+/**
+ * Lists budgets with the typed, unsaved values. A blank field is left out, so the server uses the
+ * saved value for it. Nothing is saved by this call.
+ */
+export async function fetchBudgets(typed: TypedActualValues, fetchImpl?: Fetcher): Promise<BudgetOption[]> {
+  const body: Record<string, string> = {};
+  if (typed.url.trim() !== '') body['actualUrl'] = typed.url;
+  if (typed.password.trim() !== '') body['password'] = typed.password;
+  if (typed.syncKey.trim() !== '') body['syncKey'] = typed.syncKey;
+  const data = await apiRequest<{ budgets: BudgetOption[] }>('/api/settings/actual/budgets', { method: 'POST', body, fetchImpl });
   return data.budgets;
 }
 

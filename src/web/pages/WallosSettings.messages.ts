@@ -5,7 +5,6 @@ const en = {
     apiKey: 'Wallos API key',
   },
   apiKeySaved: '•••••••• saved',
-  help: 'Test Connection uses your saved settings. Save first.',
   actions: {
     save: 'Save Wallos',
     saving: 'Saving...',
@@ -28,7 +27,6 @@ const nl: typeof en = {
     apiKey: 'Wallos-API-sleutel',
   },
   apiKeySaved: '•••••••• opgeslagen',
-  help: 'Verbinding testen gebruikt uw opgeslagen instellingen. Sla eerst op.',
   actions: {
     save: 'Wallos opslaan',
     saving: 'Opslaan...',

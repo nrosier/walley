@@ -297,7 +297,7 @@ export function ActualSettings() {
 
   const loadBudgets = () => {
     setStatus({ kind: 'busy', text: 'loadingBudgets' });
-    fetchBudgets()
+    fetchBudgets({ url, password, syncKey })
       .then((list) => {
         setBudgets(list);
         setStatus({ kind: 'none' });

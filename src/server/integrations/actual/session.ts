@@ -76,6 +76,15 @@ interface ServerCredentials {
   readonly password: string;
 }
 
+/**
+ * Typed, unsaved server values for a read-only check (Settings Load budgets). A field that is
+ * absent falls back to the saved value of the same user. Nothing here is stored.
+ */
+export interface ActualServerOverride {
+  readonly serverURL?: string;
+  readonly password?: string;
+}
+
 interface Credentials extends ServerCredentials {
   readonly budgetId: string;
   readonly syncKey: string | undefined;
@@ -83,35 +92,44 @@ interface Credentials extends ServerCredentials {
 
 /** Decrypts the server password and, when `withBudget`, the budget id and optional sync key. */
 function loadCredentials(deps: ActualSessionDeps, userId: string, withBudget: true): Credentials;
-function loadCredentials(deps: ActualSessionDeps, userId: string, withBudget: false): ServerCredentials;
+function loadCredentials(
+  deps: ActualSessionDeps,
+  userId: string,
+  withBudget: false,
+  override?: ActualServerOverride,
+): ServerCredentials;
 function loadCredentials(
   deps: ActualSessionDeps,
   userId: string,
   withBudget: boolean,
+  override?: ActualServerOverride,
 ): Credentials | ServerCredentials {
   const repo = createUserRepo(deps.db, userId);
   const config = repo.getConfig();
   const keySalt = repo.getKeySalt();
+  // A typed value wins; an absent one falls back to this user's own saved value.
+  const serverURL = override?.serverURL ?? config?.actualUrl;
+  const typedPassword = override?.password;
+  const storedPassword = config?.actualPasswordEnc;
   if (
-    config === undefined ||
+    !serverURL ||
     keySalt === undefined ||
-    !config.actualUrl ||
-    !config.actualPasswordEnc ||
-    (withBudget && !config.actualBudgetId)
+    (typedPassword === undefined && !storedPassword) ||
+    (withBudget && !config?.actualBudgetId)
   ) {
     throw new ActualSessionError('not_configured');
   }
   try {
     const key = deriveUserKey(deps.appSecret, keySalt, userId);
     const server: ServerCredentials = {
-      serverURL: config.actualUrl,
-      password: decryptSecret(config.actualPasswordEnc, key),
+      serverURL,
+      password: typedPassword ?? decryptSecret(storedPassword ?? '', key),
     };
     if (!withBudget) return server;
     return {
       ...server,
-      budgetId: config.actualBudgetId ?? '',
-      syncKey: config.actualSyncKeyEnc ? decryptSecret(config.actualSyncKeyEnc, key) : undefined,
+      budgetId: config?.actualBudgetId ?? '',
+      syncKey: config?.actualSyncKeyEnc ? decryptSecret(config.actualSyncKeyEnc, key) : undefined,
     };
   } catch {
     throw new ActualSessionError('open_failed');
@@ -203,16 +221,19 @@ export function withActualSession<T>(
  * Signs in to the user's Actual server without opening a budget (for listing budgets), runs
  * `use`, and always shuts down. Shares the serialization chain with withActualSession. Reads
  * only the server URL and password; the budget id and sync key are not loaded or decrypted.
+ * `override` carries typed, unsaved values: a typed field is used as is and a missing one falls
+ * back to the same user's saved value. The saved password is decrypted only when none was typed.
  */
 export function withActualServer<T>(
   deps: ActualSessionDeps,
   userId: string,
   use: (api: ActualApi) => Promise<T>,
+  override?: ActualServerOverride,
 ): Promise<T> {
   return runSession(
     deps,
     userId,
-    () => loadCredentials(deps, userId, false),
+    () => loadCredentials(deps, userId, false, override),
     () => Promise.resolve(),
     use,
   );

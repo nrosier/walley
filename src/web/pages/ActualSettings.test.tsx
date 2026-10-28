@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import { ActualSettings, ActualSettingsView, type ActualSettingsViewProps } from './ActualSettings';
 import actualSrc from './ActualSettings.tsx?raw';
+import { actualSettingsMessages } from './ActualSettings.messages';
 import { fetchBaseCurrency, fetchBudgets, saveActualSettings, saveBudgetChoice, viewStateFrom } from './ActualSettings.api';
 
 interface Call {
@@ -65,7 +66,7 @@ describe('ActualSettings', () => {
 
   it('populates the budget select from the budgets response', async () => {
     const { impl, calls } = fakeFetch(200, { budgets: [{ id: 'b1', name: 'Home' }, { id: 'b2', name: 'Work' }] });
-    const budgets = await fetchBudgets(impl);
+    const budgets = await fetchBudgets({ url: '', password: '', syncKey: '' }, impl);
     expect(calls[0]).toMatchObject({ url: '/api/settings/actual/budgets', method: 'POST' });
     const html = render({ budgets, budgetId: 'b2' });
     expect(html).toContain('<option value="b1">Home</option>');
@@ -157,5 +158,35 @@ describe('ActualSettings card', () => {
     const save = actualSrc.slice(actualSrc.indexOf('const save = '), actualSrc.indexOf('const loadBudgets'));
     expect(save).toContain('saveBudget(pick)');
     expect(save).toContain('saveActualSettings(');
+  });
+});
+
+describe('Load budgets sends the typed values (issue 134)', () => {
+  it('The "Save first" helper text can then be removed', () => {
+    for (const locale of ['en', 'nl'] as const) {
+      expect(JSON.stringify(actualSettingsMessages[locale])).not.toMatch(/save first|sla eerst op/i);
+      const html = render({}, locale);
+      expect(html).not.toMatch(/save first|sla eerst op/i);
+    }
+    expect(Object.keys(actualSettingsMessages.en)).toEqual(Object.keys(actualSettingsMessages.nl));
+  });
+
+  it('posts the typed URL, password and sync key in the body, and only what is typed', async () => {
+    const { impl, calls } = fakeFetch(200, { budgets: [] });
+    await fetchBudgets({ url: 'https://typed.example', password: 'typed-pw', syncKey: 'typed-sync' }, impl);
+    expect(calls[0]).toMatchObject({
+      url: '/api/settings/actual/budgets',
+      method: 'POST',
+      body: { actualUrl: 'https://typed.example', password: 'typed-pw', syncKey: 'typed-sync' },
+    });
+    await fetchBudgets({ url: '', password: '  ', syncKey: '' }, impl);
+    expect(calls[1]?.body).toEqual({});
+  });
+
+  it('the Load budgets handler passes the form state, saves nothing and keeps no secret', () => {
+    const handler = actualSrc.slice(actualSrc.indexOf('const loadBudgets'), actualSrc.indexOf('// A pick only changes the form'));
+    expect(handler).toContain('fetchBudgets({ url, password, syncKey })');
+    expect(handler).not.toMatch(/saveActualSettings|saveBudgetChoice|setPassword|setSyncKey/);
+    expect(handler).not.toMatch(/localStorage|sessionStorage/);
   });
 });

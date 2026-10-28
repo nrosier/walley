@@ -92,7 +92,7 @@ async function main(): Promise<void> {
         wallos,
         appSecret: config.appSecret,
         actual: {
-          withActualServer: (userId, use) => withActualServer(actualDeps, userId, use),
+          withActualServer: (userId, use, override) => withActualServer(actualDeps, userId, use, override),
           withActual: (userId, use) => withActualSession(actualDeps, userId, use),
         },
       },

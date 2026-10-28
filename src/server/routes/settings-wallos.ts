@@ -2,9 +2,10 @@ import type { FastifyError, FastifyPluginAsync } from 'fastify';
 import { deriveUserKey } from '../crypto/keys.js';
 import { encryptSecret } from '../crypto/secrets.js';
 import type { UserRepo } from '../db/repo.js';
-import type { WallosClient } from '../integrations/wallos/client.js';
+import type { WallosClient, WallosOverride } from '../integrations/wallos/client.js';
 import { sendFailure } from './integrations.js';
 import { validateServiceUrl } from './service-url.js';
+import { createTypedTestGuard } from './typed-test-limit.js';
 
 export interface SettingsWallosDeps {
   readonly repoFor: (userId: string) => UserRepo;
@@ -31,6 +32,8 @@ export const validateWallosUrl = validateServiceUrl;
  */
 export const settingsWallosRoutes: FastifyPluginAsync<SettingsWallosOptions> = async (app, opts) => {
   const { deps } = opts;
+  // Own limiter for the typed-value test: a separate counter from login and every other route.
+  const testGuard = createTypedTestGuard();
 
   // Body parse failures (malformed JSON, empty body, wrong media type) get a fixed body.
   app.setErrorHandler((error: FastifyError, _request, reply) => {
@@ -84,11 +87,47 @@ export const settingsWallosRoutes: FastifyPluginAsync<SettingsWallosOptions> = a
     });
   });
 
-  // READ only, with the saved credentials. Form values are not accepted (owner has not decided).
+  // READ only; nothing is written. The optional body carries the typed, unsaved url and apiKey.
+  // A field that is absent or blank falls back to the caller's own saved value. The body is never
+  // logged and no response carries a key.
   app.post('/settings/wallos/test', async (request, reply) => {
     if (request.auth === null) return reply.code(401).send({ error: 'unauthenticated' });
+    const userId = request.auth.userId;
+    // Before the body is read or any outside call.
+    if (testGuard(request, reply, userId)) return reply;
+    const body: unknown = request.body;
+    if (body !== undefined && body !== null && !isRecord(body)) {
+      return reply.code(400).send({ error: 'invalid_request' });
+    }
+    const override: { url?: string; apiKey?: string } = {};
+    const rawUrl = isRecord(body) ? body['wallosUrl'] : undefined;
+    if (rawUrl !== undefined && rawUrl !== null && !(typeof rawUrl === 'string' && rawUrl.trim() === '')) {
+      const wallosUrl = validateWallosUrl(rawUrl);
+      if (wallosUrl === null) return reply.code(400).send({ error: 'invalid_url' });
+      override.url = wallosUrl;
+    }
+    const rawKey = isRecord(body) ? body['apiKey'] : undefined;
+    if (rawKey !== undefined && rawKey !== null) {
+      if (typeof rawKey !== 'string' || rawKey.length > MAX_KEY_LENGTH) {
+        return reply.code(400).send({ error: 'invalid_request' });
+      }
+      if (rawKey.trim() !== '') override.apiKey = rawKey.trim();
+    }
+    // The saved key is sent to whatever host the URL names. A different URL needs the key typed,
+    // so a stolen session cannot point the saved secret at another host.
+    if (override.url !== undefined && override.apiKey === undefined) {
+      const saved = deps.repoFor(userId).getConfig();
+      if (saved?.wallosApiKeyEnc && saved.wallosUrl !== override.url) {
+        return reply.code(400).send({ error: 'api_key_required' });
+      }
+    }
+    const typed: WallosOverride = override;
     try {
-      await deps.wallos.listCurrencies(request.auth.userId);
+      if (typed.url === undefined && typed.apiKey === undefined) {
+        await deps.wallos.listCurrencies(userId);
+      } else {
+        await deps.wallos.listCurrencies(userId, typed);
+      }
       return await reply.code(200).send({ ok: true });
     } catch (error: unknown) {
       return await Promise.resolve(sendFailure(reply, error));

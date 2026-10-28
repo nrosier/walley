@@ -33,11 +33,23 @@ export function loadedSettings(data: WallosSettingsData): { url: string; hasKey:
   return { url: data.wallosUrl, hasKey: data.hasWallosApiKey };
 }
 
-/** Calls the test endpoint, which uses the saved credentials only, and maps the outcome to a TestState. */
+/** The values currently typed in the form. They are sent once and not kept. */
+export interface TypedWallosValues {
+  url: string;
+  apiKey: string;
+}
+
+/**
+ * Calls the test endpoint with the typed, unsaved values and maps the outcome to a TestState. A blank
+ * field is left out, so the server uses the saved value for it. Nothing is saved by this call.
+ */
 // eslint-disable-next-line react-refresh/only-export-components
-export async function runConnectionTest(fetchImpl?: typeof fetch): Promise<TestState> {
+export async function runConnectionTest(typed: TypedWallosValues, fetchImpl?: typeof fetch): Promise<TestState> {
+  const body: Record<string, string> = {};
+  if (typed.url.trim() !== '') body['wallosUrl'] = typed.url;
+  if (typed.apiKey.trim() !== '') body['apiKey'] = typed.apiKey;
   try {
-    await apiRequest('/api/settings/wallos/test', { method: 'POST', fetchImpl });
+    await apiRequest('/api/settings/wallos/test', { method: 'POST', body, fetchImpl });
     return { kind: 'ok' };
   } catch (error: unknown) {
     return { kind: 'error', code: error instanceof ApiError ? error.code : 'request_failed' };
@@ -123,7 +135,6 @@ export function WallosSettingsView(props: WallosSettingsViewProps) {
             ) : null}
           </div>
         </div>
-        <p className="text-xs text-muted">{t('help')}</p>
         <Button
           type="button"
           variant="outline"
@@ -207,7 +218,7 @@ export function WallosSettings() {
 
   const runTest = () => {
     setTest({ kind: 'testing' });
-    void runConnectionTest().then(setTest);
+    void runConnectionTest({ url, apiKey }).then(setTest);
   };
 
   return (

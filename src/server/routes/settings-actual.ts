@@ -1,19 +1,29 @@
-import type { FastifyPluginAsync, FastifyReply } from 'fastify';
+import type { FastifyError, FastifyPluginAsync, FastifyReply } from 'fastify';
 import { deriveUserKey } from '../crypto/keys.js';
 import { encryptSecret } from '../crypto/secrets.js';
 import type { UserConfigInput, UserRepo } from '../db/repo.js';
 import { listBudgets, readBaseCurrency } from '../integrations/actual/read.js';
-import { ActualSessionError, type ActualApi } from '../integrations/actual/session.js';
+import {
+  ActualSessionError,
+  type ActualApi,
+  type ActualServerOverride,
+} from '../integrations/actual/session.js';
 import { sendFailure } from './integrations.js';
 import { validateServiceUrl } from './service-url.js';
+import { createTypedTestGuard } from './typed-test-limit.js';
 
 type WithActual = <T>(userId: string, use: (api: ActualApi) => Promise<T>) => Promise<T>;
+type WithActualServer = <T>(
+  userId: string,
+  use: (api: ActualApi) => Promise<T>,
+  override?: ActualServerOverride,
+) => Promise<T>;
 
 export interface SettingsActualDeps {
   readonly repoFor: (userId: string) => UserRepo;
   readonly appSecret: string;
   /** Signs in to the user's Actual server without opening a budget (withActualServer). */
-  readonly withActualServer: WithActual;
+  readonly withActualServer: WithActualServer;
   /** Runs `use` inside the user's open Actual budget (withActualSession). */
   readonly withActual: WithActual;
 }
@@ -63,6 +73,17 @@ async function readOnly<T>(read: () => Promise<T>): Promise<T> {
  */
 export const settingsActualRoutes: FastifyPluginAsync<SettingsActualOptions> = async (app, opts) => {
   const { deps } = opts;
+  // Own limiter for the typed-value budget load: a separate counter from login and every other route.
+  const loadGuard = createTypedTestGuard();
+
+  // Body parse failures (malformed JSON, wrong media type) get a fixed body that never echoes input.
+  app.setErrorHandler((error: FastifyError, _request, reply) => {
+    const status = error.statusCode;
+    if (status !== undefined && status >= 400 && status < 500) {
+      return reply.code(400).send(INVALID);
+    }
+    return reply.code(500).send({ error: 'internal_error' });
+  });
 
   app.get('/settings/actual', async (request, reply) => {
     if (request.auth === null) return reply.code(401).send({ error: 'unauthenticated' });
@@ -134,12 +155,53 @@ export const settingsActualRoutes: FastifyPluginAsync<SettingsActualOptions> = a
     }
   };
 
-  // Saved credentials only; no body is read.
+  // READ only; nothing is written. The optional body carries the typed, unsaved actualUrl, password,
+  // syncKey and actualBudgetId. A field that is absent or blank falls back to the caller's own saved
+  // value. Listing budgets signs in with the URL and password only; the sync key and budget id are
+  // checked for shape and not used. The body is never logged and no response carries a secret.
   app.post('/settings/actual/budgets', async (request, reply) => {
     if (request.auth === null) return reply.code(401).send({ error: 'unauthenticated' });
     const userId = request.auth.userId;
+    // Before the body is read or any outside call.
+    if (loadGuard(request, reply, userId)) return reply;
+    const body: unknown = request.body;
+    if (body !== undefined && body !== null && !isRecord(body)) return reply.code(400).send(INVALID);
+    const fields = isRecord(body) ? body : {};
+    const rawUrl = fields['actualUrl'];
+    const password = readSecret(fields['password']);
+    const syncKey = readSecret(fields['syncKey']);
+    const rawBudgetId = fields['actualBudgetId'];
+    let serverURL: string | undefined;
+    if (rawUrl !== undefined && rawUrl !== null && !(typeof rawUrl === 'string' && rawUrl.trim() === '')) {
+      const checked = validateServiceUrl(rawUrl);
+      if (checked === null) return reply.code(400).send({ error: 'invalid_url' });
+      serverURL = checked;
+    }
+    if (
+      password === null ||
+      syncKey === null ||
+      (rawBudgetId !== undefined &&
+        rawBudgetId !== null &&
+        (typeof rawBudgetId !== 'string' || rawBudgetId.length > MAX_ID_LENGTH))
+    ) {
+      return reply.code(400).send(INVALID);
+    }
+    // The saved password is sent to whatever server the URL names. As on save, a different URL
+    // needs the password typed, so a stolen session cannot point the saved secret at another host.
+    if (serverURL !== undefined && password === undefined) {
+      const saved = deps.repoFor(userId).getConfig();
+      if (saved?.actualPasswordEnc && saved.actualUrl !== serverURL) {
+        return reply.code(400).send({ error: 'password_required' });
+      }
+    }
+    const override: { serverURL?: string; password?: string } = {};
+    if (serverURL !== undefined) override.serverURL = serverURL;
+    if (password !== undefined) override.password = password;
+    const hasOverride = override.serverURL !== undefined || override.password !== undefined;
     return run(reply, async () => ({
-      budgets: await deps.withActualServer(userId, (api) => readOnly(() => listBudgets(api))),
+      budgets: await (hasOverride
+        ? deps.withActualServer(userId, (api) => readOnly(() => listBudgets(api)), override)
+        : deps.withActualServer(userId, (api) => readOnly(() => listBudgets(api)))),
     }));
   });
 
