@@ -385,7 +385,7 @@ function report(results: readonly Result[], write: boolean): void {
       console.log(`  note [${r.item.category}] ${seedName(r.item.title)} (${r.item.side}): ${r.outcome}, ${r.detail}`);
     }
   }
-  console.log('Manual Walley steps still to do after seeding (see test/SEED.md): link, ignore and delete are Walley state.');
+  console.log('Manual Walley steps still to do after seeding (see the Seed test data section of test/README.md): link, ignore and delete are Walley state.');
 }
 
 async function main(): Promise<void> {
