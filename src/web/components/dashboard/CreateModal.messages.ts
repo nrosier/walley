@@ -48,6 +48,10 @@ const en = {
     price: 'Price',
     cycle: 'Billing cycle',
     startDate: 'Start date',
+    paymentMethod: 'Payment method',
+    paymentMethodNone: 'No payment method',
+    category: 'Category',
+    categoryNone: 'No category',
     cycleUnit: {
       day: 'Days',
       week: 'Weeks',
@@ -113,6 +117,10 @@ const nl: typeof en = {
     price: 'Prijs',
     cycle: 'Factureringscyclus',
     startDate: 'Startdatum',
+    paymentMethod: 'Betaalmethode',
+    paymentMethodNone: 'Geen betaalmethode',
+    category: 'Categorie',
+    categoryNone: 'Geen categorie',
     cycleUnit: {
       day: 'Dagen',
       week: 'Weken',

@@ -33,6 +33,10 @@ export interface WallosSubscriptionPrefill {
   frequency: number;
   startDate: string | null;
   nextPayment: string;
+  /** Enabled Wallos payment methods of the user; empty when none or the list failed to load. */
+  paymentMethods: NamedEntity[];
+  /** Wallos categories of the user; empty when none or the list failed to load. */
+  categories: NamedEntity[];
 }
 
 /** POST /api/integrations/actual-schedules/prefill (read-only preview). Throws ApiError with the server code. */
@@ -96,16 +100,37 @@ export function createActualSchedule(
   });
 }
 
+export interface WallosCreateChoices {
+  /** Digit-string Wallos payment method id; '' or undefined means not chosen. */
+  paymentMethodId?: string;
+  /** Digit-string Wallos category id; '' or undefined means not chosen. */
+  categoryId?: string;
+}
+
+/** Create body: the optional ids are sent only when chosen, so an empty form sends what it always did. */
+export function buildWallosBody(
+  scheduleId: string,
+  matchId?: string,
+  choices?: WallosCreateChoices,
+): { scheduleId: string; matchId?: string; paymentMethodId?: string; categoryId?: string } {
+  const body: { scheduleId: string; matchId?: string; paymentMethodId?: string; categoryId?: string } = { scheduleId };
+  if (matchId !== undefined) body.matchId = matchId;
+  if (choices?.paymentMethodId) body.paymentMethodId = choices.paymentMethodId;
+  if (choices?.categoryId) body.categoryId = choices.categoryId;
+  return body;
+}
+
 /** POST /api/integrations/wallos-subscriptions (live write). `matchId` repoints an orphaned match. Throws ApiError with the server code. */
 export function createWallosSubscription(
   scheduleId: string,
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
   matchId?: string,
+  choices?: WallosCreateChoices,
 ): Promise<{ wallosSubscriptionId: string }> {
   return apiRequest<{ wallosSubscriptionId: string }>('/api/integrations/wallos-subscriptions', {
     method: 'POST',
-    body: matchId === undefined ? { scheduleId } : { scheduleId, matchId },
+    body: buildWallosBody(scheduleId, matchId, choices),
     fetchImpl,
     signal,
   });

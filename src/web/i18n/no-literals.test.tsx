@@ -93,7 +93,7 @@ const views: Record<string, ReactElement> = {
   'create wallos form': (
     <CreateWallosForm
       scheduleId="s1"
-      prefill={{ name: 'Rent', price: '900.00', currencyCode: 'EUR', cycle: 3, frequency: 1, startDate: '2026-01-05', nextPayment: '2026-11-05' }}
+      prefill={{ name: 'Rent', price: '900.00', currencyCode: 'EUR', cycle: 3, frequency: 1, startDate: '2026-01-05', nextPayment: '2026-11-05', paymentMethods: [{ id: '4', name: 'Visa' }], categories: [{ id: '7', name: 'Housing' }] }}
     />
   ),
 };

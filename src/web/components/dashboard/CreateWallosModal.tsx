@@ -8,7 +8,7 @@ import { SegmentedControl } from '../ui/segmented-control';
 import { CreateFooter } from './CreateFooter';
 import { CreateModalFrame } from './CreateModalFrame';
 import { createModalMessages } from './CreateModal.messages';
-import { CYCLE_UNITS, cycleKey, cycleUnit } from './create-modal-shared';
+import { CYCLE_UNITS, FIELD_CLASS, cycleKey, cycleUnit } from './create-modal-shared';
 import { submitCreate, wallosSubmitDisabled } from './create-submit';
 
 export interface CreateWallosFormProps {
@@ -26,15 +26,20 @@ export interface CreateWallosFormProps {
 
 /**
  * The pre-fill as read-only display (title, price, billing cycle, start date) until the Wallos create endpoint
- * accepts overrides, so nothing typed can be ignored. Create is locked while the request is in flight.
+ * accepts overrides, so nothing typed can be ignored. The payment method and category selects are the only inputs; each is
+ * hidden when Wallos returned no options and sends nothing while on its empty choice. Create is locked while the request is in flight.
  */
 export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, footerHost, onCancel, onCreated }: CreateWallosFormProps) {
   const { t, errorText } = useT(createModalMessages);
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState('');
+  const [category, setCategory] = useState('');
   const formId = useId();
   const reasonId = useId();
+  const paymentMethodId = useId();
+  const categoryId = useId();
   const cycle = cycleKey(prefill.cycle, prefill.frequency);
   return (
     <form
@@ -46,7 +51,7 @@ export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, foot
         setPending(true);
         setErrorCode(null);
         void submitCreate(
-          () => createWallosSubscription(scheduleId, fetchImpl, undefined, matchId),
+          () => createWallosSubscription(scheduleId, fetchImpl, undefined, matchId, { paymentMethodId: paymentMethod, categoryId: category }),
           () => syncStore.run(),
           {
             onCreated: () => {
@@ -85,6 +90,37 @@ export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, foot
         </dl>
         <p className="text-xs text-muted">{t('readOnlyNote')}</p>
       </div>
+      {prefill.paymentMethods.length > 0 ? (
+        <label htmlFor={paymentMethodId} className="grid gap-1">
+          {t('wallos.paymentMethod')}
+          <select
+            id={paymentMethodId}
+            value={paymentMethod}
+            onChange={(e) => { setPaymentMethod(e.target.value); }}
+            className={FIELD_CLASS}
+          >
+            <option value="">{t('wallos.paymentMethodNone')}</option>
+            {prefill.paymentMethods.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      {prefill.categories.length > 0 ? (
+        <label htmlFor={categoryId} className="grid gap-1">
+          {t('wallos.category')}
+          <select id={categoryId} value={category} onChange={(e) => { setCategory(e.target.value); }} className={FIELD_CLASS}>
+            <option value="">{t('wallos.categoryNone')}</option>
+            {prefill.categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {errorCode !== null ? <Alert variant="error">{errorText(errorCode)}</Alert> : null}
       <CreateFooter
         formId={formId}

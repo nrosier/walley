@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { commonMessages } from '@/i18n/common.messages';
-import { createActualSchedule, createWallosSubscription, prefillActualSchedule, prefillWallosSubscription, type ActualSchedulePrefill, type WallosSubscriptionPrefill } from '@/lib/create.api';
+import { buildWallosBody, createActualSchedule, createWallosSubscription, prefillActualSchedule, prefillWallosSubscription, type ActualSchedulePrefill, type WallosSubscriptionPrefill } from '@/lib/create.api';
 import { clearOverride, saveOverride } from '@/lib/overrides.api';
 import { CreateActualForm } from './CreateActualModal';
 import { actualDisabledReason, actualSubmitDisabled, buildActualBody, performCreate, submitCreate, wallosSubmitDisabled } from './create-submit';
@@ -38,6 +38,8 @@ const wallos: WallosSubscriptionPrefill = {
   frequency: 1,
   startDate: '2026-01-05',
   nextPayment: '2026-11-05',
+  paymentMethods: [],
+  categories: [],
 };
 
 const render = (ui: React.ReactElement, locale: Locale = 'en') =>
@@ -114,6 +116,55 @@ describe('CreateWallosForm', () => {
     expect(html).not.toContain('Held:');
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Create<\/button>/);
     expect(html).toMatch(/<button[^>]*>Create<\/button>/);
+  });
+});
+
+describe('CreateWallosForm payment method and category', () => {
+  const withChoices: WallosSubscriptionPrefill = {
+    ...wallos,
+    paymentMethods: [{ id: '4', name: 'Visa' }],
+    categories: [{ id: '7', name: 'Housing' }],
+  };
+  it('renders both selects with the options and an empty default', () => {
+    const html = render(<CreateWallosForm prefill={withChoices} scheduleId="s1" />);
+    expect(html).toContain('Payment method');
+    expect(html).toContain('<option value="" selected="">No payment method</option>');
+    expect(html).toContain('<option value="4">Visa</option>');
+    expect(html).toContain('<option value="" selected="">No category</option>');
+    expect(html).toContain('<option value="7">Housing</option>');
+    expect(html).not.toContain('<option value="4" selected');
+    expect(html).not.toContain('<option value="7" selected');
+  });
+  it('renders in nl', () => {
+    const html = render(<CreateWallosForm prefill={withChoices} scheduleId="s1" />, 'nl');
+    expect(html).toContain('Betaalmethode');
+    expect(html).toContain('Geen categorie');
+  });
+  it('hides each field when Wallos returned no options for it', () => {
+    const none = render(<CreateWallosForm prefill={wallos} scheduleId="s1" />);
+    expect(none).not.toContain('<select');
+    const onlyCategory = render(<CreateWallosForm prefill={{ ...wallos, categories: withChoices.categories }} scheduleId="s1" />);
+    expect(onlyCategory).toContain('Housing');
+    expect(onlyCategory).not.toContain('Payment method');
+    const onlyMethod = render(<CreateWallosForm prefill={{ ...wallos, paymentMethods: withChoices.paymentMethods }} scheduleId="s1" />);
+    expect(onlyMethod).toContain('Visa');
+    expect(onlyMethod).not.toContain('No category');
+  });
+  it('sends the chosen ids as digit strings, and nothing when empty', async () => {
+    expect(buildWallosBody('s1')).toEqual({ scheduleId: 's1' });
+    expect(buildWallosBody('s1', undefined, { paymentMethodId: '', categoryId: '' })).toEqual({ scheduleId: 's1' });
+    expect(buildWallosBody('s1', 'm1', { paymentMethodId: '4' })).toEqual({ scheduleId: 's1', matchId: 'm1', paymentMethodId: '4' });
+    const f = jsonFetch({ wallosSubscriptionId: '9' });
+    await createWallosSubscription('s1', f, undefined, undefined, { paymentMethodId: '4', categoryId: '7' });
+    expect(JSON.parse(f.mock.calls[0]?.[1]?.body as string)).toEqual({ scheduleId: 's1', paymentMethodId: '4', categoryId: '7' });
+    const g = jsonFetch({ wallosSubscriptionId: '9' });
+    await createWallosSubscription('s1', g, undefined, undefined, { paymentMethodId: '', categoryId: '' });
+    expect(JSON.parse(g.mock.calls[0]?.[1]?.body as string)).toEqual({ scheduleId: 's1' });
+  });
+  it('the form passes its two selected values into the create call', () => {
+    expect(wallosSrc).toMatch(/\{ paymentMethodId: paymentMethod, categoryId: category \}/);
+    expect(wallosSrc).toMatch(/prefill\.paymentMethods\.length > 0/);
+    expect(wallosSrc).toMatch(/prefill\.categories\.length > 0/);
   });
 });
 
