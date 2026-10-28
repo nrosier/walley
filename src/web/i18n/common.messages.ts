@@ -85,9 +85,9 @@ const nl: typeof en = {
     patterns_unsupported: 'Dit herhalingspatroon kan niet worden omgezet.',
     mapping_failed: 'Dit item kon niet worden omgezet. Controleer de gegevens.',
     currency_conversion_failed: 'De valuta kon niet worden omgerekend. Controleer de wisselkoersen.',
-    invalid_payee: 'Deze begunstigde staat niet in uw Actual Budget-bestand. Open het formulier opnieuw en kies opnieuw.',
-    invalid_account: 'Deze rekening staat niet in uw Actual Budget-bestand. Open het formulier opnieuw en kies opnieuw.',
-    invalid_category: 'Deze categorie staat niet in uw lijst. Open het formulier opnieuw en kies opnieuw.',
+    invalid_payee: 'Deze begunstigde staat niet in uw Actual-Budget bestand. Open het formulier en kies opnieuw.',
+    invalid_account: 'Deze rekening staat niet in uw Actual Budget-bestand. Open het formulier en kies opnieuw.',
+    invalid_category: 'Deze categorie staat niet in uw lijst. Open het formulier en kies opnieuw.',
   },
   language: {
     labelWithScope: 'Taal (Dit apparaat)',

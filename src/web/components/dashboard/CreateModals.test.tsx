@@ -381,7 +381,7 @@ describe('create modal layout (Actual fields editable, #135; Wallos fields edita
     // A pre-fill whose own value is out of range is not sent, so it does not block Create.
     expect(actualFieldsReason({ ...actual, startDate: 'n/a' }, {})).toBeNull();
     const html = render(<CreateActualForm prefill={{ ...actual, name: '' }} wallosId="w1" />);
-    expect(html).not.toContain('Enter a name of 1 to 200 characters.');
+    expect(html).not.toContain('Name must be between 1 and 200 characters.');
   });
   it('Existing no-override requests are unchanged (regression test): an untouched Actual form sends the body it always did', () => {
     expect(actualEdits(actual, {})).toEqual({});
@@ -422,7 +422,7 @@ describe('create modal layout (Actual fields editable, #135; Wallos fields edita
     expect(footer).toMatch(/aria-describedby="[^"]+"[^>]*>Create</);
     const beside = html.slice(html.indexOf('Choose an account'), html.indexOf('data-slot="create-footer"'));
     expect(beside).toContain('An account is required.');
-    expect(render(<CreateActualForm prefill={actual} wallosId="w1" />, 'nl')).toContain('Aanmaken is uitgeschakeld: Een rekening is verplicht.');
+    expect(render(<CreateActualForm prefill={actual} wallosId="w1" />, 'nl')).toContain('Aanmaken niet mogelijk: Een rekening is verplicht.');
   });
   it('actualDisabledReason names the first missing field', () => {
     expect(actualDisabledReason('', '__new__', 'x')).toBe('account');
@@ -457,8 +457,8 @@ describe('create modal layout (Actual fields editable, #135; Wallos fields edita
   });
   it('Wallos (#133): Create is off with a reason when a field is invalid', () => {
     const reasons = [
-      [{ ...wallos, name: '   ' }, 'Create is off: Enter a title of 1 to 200 characters.'],
-      [{ ...wallos, price: '0' }, 'Create is off: Enter a price above zero with no more decimals than the currency has.'],
+      [{ ...wallos, name: '   ' }, 'Create is off: Title must be between 1 and 200 characters.'],
+      [{ ...wallos, price: '0' }, "Create is off: Enter a price above zero matching the currency&#x27;s decimals."],
       [{ ...wallos, startDate: '2026-02-30' }, 'Create is off: Enter a valid start date.'],
     ] as const;
     for (const [prefill, text] of reasons) {
