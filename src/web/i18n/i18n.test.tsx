@@ -104,22 +104,18 @@ describe('locale resolution', () => {
 });
 
 describe('LanguageSelect', () => {
-  it('renders a labelled custom dropdown (globe, current language, chevron), not a native select', () => {
+  it('renders a labelled native select offering both languages, with the current one selected', () => {
     const html = renderToStaticMarkup(
       <I18nProvider initialLocale="nl">
         <LanguageSelect />
       </I18nProvider>,
     );
-    // The only <select> is Radix's hidden form input (aria-hidden, name="locale"); the visible control is the combobox.
-    expect(html).toMatch(/<select aria-hidden="true"[^>]*name="locale"/);
-    expect(html.match(/<select(?![^>]*aria-hidden)/g)).toBeNull();
-    expect(html).toContain('role="combobox"');
+    expect(html).toMatch(/<select[^>]*name="locale"[^>]*aria-labelledby="[^"]+"/);
+    expect(html.match(/<select/g)).toHaveLength(1);
     expect(html).toContain('Taal (Dit apparaat)');
-    expect(html).toContain('aria-labelledby=');
-    expect(html).toContain('Nederlands');
+    expect(html).toMatch(/<option value="en" lang="en">English<\/option>/);
+    expect(html).toMatch(/<option value="nl" lang="nl" selected="">Nederlands<\/option>/);
     expect(html).toContain('lucide-globe');
-    expect(html).toContain('lucide-chevron-down');
-    expect(html).toContain('name="locale"');
   });
   it('shows the English label in en', () => {
     const html = renderToStaticMarkup(
