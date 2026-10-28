@@ -6,7 +6,7 @@ import { commonMessages } from '@/i18n/common.messages';
 import { buildWallosBody, createActualSchedule, createWallosSubscription, prefillActualSchedule, prefillWallosSubscription, type ActualSchedulePrefill, type WallosSubscriptionPrefill } from '@/lib/create.api';
 import { clearOverride, saveOverride } from '@/lib/overrides.api';
 import { CreateActualForm } from './CreateActualModal';
-import { actualDisabledReason, actualSubmitDisabled, buildActualBody, performCreate, submitCreate, wallosDisabledReason, wallosEdits, wallosSubmitDisabled } from './create-submit';
+import { actualDisabledReason, actualEdits, actualFieldsReason, actualFieldValues, actualSubmitDisabled, buildActualBody, centsToDecimal, performCreate, submitCreate, wallosDisabledReason, wallosEdits, wallosSubmitDisabled } from './create-submit';
 import { createNoticeKinds, createNoticeStore } from '@/lib/notices';
 import { NoticeToastView } from './NoticeToast';
 import { CreateWallosForm } from './CreateWallosModal';
@@ -51,8 +51,8 @@ const jsonFetch = (body: unknown) =>
 describe('CreateActualForm', () => {
   it('renders the pre-fill, payee option cards, two dropdowns and a Submit that is disabled until an account is chosen', () => {
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" />);
-    expect(html).toContain('Netflix');
-    expect(html).toMatch(/font-mono[^>]*>-?€12\.99|font-mono[^>]*>.€12\.99/);
+    expect(html).toMatch(/<input[^>]*value="Netflix"/);
+    expect(html).toMatch(/<input[^>]*inputMode="decimal"[^>]*class="[^"]*font-mono"[^>]*value="12\.99"/);
     expect(html).toContain('Every month');
     expect(html.match(/<select/g)).toHaveLength(2);
     expect(html).toContain('role="radiogroup" aria-label="Payee"');
@@ -329,6 +329,7 @@ describe('submit logic', () => {
     'schedule_not_found', 'actual_not_configured', 'actual_unavailable', 'actual_sync_failed',
     'wallos_not_configured', 'wallos_auth_failed', 'wallos_rejected', 'wallos_unavailable',
     'patterns_unsupported', 'mapping_failed', 'currency_conversion_failed', 'internal_error', 'unauthenticated',
+    'invalid_payee', 'invalid_account', 'invalid_category',
   ] as const;
   it.each(codes)('has distinct en and nl messages for %s', (code) => {
     const en = commonMessages.en.errors[code as keyof typeof commonMessages.en.errors];
@@ -346,13 +347,71 @@ describe('submit logic', () => {
   });
 });
 
-describe('create modal layout (Actual pre-fill read-only until #135; Wallos fields editable, #133)', () => {
-  it('Actual: pre-filled name, amount, frequency and start date are read-only display, not inputs', () => {
+describe('create modal layout (Actual fields editable, #135; Wallos fields editable, #133)', () => {
+  it('The frontend can then unlock the fields: Actual name, amount and start date are editable inputs, pre-filled; frequency stays read-only', () => {
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" />);
-    expect(html).toContain('<dl');
-    expect(html).toContain('Pre-filled values are shown read-only.');
-    expect(html).not.toContain('value="2026-11-01"');
-    expect(html.match(/<input[^>]*type="text"/g)).toHaveLength(1); // the new payee name only
+    // name, amount and the new payee name are text inputs; the start date is a date input.
+    expect(html.match(/<input[^>]*type="text"/g)).toHaveLength(3);
+    expect(html).toMatch(/<input[^>]*type="text"[^>]*maxLength="200"[^>]*value="Netflix"/);
+    expect(html).toMatch(/<input[^>]*inputMode="decimal"[^>]*value="12\.99"/);
+    expect(html).toMatch(/<input[^>]*type="date"[^>]*value="2026-11-01"/);
+    expect(html).toContain('Amount (converted) (EUR)');
+    // Frequency is display text, not an input or a control.
+    expect(html).toMatch(/<dt[^>]*>Frequency<\/dt><dd>Every month<\/dd>/);
+    expect(html).not.toMatch(/<(input|select)[^>]*aria-label="Frequency"/);
+    expect(html).not.toContain('Pre-filled values are shown read-only.');
+    // Payee, account and category stay editable choices, from the caller's own pre-fill lists.
+    expect(html).toContain('role="radiogroup" aria-label="Payee"');
+    expect(html.match(/<select/g)).toHaveLength(2);
+    expect(actualSrc).not.toContain("t('readOnlyNote')");
+  });
+  it('The frontend can then unlock the fields: renders the editable Actual inputs in nl', () => {
+    const html = render(<CreateActualForm prefill={actual} wallosId="w1" />, 'nl');
+    for (const label of ['Naam', 'Bedrag (omgerekend) (EUR)', 'Frequentie', 'Startdatum']) expect(html).toContain(label);
+  });
+  it('The frontend can then unlock the fields: Create is off with a reason when an edited Actual field is invalid', () => {
+    expect(actualFieldsReason(actual, { name: '  ' })).toBe('name');
+    expect(actualFieldsReason(actual, { name: 'x'.repeat(201) })).toBe('name');
+    expect(actualFieldsReason(actual, { amount: '0' })).toBe('amount');
+    expect(actualFieldsReason(actual, { amount: '9.999' })).toBe('amount');
+    expect(actualFieldsReason({ ...actual, baseCurrency: 'JPY', amountCents: -1250 }, { amount: '12.5' })).toBe('amount');
+    expect(actualFieldsReason(actual, { startDate: '2026-02-30' })).toBe('startDate');
+    expect(actualFieldsReason(actual, { name: 'Films', amount: '9,90', startDate: '2026-03-04' })).toBeNull();
+    expect(actualFieldsReason(actual, {})).toBeNull();
+    // A pre-fill whose own value is out of range is not sent, so it does not block Create.
+    expect(actualFieldsReason({ ...actual, startDate: 'n/a' }, {})).toBeNull();
+    const html = render(<CreateActualForm prefill={{ ...actual, name: '' }} wallosId="w1" />);
+    expect(html).not.toContain('Enter a name of 1 to 200 characters.');
+  });
+  it('Existing no-override requests are unchanged (regression test): an untouched Actual form sends the body it always did', () => {
+    expect(actualEdits(actual, {})).toEqual({});
+    expect(actualEdits(actual, actualFieldValues(actual, {}))).toEqual({});
+    expect(buildActualBody('w1', 'a1', 'p1', '', 'c1', undefined, actualEdits(actual, {}))).toEqual({
+      wallosSubscriptionId: 'w1',
+      accountId: 'a1',
+      payee: { kind: 'existing', id: 'p1' },
+      categoryId: 'c1',
+    });
+    expect(buildActualBody('w1', 'a1', 'p1', '', 'c1', undefined, {})).toEqual(buildActualBody('w1', 'a1', 'p1', '', 'c1'));
+  });
+  it('Both create routes accept overrides and apply them: the Actual submit sends only the changed fields', async () => {
+    expect(actualEdits(actual, { name: ' Films ' })).toEqual({ name: 'Films' });
+    expect(actualEdits(actual, { amount: '12,5' })).toEqual({ amount: '12.5' });
+    expect(actualEdits(actual, { amount: '12.99' })).toEqual({});
+    expect(actualEdits(actual, { startDate: '2026-12-01' })).toEqual({ startDate: '2026-12-01' });
+    expect(actualEdits(actual, { name: 'Netflix', startDate: '2026-11-01' })).toEqual({});
+    const body = buildActualBody('w1', 'a1', '__new__', 'New', '', 'm1', { name: 'Films', amount: '5' });
+    expect(body).toEqual({ wallosSubscriptionId: 'w1', accountId: 'a1', payee: { kind: 'new', name: 'New' }, matchId: 'm1', name: 'Films', amount: '5' });
+    const f = jsonFetch({ scheduleId: 's', payeeId: 'p', payeeCreated: false, categoryApplied: false });
+    await createActualSchedule(body, f);
+    expect(JSON.parse(f.mock.calls[0]?.[1]?.body as string)).toEqual(body);
+    expect(actualSrc).toContain('buildActualBody(wallosId, account, payee, newName, category, matchId, actualEdits(prefill, fields))');
+  });
+  it('centsToDecimal writes the pre-fill amount with the base currency places, without float', () => {
+    expect(centsToDecimal(-1299, 'EUR')).toBe('12.99');
+    expect(centsToDecimal(-5, 'EUR')).toBe('0.05');
+    expect(centsToDecimal(-1250, 'JPY')).toBe('1250');
+    expect(centsToDecimal(-123456789012, 'USD')).toBe('1234567890.12');
   });
   it('Actual: Cancel and Create sit together and the reason Create is off shows in the footer and beside the field', () => {
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" onCancel={() => undefined} />);

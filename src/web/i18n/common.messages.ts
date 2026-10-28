@@ -38,6 +38,9 @@ const en = {
     patterns_unsupported: 'This recurrence pattern cannot be converted.',
     mapping_failed: 'This item could not be converted. Check its details.',
     currency_conversion_failed: 'The currency could not be converted. Check the exchange rates.',
+    invalid_payee: 'That payee is not in your Actual Budget file. Reopen the form and choose again.',
+    invalid_account: 'That account is not in your Actual Budget file. Reopen the form and choose again.',
+    invalid_category: 'That category is not in your list. Reopen the form and choose again.',
   },
   language: {
     labelWithScope: 'Language (This device)',
@@ -82,6 +85,9 @@ const nl: typeof en = {
     patterns_unsupported: 'Dit herhalingspatroon kan niet worden omgezet.',
     mapping_failed: 'Dit item kon niet worden omgezet. Controleer de gegevens.',
     currency_conversion_failed: 'De valuta kon niet worden omgerekend. Controleer de wisselkoersen.',
+    invalid_payee: 'Deze begunstigde staat niet in uw Actual Budget-bestand. Open het formulier opnieuw en kies opnieuw.',
+    invalid_account: 'Deze rekening staat niet in uw Actual Budget-bestand. Open het formulier opnieuw en kies opnieuw.',
+    invalid_category: 'Deze categorie staat niet in uw lijst. Open het formulier opnieuw en kies opnieuw.',
   },
   language: {
     labelWithScope: 'Taal (Dit apparaat)',

@@ -131,6 +131,73 @@ describe('createActualScheduleFromWallos', () => {
   });
 });
 
+describe('createActualScheduleFromWallos edited fields and owned ids (#135)', () => {
+  const OWN = { ...REQ, payee: { kind: 'existing', id: 'p1' } as const, categoryId: 'cat-1' };
+
+  it('omitted fields create exactly the prefill values', async () => {
+    const prefill = await prefillActualScheduleFromWallos(deps(), userId, { wallosSubscriptionId: '7' });
+    await createActualScheduleFromWallos(deps(), userId, REQ);
+    expect(created[0]).toEqual({
+      name: prefill.name,
+      amountCents: prefill.amountCents,
+      recurrence: prefill.recurrence,
+      startDate: prefill.startDate,
+      payee: REQ.payee,
+      accountId: 'acc-1',
+    });
+  });
+
+  it('applies the edited name, amount (base currency minor units, negative) and start date', async () => {
+    await createActualScheduleFromWallos(deps(), userId, { ...REQ, name: 'Films', amount: '9.9', startDate: '2026-03-04' });
+    expect(created[0]).toMatchObject({ name: 'Films', amountCents: -990, startDate: '2026-03-04' });
+    // The frequency is never overridden.
+    expect(created[0]?.recurrence).toEqual({ frequency: 'monthly', interval: 1 });
+  });
+
+  it('the edited amount is not converted again: it is already in the base currency', async () => {
+    // The subscription is in USD at 1.1; an edited 11.00 stays 11.00 EUR.
+    await createActualScheduleFromWallos(deps(), userId, { ...REQ, amount: '11' });
+    expect(created[0]?.amountCents).toBe(-1100);
+  });
+
+  it('uses the base currency exponent: JPY has no decimals, and a decimal JPY amount is refused', async () => {
+    apiState.baseCurrency = 'JPY';
+    wallos.listCurrencies.mockResolvedValue([...CURRENCIES, { id: 3, code: 'JPY', rate: '160' }]);
+    await createActualScheduleFromWallos(deps(), userId, { ...REQ, amount: '1250' });
+    expect(created[0]?.amountCents).toBe(-1250);
+    await expect(createActualScheduleFromWallos(deps(), userId, { ...REQ, amount: '12.5' })).rejects.toMatchObject({
+      code: 'invalid_request',
+    });
+    expect(created).toHaveLength(1);
+  });
+
+  it('refuses an amount with more decimals than the base currency has, with no Actual write', async () => {
+    await expect(createActualScheduleFromWallos(deps(), userId, { ...REQ, amount: '9.999' })).rejects.toMatchObject({
+      code: 'invalid_request',
+    });
+    expect(created).toHaveLength(0);
+  });
+
+  it('accepts an account, existing payee and category from the caller own lists', async () => {
+    await createActualScheduleFromWallos(deps(), userId, OWN);
+    expect(created[0]).toMatchObject({ accountId: 'acc-1', payee: { kind: 'existing', id: 'p1' }, categoryId: 'cat-1' });
+  });
+
+  it.each([
+    ['invalid_account', { accountId: 'acc-other' }],
+    ['invalid_payee', { payee: { kind: 'existing', id: 'p-other' } as const }],
+    ['invalid_category', { categoryId: 'cat-other' }],
+  ])('refuses %s for an id not in the caller lists, with no Actual write', async (code, change) => {
+    await expect(createActualScheduleFromWallos(deps(), userId, { ...OWN, ...change })).rejects.toMatchObject({ code });
+    expect(created).toHaveLength(0);
+  });
+
+  it('a new payee is not checked against the payee list', async () => {
+    await createActualScheduleFromWallos(deps(), userId, { ...REQ, payee: { kind: 'new', name: 'Fresh' } });
+    expect(created[0]?.payee).toEqual({ kind: 'new', name: 'Fresh' });
+  });
+});
+
 describe('createWallosSubscriptionFromActualSchedule', () => {
   function schedule(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {

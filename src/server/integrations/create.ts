@@ -32,7 +32,9 @@ export type CreateFlowErrorCode =
   | 'invalid_request'
   | 'match_not_found'
   | 'invalid_payment_method'
-  | 'invalid_category';
+  | 'invalid_category'
+  | 'invalid_payee'
+  | 'invalid_account';
 
 const MESSAGES: Record<CreateFlowErrorCode, string> = {
   range_amount_unsupported: 'A schedule with an amount range cannot be created in Wallos',
@@ -43,7 +45,9 @@ const MESSAGES: Record<CreateFlowErrorCode, string> = {
   invalid_request: 'A value of the request is not valid for this account',
   match_not_found: 'The match was not found',
   invalid_payment_method: 'The payment method is not one of your Wallos payment methods',
-  invalid_category: 'The category is not one of your Wallos categories',
+  invalid_category: 'The category is not one of your categories',
+  invalid_payee: 'The payee is not one of your Actual Budget payees',
+  invalid_account: 'The account is not one of your Actual Budget accounts',
 };
 
 /** Fixed messages only. */
@@ -79,10 +83,24 @@ export function realCreateDeps(
   };
 }
 
-export interface CreateActualScheduleRequest {
+/**
+ * #135: values the user edited in the Actual create modal. Already validated by the route (name
+ * trimmed 1 to 200, amount a positive decimal string in the budget's base currency, start date a
+ * real YYYY-MM-DD). An absent field keeps the derived value. The frequency is never overridden.
+ */
+export interface ActualCreateOverrides {
+  readonly name?: string;
+  readonly amount?: string;
+  readonly startDate?: string;
+}
+
+export interface CreateActualScheduleRequest extends ActualCreateOverrides {
   readonly wallosSubscriptionId: string;
+  /** Must be one of the caller's own Actual accounts. */
   readonly accountId: string;
+  /** An existing payee id must be one of the caller's own Actual payees. */
   readonly payee: PayeeChoice;
+  /** Must be one of the caller's own Actual categories. */
   readonly categoryId?: string;
 }
 
@@ -143,15 +161,61 @@ export async function planActualScheduleFromWallos<T = undefined>(
   };
 }
 
+/** The caller's own Actual lists an id was sent for; undefined when that list was not needed. */
+interface ActualChoiceLists {
+  readonly accounts: readonly { readonly id: string }[];
+  readonly payees: readonly { readonly id: string }[] | undefined;
+  readonly categories: readonly { readonly id: string }[] | undefined;
+}
+
+/**
+ * #135: refuses an account, existing payee or category id that is not in the caller's own lists,
+ * read in the caller's own Actual session. Same approach as checkChosenIds on the Wallos side.
+ */
+function checkActualIds(lists: ActualChoiceLists, request: CreateActualScheduleRequest): void {
+  if (!lists.accounts.some((a) => a.id === request.accountId)) {
+    throw new CreateFlowError('invalid_account');
+  }
+  const { payee } = request;
+  if (payee.kind === 'existing' && !(lists.payees ?? []).some((p) => p.id === payee.id)) {
+    throw new CreateFlowError('invalid_payee');
+  }
+  const { categoryId } = request;
+  if (categoryId !== undefined && !(lists.categories ?? []).some((c) => c.id === categoryId)) {
+    throw new CreateFlowError('invalid_category');
+  }
+}
+
 /** #28/#29: Wallos subscription -> Actual schedule. */
 export async function createActualScheduleFromWallos(
   deps: CreateDeps,
   userId: string,
   request: CreateActualScheduleRequest,
 ): Promise<CreateScheduleResult> {
-  const { prepared } = await planActualScheduleFromWallos(deps, userId, request.wallosSubscriptionId);
+  // The ownership lists are read in the same Actual session as the base currency, before any write.
+  const { prepared, baseCurrency, extra } = await planActualScheduleFromWallos<ActualChoiceLists>(
+    deps,
+    userId,
+    request.wallosSubscriptionId,
+    async (api) => ({
+      accounts: await readAccounts(api),
+      payees: request.payee.kind === 'existing' ? await readPayees(api) : undefined,
+      categories: request.categoryId === undefined ? undefined : await readCategories(api),
+    }),
+  );
+  // #135: the edited amount is in the budget's base currency, checked against its minor units.
+  let amountCents = prepared.amountCents;
+  if (request.amount !== undefined) {
+    const minor = priceToMinorUnits(request.amount, baseCurrency);
+    if (minor === null) throw new CreateFlowError('invalid_request');
+    amountCents = -minor;
+  }
+  checkActualIds(extra, request);
   return deps.createSchedule(userId, {
     ...prepared,
+    name: request.name ?? prepared.name,
+    amountCents,
+    startDate: request.startDate ?? prepared.startDate,
     payee: request.payee,
     accountId: request.accountId,
     ...(request.categoryId === undefined ? {} : { categoryId: request.categoryId }),

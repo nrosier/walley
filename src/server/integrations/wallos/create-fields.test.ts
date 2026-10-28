@@ -118,3 +118,21 @@ describe('nextPaymentFor (#133)', () => {
     expect(nextPaymentFor('2026-11-01', '2026-01-05')).toBe('2026-11-01');
   });
 });
+
+describe('priceToMinorUnits for the Actual create amount (#135)', () => {
+  it.each([
+    ['12.50', 'EUR', 1250],
+    ['9.9', 'EUR', 990],
+    ['11', 'USD', 1100],
+    ['0.01', 'EUR', 1],
+    ['1250', 'JPY', 1250],
+    ['1250.00', 'JPY', 1250],
+  ] as const)('%s %s is %i minor units', (amount, code, expected) => {
+    expect(priceToMinorUnits(amount, code)).toBe(expected);
+  });
+  it('refuses more decimals than the currency has, and zero', () => {
+    expect(priceToMinorUnits('9.999', 'EUR')).toBeNull();
+    expect(priceToMinorUnits('1.5', 'KRW')).toBeNull();
+    expect(priceToMinorUnits('0.00', 'EUR')).toBeNull();
+  });
+});

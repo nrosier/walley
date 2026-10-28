@@ -76,6 +76,12 @@ export interface CreateActualScheduleInput {
   categoryId?: string;
   /** Orphaned match to repoint to the new schedule instead of creating a second row. */
   matchId?: string;
+  /** #135: edited name; sent only when changed from the pre-fill. */
+  name?: string;
+  /** #135: edited amount, a positive decimal string in the pre-fill's base currency; sent only when changed. */
+  amount?: string;
+  /** #135: edited start date, YYYY-MM-DD; sent only when changed. */
+  startDate?: string;
 }
 
 export interface CreateActualScheduleResult {

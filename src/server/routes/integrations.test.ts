@@ -81,7 +81,8 @@ function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert: boolean | '
     withActual: (id, use) =>
       use({
         getPreferences: async () => ({ defaultCurrencyCode: 'EUR' }),
-        getAccounts: async () => [{ id: `acc-${id}`, name: 'Main' }],
+        // 'acc' is the account of SCHED_BODY, owned by every test user; `acc-<id>` is owned by that user only (#135).
+        getAccounts: async () => [{ id: `acc-${id}`, name: 'Main' }, { id: 'acc', name: 'Shared' }],
         getPayees: async () => [{ id: `pay-${id}`, name: 'Payee' }],
         getCategories: async () => [{ id: `cat-${id}`, name: 'Cat' }],
         getSchedules: async () =>
@@ -449,6 +450,210 @@ describe('wallos-subscriptions edited fields (#133)', () => {
   });
 });
 
+describe('create-modal overrides on both create routes (#135)', () => {
+  type Ctx = ReturnType<typeof setup>;
+  const scheduleInput = (ctx: Ctx, call = 0): Record<string, unknown> =>
+    (ctx.createSchedule.mock.calls[call] as unknown as [string, Record<string, unknown>])[1];
+  const scheduleUser = (ctx: Ctx, call = 0): string =>
+    (ctx.createSchedule.mock.calls[call] as unknown as [string])[0];
+  const subPayload = (ctx: Ctx): Record<string, unknown> =>
+    (ctx.createSubscription.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
+  /** A's own ids, as A's Actual budget lists them. */
+  const own = (ctx: Ctx) => ({
+    wallosSubscriptionId: '7',
+    accountId: `acc-${ctx.a}`,
+    payee: { kind: 'existing', id: `pay-${ctx.a}` },
+    categoryId: `cat-${ctx.a}`,
+  });
+  const postSched = (ctx: Ctx, payload: Record<string, unknown>, as: 'sa' | 'sb' = 'sa') =>
+    injectAs(ctx.app, ctx[as], { method: 'POST', url: SCHED_URL, payload });
+
+  it('Both create routes accept overrides and apply them', async () => {
+    const ctx = setup();
+    const res = await postSched(ctx, { ...own(ctx), name: '  Films  ', amount: '9.9', startDate: '2026-03-04' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ scheduleId: 's1', matchCreated: true });
+    expect(scheduleInput(ctx)).toEqual({
+      name: 'Films',
+      amountCents: -990,
+      recurrence: { frequency: 'monthly', interval: 1 },
+      startDate: '2026-03-04',
+      payee: { kind: 'existing', id: `pay-${ctx.a}` },
+      accountId: `acc-${ctx.a}`,
+      categoryId: `cat-${ctx.a}`,
+    });
+    // The Wallos route (#133) still applies its edited title, price and start date, and its owned category (#111).
+    ctx.seedChoices();
+    const sub = await injectAs(ctx.app, ctx.sa, {
+      method: 'POST',
+      url: SUB_URL,
+      payload: { scheduleId: 'sch-a', title: 'Music', price: '9.90', startDate: '2026-03-04', categoryId: '4' },
+    });
+    expect(sub.statusCode).toBe(201);
+    expect(subPayload(ctx)).toMatchObject({ name: 'Music', price: '9.90', start_date: '2026-03-04', category_id: '4' });
+  });
+
+  it('name: a valid value is trimmed and applied; omitted keeps the Wallos name', async () => {
+    const ctx = setup();
+    expect((await postSched(ctx, { ...SCHED_BODY, name: '  Films ' })).statusCode).toBe(201);
+    expect(scheduleInput(ctx)).toMatchObject({ name: 'Films' });
+    expect((await postSched(ctx, SCHED_BODY)).statusCode).toBe(201);
+    expect(scheduleInput(ctx, 1)).toMatchObject({ name: 'Netflix' });
+  });
+
+  it('amount: a decimal string or number in the base currency becomes negative minor units; omitted keeps the converted amount', async () => {
+    const ctx = setup();
+    expect((await postSched(ctx, { ...SCHED_BODY, amount: '20.5' })).statusCode).toBe(201);
+    expect((await postSched(ctx, { ...SCHED_BODY, amount: 7 })).statusCode).toBe(201);
+    expect((await postSched(ctx, SCHED_BODY)).statusCode).toBe(201);
+    expect([0, 1, 2].map((i) => scheduleInput(ctx, i)['amountCents'])).toEqual([-2050, -700, -1250]);
+  });
+
+  it('start date: a valid value is applied; omitted keeps the derived start', async () => {
+    const ctx = setup();
+    expect((await postSched(ctx, { ...SCHED_BODY, startDate: '2027-02-28' })).statusCode).toBe(201);
+    expect((await postSched(ctx, SCHED_BODY)).statusCode).toBe(201);
+    expect(scheduleInput(ctx)['startDate']).toBe('2027-02-28');
+    expect(scheduleInput(ctx, 1)['startDate']).toBe('2026-11-03');
+  });
+
+  it('payee, account and category: the caller own ids are applied; a new payee and no category still work', async () => {
+    const ctx = setup();
+    expect((await postSched(ctx, own(ctx))).statusCode).toBe(201);
+    expect(scheduleInput(ctx)).toMatchObject({
+      accountId: `acc-${ctx.a}`,
+      payee: { kind: 'existing', id: `pay-${ctx.a}` },
+      categoryId: `cat-${ctx.a}`,
+    });
+    const noCategory = { wallosSubscriptionId: '7', accountId: `acc-${ctx.a}`, payee: { kind: 'new', name: 'Fresh' } };
+    expect((await postSched(ctx, noCategory)).statusCode).toBe(201);
+    expect(scheduleInput(ctx, 1)).not.toHaveProperty('categoryId');
+    expect(scheduleInput(ctx, 1)['payee']).toEqual({ kind: 'new', name: 'Fresh' });
+  });
+
+  it.each([
+    { name: '' },
+    { name: '   ' },
+    { name: 'x'.repeat(201) },
+    { name: 5 },
+    { amount: '' },
+    { amount: 'abc' },
+    { amount: '-1' },
+    { amount: '0' },
+    { amount: '1e3' },
+    { amount: 0 },
+    { amount: -3 },
+    { amount: {} },
+    { startDate: '2026-02-30' },
+    { startDate: '2026-3-4' },
+    { startDate: '04-03-2026' },
+    { startDate: 20260304 },
+    { accountId: 5 },
+    { accountId: '' },
+    { accountId: 'x'.repeat(201) },
+    { payee: { kind: 'existing', id: '' } },
+    { payee: { kind: 'existing', id: 7 } },
+    { categoryId: 5 },
+    { categoryId: '' },
+  ])('Validation rejects bad values (name, amount, start date, ids) with 400: %j', async (extra) => {
+    const ctx = setup();
+    const res = await postSched(ctx, { ...SCHED_BODY, ...extra });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+    expect(ctx.createSchedule).not.toHaveBeenCalled();
+  });
+
+  it('Validation rejects bad values (name, amount, start date, ids) with 400: a bad shape is refused before Wallos or Actual is read', async () => {
+    const listSubscriptions = vi.fn(async () => []);
+    const withActual = vi.fn(() => Promise.reject(new Error('must not open')));
+    const ctx = setup({ wallos: { listSubscriptions, listCurrencies: vi.fn() } as unknown as WallosClient, withActual });
+    for (const extra of [{ name: ' ' }, { amount: 'abc' }, { startDate: '2026-13-01' }]) {
+      expect((await postSched(ctx, { ...SCHED_BODY, ...extra })).statusCode).toBe(400);
+    }
+    expect(listSubscriptions).not.toHaveBeenCalled();
+    expect(withActual).not.toHaveBeenCalled();
+  });
+
+  it('Validation rejects bad values (name, amount, start date, ids) with 400: an amount with more decimals than the base currency is refused with no write', async () => {
+    const ctx = setup();
+    const res = await postSched(ctx, { ...SCHED_BODY, amount: '9.999' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_request' });
+    expect(ctx.createSchedule).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['invalid_account', { accountId: 'acc-unknown' }],
+    ['invalid_payee', { payee: { kind: 'existing', id: 'pay-unknown' } }],
+    ['invalid_category', { categoryId: 'cat-unknown' }],
+  ])('Validation rejects bad values (name, amount, start date, ids) with 400: an id not in the caller lists is %s', async (code, change) => {
+    const ctx = setup();
+    const res = await postSched(ctx, { ...own(ctx), ...change });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: code });
+    expect(ctx.createSchedule).not.toHaveBeenCalled();
+    expect(createUserRepo(ctx.db, ctx.a).listMatches()).toEqual([]);
+  });
+
+  it("Two-user isolation test: user B cannot use user A's payee, category or account ids", async () => {
+    const ctx = setup();
+    const mine = { wallosSubscriptionId: '8', accountId: `acc-${ctx.b}`, payee: { kind: 'existing', id: `pay-${ctx.b}` }, categoryId: `cat-${ctx.b}` };
+    const cases = [
+      ['invalid_account', { accountId: `acc-${ctx.a}` }],
+      ['invalid_payee', { payee: { kind: 'existing', id: `pay-${ctx.a}` } }],
+      ['invalid_category', { categoryId: `cat-${ctx.a}` }],
+    ] as const;
+    for (const [code, change] of cases) {
+      const res = await postSched(ctx, { ...mine, ...change }, 'sb');
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: code });
+      expect(res.body).not.toContain(ctx.a);
+    }
+    // No remote write happened for anyone, and no match row was saved.
+    expect(ctx.createSchedule).not.toHaveBeenCalled();
+    expect(createUserRepo(ctx.db, ctx.a).listMatches()).toEqual([]);
+    expect(createUserRepo(ctx.db, ctx.b).listMatches()).toEqual([]);
+    // B's own ids, with edited values, go to B's create only.
+    const ok = await postSched(ctx, { ...mine, name: 'Theirs', amount: '3' }, 'sb');
+    expect(ok.statusCode).toBe(201);
+    expect(ctx.createSchedule).toHaveBeenCalledTimes(1);
+    expect(scheduleUser(ctx)).toBe(ctx.b);
+    expect(scheduleInput(ctx)).toMatchObject({ name: 'Theirs', amountCents: -300, accountId: `acc-${ctx.b}` });
+    // A cannot aim the edited values at B's subscription either: it is not found and nothing is written.
+    const cross = await postSched(ctx, { ...own(ctx), wallosSubscriptionId: '8', name: 'Mine' });
+    expect(cross.statusCode).toBe(404);
+    expect(ctx.createSchedule).toHaveBeenCalledTimes(1);
+  });
+
+  it('Existing no-override requests are unchanged (regression test)', async () => {
+    const plain = setup();
+    expect((await postSched(plain, SCHED_BODY)).statusCode).toBe(201);
+    const nulls = setup();
+    expect((await postSched(nulls, { ...SCHED_BODY, name: null, amount: null, startDate: null })).statusCode).toBe(201);
+    expect(scheduleInput(nulls)).toEqual(scheduleInput(plain));
+    expect(scheduleInput(plain)).toEqual({
+      name: 'Netflix',
+      amountCents: -1250,
+      recurrence: { frequency: 'monthly', interval: 1 },
+      startDate: '2026-11-03',
+      payee: { kind: 'new', name: 'N' },
+      accountId: 'acc',
+    });
+    // The Wallos route without its edited fields is unchanged too.
+    const sub = setup();
+    expect((await injectAs(sub.app, sub.sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a' } })).statusCode).toBe(201);
+    expect(subPayload(sub)).toEqual({
+      name: 'Spotify',
+      price: '12.50',
+      currency_id: '1',
+      cycle: '3',
+      frequency: '1',
+      next_payment: '2026-01-01',
+      start_date: '2026-01-01',
+    });
+  });
+});
+
 describe('pre-fill routes', () => {
   it('actual-schedules/prefill returns the converted preview and the lists, with no write', async () => {
     const { app, sa, a, createSchedule, createSubscription } = setup();
@@ -463,7 +668,7 @@ describe('pre-fill routes', () => {
       overrideRate: null,
       recurrence: { frequency: 'monthly', interval: 1 },
       startDate: '2026-11-03',
-      accounts: [{ id: `acc-${a}`, name: 'Main' }],
+      accounts: [{ id: `acc-${a}`, name: 'Main' }, { id: 'acc', name: 'Shared' }],
       payees: [{ id: `pay-${a}`, name: 'Payee' }],
       categories: [{ id: `cat-${a}`, name: 'Cat' }],
     });

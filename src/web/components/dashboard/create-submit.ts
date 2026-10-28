@@ -1,5 +1,5 @@
 import { ApiError } from '@/lib/api';
-import type { CreateActualScheduleInput, WallosCreateChoices, WallosSubscriptionPrefill } from '@/lib/create.api';
+import type { ActualSchedulePrefill, CreateActualScheduleInput, WallosCreateChoices, WallosSubscriptionPrefill } from '@/lib/create.api';
 import { currencyExponent } from '../../../lib/currency-exponent';
 import { billingCycleFor, type CycleUnit } from './create-modal-shared';
 
@@ -10,12 +10,65 @@ export function actualSubmitDisabled(account: string, pending: boolean): boolean
   return account === '' || pending;
 }
 
-export type ActualDisabledReason = 'account' | 'payeeName';
+export type ActualDisabledReason = 'name' | 'amount' | 'startDate' | 'account' | 'payeeName';
 
 /** Why Create is off before sending, in the order the form shows it; null when nothing is missing. */
 export function actualDisabledReason(account: string, payee: string, newName: string): ActualDisabledReason | null {
   if (account === '') return 'account';
   if (payee === NEW_PAYEE && newName.trim() === '') return 'payeeName';
+  return null;
+}
+
+/**
+ * #135: the three editable Actual fields as typed. `undefined` means untouched: the input shows the
+ * pre-fill, and a re-fetched pre-fill (after a rate change) shows through instead of a stale copy.
+ */
+export interface ActualFormFields {
+  name?: string;
+  amount?: string;
+  startDate?: string;
+}
+
+/** Positive decimal string of integer minor units in a currency, without float: -1299 EUR -> "12.99", 1250 JPY -> "1250". */
+export function centsToDecimal(cents: number, currencyCode: string): string {
+  const exponent = currencyExponent(currencyCode);
+  const digits = String(Math.abs(Math.trunc(cents))).padStart(exponent + 1, '0');
+  return exponent === 0 ? digits : `${digits.slice(0, -exponent)}.${digits.slice(-exponent)}`;
+}
+
+/** The value each editable Actual field shows: the typed value, or the pre-fill when untouched. */
+export function actualFieldValues(prefill: ActualSchedulePrefill, fields: ActualFormFields): Required<ActualFormFields> {
+  return {
+    name: fields.name ?? prefill.name,
+    amount: fields.amount ?? centsToDecimal(prefill.amountCents, prefill.baseCurrency),
+    startDate: fields.startDate ?? prefill.startDate,
+  };
+}
+
+/**
+ * The edited values to send (#135): only the fields that differ from the pre-fill, so an untouched form
+ * posts what it always did. The frequency is never edited.
+ */
+export function actualEdits(prefill: ActualSchedulePrefill, fields: ActualFormFields): Pick<CreateActualScheduleInput, 'name' | 'amount' | 'startDate'> {
+  const edits: Pick<CreateActualScheduleInput, 'name' | 'amount' | 'startDate'> = {};
+  const shown = actualFieldValues(prefill, fields);
+  const name = shown.name.trim();
+  if (name !== prefill.name.trim()) edits.name = name;
+  const amount = normalizePrice(shown.amount);
+  if (amount !== centsToDecimal(prefill.amountCents, prefill.baseCurrency)) edits.amount = amount;
+  if (shown.startDate !== prefill.startDate) edits.startDate = shown.startDate;
+  return edits;
+}
+
+/**
+ * Why Create is off for the edited fields, in form order, mirroring the server (name 1 to 200, amount above zero within the
+ * base currency's places, real date). A value equal to the pre-fill is not sent, so it never blocks Create.
+ */
+export function actualFieldsReason(prefill: ActualSchedulePrefill, fields: ActualFormFields): ActualDisabledReason | null {
+  const edits = actualEdits(prefill, fields);
+  if (edits.name !== undefined && (edits.name === '' || edits.name.length > 200)) return 'name';
+  if (edits.amount !== undefined && !validPrice(edits.amount, prefill.baseCurrency)) return 'amount';
+  if (edits.startDate !== undefined && !validDate(edits.startDate)) return 'startDate';
   return null;
 }
 
@@ -41,7 +94,8 @@ export function normalizePrice(value: string): string {
   return value.trim().replace(',', '.');
 }
 
-function validDate(value: string): boolean {
+/** A real calendar date written exactly as YYYY-MM-DD. */
+export function validDate(value: string): boolean {
   const m = ISO_DATE.exec(value);
   if (m === null) return false;
   const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
@@ -99,7 +153,7 @@ export async function performCreate<T>(call: () => Promise<T>, refresh: () => Pr
   return { ok: true, result };
 }
 
-/** Builds the create body from the form choices. */
+/** Builds the create body from the form choices. The #135 edits are added only when set (see `actualEdits`). */
 export function buildActualBody(
   wallosId: string,
   account: string,
@@ -107,6 +161,7 @@ export function buildActualBody(
   newName: string,
   category: string,
   matchId?: string,
+  edits: Pick<CreateActualScheduleInput, 'name' | 'amount' | 'startDate'> = {},
 ): CreateActualScheduleInput {
   return {
     wallosSubscriptionId: wallosId,
@@ -114,6 +169,9 @@ export function buildActualBody(
     payee: payee === NEW_PAYEE ? { kind: 'new', name: newName } : { kind: 'existing', id: payee },
     ...(category === '' ? {} : { categoryId: category }),
     ...(matchId === undefined ? {} : { matchId }),
+    ...(edits.name === undefined ? {} : { name: edits.name }),
+    ...(edits.amount === undefined ? {} : { amount: edits.amount }),
+    ...(edits.startDate === undefined ? {} : { startDate: edits.startDate }),
   };
 }
 

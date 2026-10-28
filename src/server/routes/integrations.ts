@@ -168,6 +168,14 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
     ) {
       return reply.code(400).send(INVALID);
     }
+    // #135: optional edited values. Absent or null keeps today's behaviour; anything invalid is a 400 before any call.
+    // Account, payee and category ids are Actual ids (not digit strings); create.ts checks them against the caller's own lists.
+    const name = readTitle(body['name']);
+    const amount = readPrice(body['amount']);
+    const startDate = readStartDate(body['startDate']);
+    if (name === false || amount === false || startDate === false) {
+      return reply.code(400).send(INVALID);
+    }
     const matchId = body['matchId'];
     try {
       const row =
@@ -179,6 +187,9 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
         accountId: body['accountId'],
         payee,
         ...(categoryId === undefined ? {} : { categoryId }),
+        ...(name === undefined ? {} : { name }),
+        ...(amount === undefined ? {} : { amount }),
+        ...(startDate === undefined ? {} : { startDate }),
       });
       const linked =
         row === undefined

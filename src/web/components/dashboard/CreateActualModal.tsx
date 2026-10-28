@@ -1,5 +1,4 @@
 import { useEffect, useId, useState } from 'react';
-import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { createActualSchedule, prefillActualSchedule, type ActualSchedulePrefill, type CreateActualScheduleResult } from '@/lib/create.api';
@@ -12,7 +11,7 @@ import { CreateModalFrame } from './CreateModalFrame';
 import { RateField } from './RateField';
 import { createModalMessages } from './CreateModal.messages';
 import { everyKey, FIELD_CLASS } from './create-modal-shared';
-import { actualDisabledReason, buildActualBody, NEW_PAYEE, submitCreate } from './create-submit';
+import { actualDisabledReason, actualEdits, actualFieldsReason, actualFieldValues, buildActualBody, NEW_PAYEE, submitCreate, type ActualFormFields } from './create-submit';
 
 export interface CreateActualFormProps {
   prefill: ActualSchedulePrefill;
@@ -30,24 +29,35 @@ export interface CreateActualFormProps {
 }
 
 /**
- * The pre-fill (read-only until the override backend lands), a payee choice, account and category, and Create.
- * Create needs an account and a payee name; the reason it is off shows in the footer and beside the field.
+ * Name, amount (in the budget's base currency) and start date are editable, pre-filled (#135); only values changed from the
+ * pre-fill are sent, through `actualEdits`. The frequency stays read-only. Then a payee choice, account and category, and Create.
+ * Create needs valid edited fields, an account and a payee name; the reason it is off shows in the footer and beside the field.
  */
 export function CreateActualForm({ prefill, wallosId, matchId, fetchImpl, onRateChanged, footerHost, onCancel, onCreated }: CreateActualFormProps) {
-  const { t, errorText, locale } = useT(createModalMessages);
+  const { t, errorText } = useT(createModalMessages);
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const formId = useId();
-  const ids = { newPayee: useId(), account: useId(), category: useId(), reason: useId() };
+  const ids = { name: useId(), amount: useId(), startDate: useId(), newPayee: useId(), account: useId(), category: useId(), reason: useId() };
   const [payee, setPayee] = useState(NEW_PAYEE);
   const [newName, setNewName] = useState(prefill.name);
   const [account, setAccount] = useState('');
   const [category, setCategory] = useState('');
+  // Untouched fields stay undefined, so a re-fetched pre-fill (after a rate change) shows through.
+  const [fields, setFields] = useState<ActualFormFields>({});
+  const edit = (change: ActualFormFields): void => { setFields((f) => ({ ...f, ...change })); };
+  const shown = actualFieldValues(prefill, fields);
   const every = everyKey(prefill.recurrence.frequency, prefill.recurrence.interval ?? 1);
-  const missing = actualDisabledReason(account, payee, newName);
-  const reasonText =
-    missing === 'account' ? t('actual.accountRequired') : missing === 'payeeName' ? t('actual.payeeNameRequired') : null;
+  const missing = actualFieldsReason(prefill, fields) ?? actualDisabledReason(account, payee, newName);
+  const REASONS = {
+    name: t('actual.nameInvalid'),
+    amount: t('actual.amountInvalid'),
+    startDate: t('actual.startDateInvalid'),
+    account: t('actual.accountRequired'),
+    payeeName: t('actual.payeeNameRequired'),
+  } as const;
+  const reasonText = missing === null ? null : REASONS[missing];
 
   return (
     <form
@@ -59,7 +69,7 @@ export function CreateActualForm({ prefill, wallosId, matchId, fetchImpl, onRate
         setPending(true);
         setErrorCode(null);
         void submitCreate(
-          () => createActualSchedule(buildActualBody(wallosId, account, payee, newName, category, matchId), fetchImpl),
+          () => createActualSchedule(buildActualBody(wallosId, account, payee, newName, category, matchId, actualEdits(prefill, fields)), fetchImpl),
           () => syncStore.run(),
           {
             onCreated: (result) => {
@@ -75,19 +85,48 @@ export function CreateActualForm({ prefill, wallosId, matchId, fetchImpl, onRate
         );
       }}
     >
-      <div className="grid gap-1">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md border bg-surface-2 p-3">
-          <dt className="text-muted">{t('actual.name')}</dt>
-          <dd>{prefill.name}</dd>
-          <dt className="text-muted">{t('actual.amount')}</dt>
-          <dd className="font-mono">{formatMoney(prefill.amountCents, prefill.baseCurrency, locale)}</dd>
-          <dt className="text-muted">{t('actual.frequency')}</dt>
-          <dd>{t(every.key, { n: every.n })}</dd>
-          <dt className="text-muted">{t('actual.startDate')}</dt>
-          <dd className="font-mono">{prefill.startDate}</dd>
-        </dl>
-        <p className="text-xs text-muted">{t('readOnlyNote')}</p>
-      </div>
+      <label htmlFor={ids.name} className="grid gap-1">
+        {t('actual.name')}
+        <input
+          id={ids.name}
+          type="text"
+          required
+          maxLength={200}
+          value={shown.name}
+          aria-describedby={missing === 'name' ? ids.reason : undefined}
+          onChange={(e) => { edit({ name: e.target.value }); }}
+          className={FIELD_CLASS}
+        />
+      </label>
+      <label htmlFor={ids.amount} className="grid gap-1">
+        {t('actual.amount')} ({prefill.baseCurrency})
+        <input
+          id={ids.amount}
+          type="text"
+          inputMode="decimal"
+          required
+          value={shown.amount}
+          aria-describedby={missing === 'amount' ? ids.reason : undefined}
+          onChange={(e) => { edit({ amount: e.target.value }); }}
+          className={`${FIELD_CLASS} font-mono`}
+        />
+      </label>
+      <dl className="grid gap-1">
+        <dt className="font-medium">{t('actual.frequency')}</dt>
+        <dd>{t(every.key, { n: every.n })}</dd>
+      </dl>
+      <label htmlFor={ids.startDate} className="grid gap-1">
+        {t('actual.startDate')}
+        <input
+          id={ids.startDate}
+          type="date"
+          required
+          value={shown.startDate}
+          aria-describedby={missing === 'startDate' ? ids.reason : undefined}
+          onChange={(e) => { edit({ startDate: e.target.value }); }}
+          className={`${FIELD_CLASS} font-mono`}
+        />
+      </label>
       {prefill.sourceCurrency !== prefill.baseCurrency ? (
         <RateField prefill={prefill} wallosId={wallosId} fetchImpl={fetchImpl} onChanged={onRateChanged} />
       ) : null}
