@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { deriveUserKey } from '../../crypto/keys.js';
 import { encryptSecret } from '../../crypto/secrets.js';
@@ -12,7 +13,7 @@ import {
   WallosRejectedError,
   createWallosClient,
 } from './client.js';
-import type { WallosCurrency } from './types.js';
+import type { WallosCategory, WallosCurrency, WallosPaymentMethod } from './types.js';
 
 const APP_SECRET = 'test-app-secret-test-app-secret-0123';
 const KEY_A = 'key-A-7f3c9e1d2b';
@@ -41,6 +42,13 @@ function stubFetch(respond: (url: string) => Response | Promise<Response>) {
 
 const ok = (subscriptions: unknown[]) =>
   json({ success: true, title: 'Subscriptions', subscriptions, notes: [] });
+
+// Invented, sanitized fixtures in the shape of ellite/Wallos main d799b8f
+// api/payment_methods/get_payment_methods.php and api/categories/get_categories.php.
+const fixture = (name: string): unknown =>
+  JSON.parse(readFileSync(new URL(`./__fixtures__/${name}`, import.meta.url), 'utf8'));
+const PAYMENT_METHODS_FIXTURE = fixture('wallos-payment-methods.json');
+const CATEGORIES_FIXTURE = fixture('wallos-categories.json');
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -339,6 +347,120 @@ describe('createWallosClient', () => {
       expect(stub.calls).toHaveLength(0);
     });
   });
+  describe('listPaymentMethods', () => {
+    it('maps the fixture to id strings and names, keeping only enabled methods', async () => {
+      const stub = stubFetch(() => json(PAYMENT_METHODS_FIXTURE));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      const expected: WallosPaymentMethod[] = [
+        { id: '1', name: 'Example Card' },
+        { id: '2', name: 'Example Transfer' },
+      ];
+      expect(await client.listPaymentMethods(a.userId)).toEqual(expected);
+      const [call] = stub.calls;
+      expect(call?.url).toBe('https://wallos-a.test/api/payment_methods/get_payment_methods.php');
+      expect(call?.method).toBe('POST');
+      expect(new URLSearchParams(call?.body).get('api_key')).toBe(KEY_A);
+      expect(call?.url).not.toContain(KEY_A);
+    });
+
+    it('excludes a disabled payment method', async () => {
+      const stub = stubFetch(() =>
+        json({
+          success: true,
+          payment_methods: [
+            { id: 7, name: 'Off', enabled: 0 },
+            { id: '8', name: 'On', enabled: 1 },
+          ],
+        }),
+      );
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      expect(await client.listPaymentMethods(a.userId)).toEqual([{ id: '8', name: 'On' }]);
+    });
+
+    it('an empty list returns an empty array', async () => {
+      const stub = stubFetch(() => json({ success: true, payment_methods: [] }));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      expect(await client.listPaymentMethods(a.userId)).toEqual([]);
+    });
+
+    it("reads only the given user's host and key", async () => {
+      const stub = stubFetch(() => json(PAYMENT_METHODS_FIXTURE));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await client.listPaymentMethods(b.userId);
+      expect(stub.calls[0]?.url).toBe(
+        'https://wallos-b.test/base/api/payment_methods/get_payment_methods.php',
+      );
+      expect(new URLSearchParams(stub.calls[0]?.body).get('api_key')).toBe(KEY_B);
+    });
+
+    it('HTTP 200 with success:false gives WallosAuthError', async () => {
+      const stub = stubFetch(() => json({ success: false, title: 'Invalid API key' }));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await expect(client.listPaymentMethods(a.userId)).rejects.toBeInstanceOf(WallosAuthError);
+    });
+
+    it('a body without a payment_methods array or with an unusable id gives WallosHttpError', async () => {
+      const missing = stubFetch(() => json({ success: true }));
+      await expect(
+        createWallosClient(repoFor, APP_SECRET, { fetch: missing.fetch }).listPaymentMethods(a.userId),
+      ).rejects.toBeInstanceOf(WallosHttpError);
+      const badId = stubFetch(() =>
+        json({ success: true, payment_methods: [{ id: 'x1', name: 'Card', enabled: 1 }] }),
+      );
+      await expect(
+        createWallosClient(repoFor, APP_SECRET, { fetch: badId.fetch }).listPaymentMethods(a.userId),
+      ).rejects.toBeInstanceOf(WallosHttpError);
+    });
+
+    it('a thrown fetch gives WallosNetworkError', async () => {
+      const client = createWallosClient(repoFor, APP_SECRET, {
+        fetch: () => Promise.reject(new Error('down')),
+      });
+      await expect(client.listPaymentMethods(a.userId)).rejects.toBeInstanceOf(WallosNetworkError);
+    });
+  });
+
+  describe('listCategories', () => {
+    it('maps the fixture to id strings and names only', async () => {
+      const stub = stubFetch(() => json(CATEGORIES_FIXTURE));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      const expected: WallosCategory[] = [
+        { id: '1', name: 'Example Streaming' },
+        { id: '2', name: 'Example Utilities' },
+      ];
+      expect(await client.listCategories(a.userId)).toEqual(expected);
+      const [call] = stub.calls;
+      expect(call?.url).toBe('https://wallos-a.test/api/categories/get_categories.php');
+      expect(new URLSearchParams(call?.body).get('api_key')).toBe(KEY_A);
+    });
+
+    it('an empty list returns an empty array', async () => {
+      const stub = stubFetch(() => json({ success: true, categories: [] }));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      expect(await client.listCategories(a.userId)).toEqual([]);
+    });
+
+    it("reads only the given user's host and key", async () => {
+      const stub = stubFetch(() => json(CATEGORIES_FIXTURE));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await client.listCategories(b.userId);
+      expect(stub.calls[0]?.url).toBe('https://wallos-b.test/base/api/categories/get_categories.php');
+      expect(new URLSearchParams(stub.calls[0]?.body).get('api_key')).toBe(KEY_B);
+    });
+
+    it('HTTP 200 with success:false gives WallosAuthError', async () => {
+      const stub = stubFetch(() => json({ success: false, title: 'Invalid API key' }));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await expect(client.listCategories(a.userId)).rejects.toBeInstanceOf(WallosAuthError);
+    });
+
+    it('a category without a name gives WallosHttpError', async () => {
+      const stub = stubFetch(() => json({ success: true, categories: [{ id: 1, name: ' ' }] }));
+      const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+      await expect(client.listCategories(a.userId)).rejects.toBeInstanceOf(WallosHttpError);
+    });
+  });
+
   describe('updateSubscription', () => {
     it('posts action=edit with id, only the given fields and api_key last, to the user host', async () => {
       const stub = stubFetch(() => json({ success: true, title: 'Subscription updated' }));

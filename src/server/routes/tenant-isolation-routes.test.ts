@@ -84,6 +84,8 @@ function buildEnv() {
       remoteCalls.push(userId);
       return userId === b ? [wallosSub(B_SUB_ID)] : [];
     },
+    listPaymentMethods: async () => [],
+    listCategories: async () => [],
     listCurrencies: async (userId: string) => {
       remoteCalls.push(userId);
       return [{ id: 1, code: 'EUR', rate: '1' }];

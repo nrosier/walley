@@ -100,6 +100,8 @@ function setup() {
   const deps = {
     wallos: {
       listSubscriptions: async () => remote.subs.map((s) => ({ ...s })),
+      listPaymentMethods: async () => [],
+      listCategories: async () => [],
       listCurrencies: async () => [{ id: 1, code: 'EUR', rate: '1' }],
       createSubscription: writes.createSubscription,
       updateSubscription: writes.updateSubscription,

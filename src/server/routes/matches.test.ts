@@ -84,6 +84,8 @@ function setup() {
         reads.listSubscriptions();
         return remote.subs;
       },
+      listPaymentMethods: async () => [],
+      listCategories: async () => [],
       listCurrencies: async () => {
         reads.listCurrencies();
         return [{ id: 1, code: 'EUR', rate: '1' }];

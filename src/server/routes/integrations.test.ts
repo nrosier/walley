@@ -54,6 +54,8 @@ function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert: boolean | '
         next_payment: '2026-11-03',
         inactive: 0,
       })),
+    listPaymentMethods: async () => [],
+    listCategories: async () => [],
     listCurrencies: async () => [{ id: 1, code: 'EUR', rate: '1' }],
     createSubscription,
   } as unknown as WallosClient;

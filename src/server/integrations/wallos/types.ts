@@ -61,6 +61,25 @@ export interface WallosCurrency {
   rate?: string;
 }
 
+/**
+ * One entry of `payment_methods` from api/payment_methods/get_payment_methods.php
+ * (ellite/Wallos, main d799b8f). Only the caller's own, enabled methods are kept, as `id`
+ * (a string of digits) and `name`. The source also sends icon, enabled, order and in_use.
+ */
+export interface WallosPaymentMethod {
+  id: string;
+  name: string;
+}
+
+/**
+ * One entry of `categories` from api/categories/get_categories.php (ellite/Wallos, main
+ * d799b8f). Kept as `id` (a string of digits) and `name`; order and in_use are dropped.
+ */
+export interface WallosCategory {
+  id: string;
+  name: string;
+}
+
 export const WALLOS_SUBSCRIPTION_FIELDS = [
   'id',
   'name',

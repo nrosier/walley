@@ -38,6 +38,8 @@ function setup(overrides: Partial<CreateDeps> = {}) {
           inactive: 0,
         },
       ],
+      listPaymentMethods: async () => [],
+      listCategories: async () => [],
       listCurrencies: async () => [{ id: 1, code: 'EUR', rate: '1' }],
       createSubscription,
       updateSubscription: vi.fn(),
@@ -156,6 +158,8 @@ describe('POST /api/sync/check', () => {
     const { app, sa } = setup({
       wallos: {
         listSubscriptions: () => Promise.reject(new WallosAuthError()),
+        listPaymentMethods: async () => [],
+        listCategories: async () => [],
         listCurrencies: () => Promise.resolve([]),
       } as unknown as WallosClient,
     });

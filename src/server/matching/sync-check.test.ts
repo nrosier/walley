@@ -43,6 +43,8 @@ function setup(subs: Sub[], schedules: Sched[], dates: { start_date: string | nu
     wallos: {
       listSubscriptions: async () =>
         subs.map((s) => ({ ...s, cycle: 3, frequency: 1, next_payment: dates.next_payment, ...(dates.start_date === null ? {} : { start_date: dates.start_date }), inactive: 0 })),
+      listPaymentMethods: async () => [],
+      listCategories: async () => [],
       listCurrencies: async () => [
         { id: 1, code: 'EUR', rate: '1' },
         { id: 2, code: 'USD', rate: '2' },

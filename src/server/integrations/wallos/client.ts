@@ -3,7 +3,9 @@ import { decryptSecret } from '../../crypto/secrets.js';
 import type { UserRepo } from '../../db/repo.js';
 import {
   WALLOS_SUBSCRIPTION_FIELDS,
+  type WallosCategory,
   type WallosCurrency,
+  type WallosPaymentMethod,
   type WallosSubscription,
 } from './types.js';
 import type { WallosSubscriptionPayload, WallosSubscriptionUpdate } from './write.js';
@@ -15,6 +17,9 @@ const SUBSCRIPTIONS_PATH = '/api/subscriptions/get_subscriptions.php';
 // Same auth as above: ellite/Wallos api/currencies/get_currencies.php.
 const CURRENCIES_PATH = '/api/currencies/get_currencies.php';
 // Same auth as above: ellite/Wallos api/subscriptions/set_subscriptions.php, action=add.
+const PAYMENT_METHODS_PATH = '/api/payment_methods/get_payment_methods.php';
+// Same auth as above: ellite/Wallos api/categories/get_categories.php.
+const CATEGORIES_PATH = '/api/categories/get_categories.php';
 const CREATE_SUBSCRIPTION_PATH = '/api/subscriptions/set_subscriptions.php';
 const DEFAULT_TIMEOUT_MS = 10000;
 // `title` values Wallos sends with HTTP 200 and success:false when the api_key is refused.
@@ -77,6 +82,10 @@ export interface WallosClient {
   listSubscriptions(userId: string): Promise<WallosSubscription[]>;
   /** The user's own Wallos currency list, the only source of currency codes. */
   listCurrencies(userId: string): Promise<WallosCurrency[]>;
+  /** The user's own enabled Wallos payment methods. Ids are strings of digits. */
+  listPaymentMethods(userId: string): Promise<WallosPaymentMethod[]>;
+  /** The user's own Wallos categories. Ids are strings of digits. */
+  listCategories(userId: string): Promise<WallosCategory[]>;
   /** Creates a subscription in the user's Wallos. Resolves to the new Wallos id. */
   createSubscription(userId: string, payload: WallosSubscriptionPayload): Promise<string>;
   /**
@@ -132,6 +141,32 @@ function mapCurrency(raw: unknown): WallosCurrency | undefined {
     out.rate = String(src['rate']);
   }
   return out;
+}
+
+/** A Wallos id as a string of digits greater than zero, or undefined. */
+function digitId(raw: unknown): string | undefined {
+  if (typeof raw === 'number') {
+    return Number.isSafeInteger(raw) && raw > 0 ? String(raw) : undefined;
+  }
+  if (typeof raw === 'string' && /^\d+$/.test(raw) && Number(raw) > 0) return raw;
+  return undefined;
+}
+
+/** Copies only id and name. Returns undefined when either is unusable. */
+function mapNamed(raw: unknown): WallosCategory | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const src = raw as Record<string, unknown>;
+  const id = digitId(src['id']);
+  if (id === undefined) return undefined;
+  if (typeof src['name'] !== 'string' || src['name'].trim() === '') return undefined;
+  return { id, name: src['name'] };
+}
+
+/** Wallos sends `enabled` as 0 or 1 (or a boolean). Only an explicit off value is disabled. */
+function isDisabled(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null) return false;
+  const enabled = (raw as Record<string, unknown>)['enabled'];
+  return enabled === 0 || enabled === '0' || enabled === false;
 }
 
 /** Returns the repo bound to one user, e.g. `(id) => createUserRepo(db, id)`. */
@@ -255,6 +290,36 @@ export function createWallosClient(
         currencies.push(mapped);
       }
       return currencies;
+    },
+
+    async listPaymentMethods(userId) {
+      const { status, body } = await request(userId, PAYMENT_METHODS_PATH);
+      const envelope = body as { success?: unknown; payment_methods?: unknown };
+      if (typeof envelope.success !== 'boolean') throw new WallosHttpError(status);
+      if (!envelope.success) throw new WallosAuthError();
+      if (!Array.isArray(envelope.payment_methods)) throw new WallosHttpError(status);
+      const methods: WallosPaymentMethod[] = [];
+      for (const item of envelope.payment_methods as unknown[]) {
+        const mapped = mapNamed(item);
+        if (mapped === undefined) throw new WallosHttpError(status);
+        if (!isDisabled(item)) methods.push(mapped);
+      }
+      return methods;
+    },
+
+    async listCategories(userId) {
+      const { status, body } = await request(userId, CATEGORIES_PATH);
+      const envelope = body as { success?: unknown; categories?: unknown };
+      if (typeof envelope.success !== 'boolean') throw new WallosHttpError(status);
+      if (!envelope.success) throw new WallosAuthError();
+      if (!Array.isArray(envelope.categories)) throw new WallosHttpError(status);
+      const categories: WallosCategory[] = [];
+      for (const item of envelope.categories as unknown[]) {
+        const mapped = mapNamed(item);
+        if (mapped === undefined) throw new WallosHttpError(status);
+        categories.push(mapped);
+      }
+      return categories;
     },
 
     async updateSubscription(userId, id, fields) {

@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "title": "payment_methods",
+  "payment_methods": [
+    { "id": 1, "name": "Example Card", "icon": "images/uploads/icons/example-card.png", "enabled": 1, "order": 1, "in_use": true },
+    { "id": 2, "name": "Example Transfer", "icon": "images/uploads/icons/example-transfer.png", "enabled": 1, "order": 2, "in_use": false },
+    { "id": 3, "name": "Example Retired Method", "icon": "images/uploads/icons/example-retired.png", "enabled": 0, "order": 3, "in_use": false }
+  ],
+  "notes": []
+}

@@ -37,6 +37,8 @@ let db: AppDatabase;
 let userId: string;
 let wallos: {
   listSubscriptions: ReturnType<typeof vi.fn>;
+  listPaymentMethods: ReturnType<typeof vi.fn>;
+  listCategories: ReturnType<typeof vi.fn>;
   listCurrencies: ReturnType<typeof vi.fn>;
   createSubscription: ReturnType<typeof vi.fn>;
 };
@@ -50,6 +52,8 @@ beforeEach(() => {
   apiState = { baseCurrency: 'EUR', schedules: [] };
   wallos = {
     listSubscriptions: vi.fn(async () => [SUB]),
+    listPaymentMethods: vi.fn(async () => []),
+    listCategories: vi.fn(async () => []),
     listCurrencies: vi.fn(async () => CURRENCIES),
     createSubscription: vi.fn(async () => '99'),
   };

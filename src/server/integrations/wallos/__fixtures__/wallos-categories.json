@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "title": "categories",
+  "categories": [
+    { "id": 1, "name": "Example Streaming", "order": 1, "in_use": true },
+    { "id": 2, "name": "Example Utilities", "order": 2, "in_use": false }
+  ],
+  "notes": []
+}
