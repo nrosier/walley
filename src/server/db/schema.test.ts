@@ -270,7 +270,7 @@ describe('email_verifications', () => {
       name: string;
       pk: number;
     }[];
-    expect(cols.map((c) => c.name)).toEqual(['id', 'user_id', 'expires_at', 'created_at', 'pending_password_hash', 'failed_attempts']);
+    expect(cols.map((c) => c.name)).toEqual(['id', 'user_id', 'expires_at', 'created_at', 'pending_password_hash']);
     expect(cols.filter((c) => c.pk === 1).map((c) => c.name)).toEqual(['id']);
   });
 

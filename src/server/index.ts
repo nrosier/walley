@@ -10,6 +10,7 @@ import { realCreateDeps } from './integrations/create.js';
 import { withActualServer, withActualSession } from './integrations/actual/session.js';
 import { createWallosClient } from './integrations/wallos/client.js';
 import { createMailer, createSmtpTransport } from './mail/index.js';
+import { startPendingCleanup } from './pending-cleanup-job.js';
 import { registerShutdown } from './shutdown.js';
 
 async function main(): Promise<void> {
@@ -110,7 +111,10 @@ async function main(): Promise<void> {
     closeDatabase(db);
     throw error;
   }
+  // Only local registration leaves pending accounts and tokens behind.
+  const stopPendingCleanup = config.authMode === 'local' ? startPendingCleanup(db) : undefined;
   app.addHook('onClose', () => {
+    stopPendingCleanup?.();
     closeDatabase(db);
   });
   registerShutdown(app);

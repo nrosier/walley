@@ -90,7 +90,7 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(10);
+    expect(journalCount(db)).toBe(12);
     const row = db.$client
       .prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u1'")
       .get() as { v: number | null };
@@ -105,7 +105,7 @@ describe('openDatabase', () => {
     expect(fresh.v).toBeNull();
   });
 
-  it('gives an email_verifications row from before 0007 failed_attempts 0', () => {
+  it('voids email_verifications rows from before 0011, keeps their users and drops failed_attempts', () => {
     const old = join(dir, 'old-migrations-0006');
     cpSync(MIGRATIONS_FOLDER, old, { recursive: true });
     const journalPath = join(old, 'meta', '_journal.json');
@@ -123,9 +123,13 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(10);
-    const row = db.$client.prepare('SELECT failed_attempts AS n FROM email_verifications').get() as { n: number };
-    expect(row.n).toBe(0);
+    expect(journalCount(db)).toBe(12);
+    const tokens = db.$client.prepare('SELECT count(*) AS n FROM email_verifications').get() as { n: number };
+    expect(tokens.n).toBe(0);
+    const user = db.$client.prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u1'").get() as { v: number | null };
+    expect(user.v).toBeNull();
+    const cols = db.$client.prepare("pragma table_info('email_verifications')").all() as { name: string }[];
+    expect(cols.map((c) => c.name)).not.toContain('failed_attempts');
   });
 
   it('adds first_seen_next_payment on 0008 and keeps existing match rows with a null anchor', () => {
@@ -146,7 +150,7 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(10);
+    expect(journalCount(db)).toBe(12);
     const row = db.$client
       .prepare("SELECT first_seen_next_payment AS f, last_known_wallos_hash AS h, status FROM matches WHERE id = 'm1'")
       .get() as { f: string | null; h: string; status: string };
@@ -159,11 +163,11 @@ describe('openDatabase', () => {
     first.$client
       .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
       .run('u1', 'a@example.com', Buffer.alloc(32, 1));
-    expect(journalCount(first)).toBe(10);
+    expect(journalCount(first)).toBe(12);
     closeDatabase(first);
 
     const second = track(openDatabase(path));
-    expect(journalCount(second)).toBe(10);
+    expect(journalCount(second)).toBe(12);
     const users = second.$client.prepare('SELECT id FROM users').all() as { id: string }[];
     expect(users).toEqual([{ id: 'u1' }]);
   });

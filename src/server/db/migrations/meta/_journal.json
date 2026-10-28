@@ -71,6 +71,20 @@
       "when": 1793136843520,
       "tag": "0009_next_lady_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793223215764,
+      "tag": "0010_mean_silvermane",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793223225993,
+      "tag": "0011_void_pending_verification_tokens",
+      "breakpoints": true
     }
   ]
 }

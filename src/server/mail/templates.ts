@@ -3,6 +3,9 @@
  */
 export const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
+/** Opening the link activates the account, so the mail says who must not open it. */
+export const VERIFICATION_WARNING = 'If you did not sign up, do not open this link.';
+
 export interface MailContent {
   readonly subject: string;
   readonly text: string;
@@ -27,7 +30,9 @@ export function verificationEmail(publicOrigin: string, token: string): MailCont
       'Open this link to verify your Walley email address:',
       link,
       '',
-      'The link expires in 24 hours. If you did not create a Walley account, ignore this email.',
+      'The link expires in 24 hours.',
+      '',
+      `${VERIFICATION_WARNING} Ignore this email.`,
       '',
     ].join('\n'),
   };

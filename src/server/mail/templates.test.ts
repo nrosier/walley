@@ -27,6 +27,7 @@ describe('verificationEmail', () => {
     expect(subject).toBe('Verify your Walley email address');
     expect(text).toContain(buildVerificationLink(ORIGIN, TOKEN));
     expect(text).toContain('24 hours');
+    expect(text).toContain('If you did not sign up, do not open this link.');
     expect(text).not.toContain('password');
     expect(text).not.toContain('user_id');
   });

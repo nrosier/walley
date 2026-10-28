@@ -55,9 +55,6 @@ export interface AuthRoutesOptions {
 
 const MAX_EMAIL_LENGTH = 254;
 
-/** Wrong passwords in total, whatever the time window, after which a verification token is burned. */
-const MAX_VERIFY_FAILURES = 5;
-
 /**
  * Registration only: no whitespace or control characters, one '@', and a dot in the domain.
  * The local part also excludes ',', ';', '"', '<' and '>', which nodemailer's address parser splits or unquotes.
@@ -136,8 +133,8 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
   };
   // Holds the IP keys of login and register and the email counter they share.
   const limiter = createRateLimiter(limiterOptions);
-  // verify-email's own IP, email and token counters, so a login or register flood from one IP
-  // cannot block it. Its IP key still stops guessing across many tokens (SIGN_IN_MAX_PER_IP).
+  // verify-email's own IP counter, so a login or register flood from one IP cannot block it.
+  // It stops guessing across many tokens (SIGN_IN_MAX_PER_IP).
   const verifyLimiter = createRateLimiter(limiterOptions);
 
   /** Counts one attempt. On refusal sends 429 and returns true; the caller must stop. */
@@ -217,9 +214,9 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
         const content = alreadyRegisteredEmail(publicOrigin);
         mailer.send({ to: email, subject: content.subject, text: content.text });
       };
-      // Stores only the hash of a fresh token and mails the link. Older tokens stay valid. The
-      // registrant's password hash rides on the token, never on the user, until the token is used
-      // with that password.
+      // Stores only the hash of a fresh token and mails the link. Every older token of this user
+      // is voided. The registrant's password hash rides on the token, never on the user, until
+      // the token is used.
       const issueVerification = (userId: string, pendingPasswordHash: string): void => {
         const token = randomBytes(32).toString('hex');
         const issuedAt = now();
@@ -238,7 +235,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
           const user = createUser(db, { email, passwordHash: null });
           issueVerification(user.id, passwordHash);
         } else if (!existing.emailVerified) {
-          // Each token carries its registrant's hash; only the holder of that password can use it.
+          // The new token carries the new registrant's hash and voids the earlier tokens.
           issueVerification(existing.userId, passwordHash);
         } else {
           sendAlreadyRegistered();
@@ -258,8 +255,7 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
           ? (request.body as Record<string, unknown>)
           : {};
       const token = body['token'];
-      const rawPassword = body['password'];
-      if (typeof token !== 'string' || typeof rawPassword !== 'string') {
+      if (typeof token !== 'string') {
         return reply.code(400).send({ error: 'invalid_request' });
       }
       // Per-IP guard against guessing across many tokens, on verify-email's own limiter.
@@ -277,48 +273,15 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       if (found === undefined || found.emailVerified) {
         return reply.code(400).send({ error: 'invalid_token' });
       }
-      // Issued before the password moved onto the token: nobody can prove the password, so refuse.
+      // Issued before the password moved onto the token: there is no hash to apply, so refuse.
       if (found.pendingPasswordHash === null) {
         return reply.code(400).send({ error: 'token_without_password' });
       }
-      const repo = createUserRepo(db, found.userId);
-      const wrongPassword = (): FastifyReply => reply.code(401).send({ error: 'invalid_password' });
-      // Every attempt counts against its owner's email, then the token, BEFORE any Argon2 await, so
-      // parallel guesses cannot all pass the lookup and then race the limit. The email key goes
-      // first: when it alone refuses, the owner gets 429, the token is not charged and is kept. Only
-      // the token key burns the token and answers like a wrong password. Neither path runs Argon2.
-      const emailTake = verifyLimiter.take(`email:${found.email}`);
-      if (!emailTake.allowed) {
-        return reply
-          .header('Retry-After', String(emailTake.retryAfterSeconds))
-          .code(429)
-          .send({ error: 'rate_limited' });
+      // The link is the proof of inbox ownership: no password is asked. A token consumed or
+      // voided meanwhile looks like an unknown one.
+      if (!createUserRepo(db, found.userId).consumeEmailVerification(idHash, when)) {
+        return reply.code(400).send({ error: 'invalid_token' });
       }
-      if (!verifyLimiter.take(`token:${idHash}`).allowed) {
-        repo.deleteEmailVerification(idHash);
-        return wrongPassword();
-      }
-      // Charge this attempt BEFORE Argon2, in the same tick as the takes above, so parallel guesses
-      // cannot all run Argon2 before any is counted. The fifth charge burns the token, so even the
-      // correct password on the fifth attempt is refused. The charge dies with the row on consume.
-      const charged = repo.recordFailedEmailVerification(idHash, MAX_VERIFY_FAILURES);
-      if (charged === undefined || charged >= MAX_VERIFY_FAILURES) {
-        return wrongPassword();
-      }
-      let ok = false;
-      if (isWithinRawLimit(rawPassword)) {
-        const password = normalisePassword(rawPassword);
-        ok = isAcceptablePasswordLength(password) && (await verifyPassword(password, found.pendingPasswordHash));
-      }
-      if (!ok) {
-        return wrongPassword();
-      }
-      // A correct password whose token was consumed or burned meanwhile looks like a wrong one.
-      if (!repo.consumeEmailVerification(idHash, when)) {
-        return wrongPassword();
-      }
-      verifyLimiter.clear(`token:${idHash}`);
-      verifyLimiter.clear(`email:${found.email}`);
       return reply.code(204).send();
     });
 

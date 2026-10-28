@@ -89,8 +89,7 @@ const register = (t: AuthApp, email: string, password = PASSWORD) =>
   post(t, '/api/auth/register', { email, password });
 const login = (t: AuthApp, email: string, password = PASSWORD) =>
   post(t, '/api/auth/login', { email, password });
-const verify = (t: AuthApp, token: unknown, password: unknown = PASSWORD) =>
-  post(t, '/api/auth/verify-email', { token, password });
+const verify = (t: AuthApp, token: unknown) => post(t, '/api/auth/verify-email', { token });
 
 /** The token in the most recent verification mail, read from the link in its body. */
 function lastToken(mailer: CapturingMailer): string {
@@ -242,8 +241,8 @@ describe('POST /api/auth/verify-email', () => {
   it.each([
     ['no body', undefined],
     ['missing token', {}],
-    ['missing password', { token: 'abc' }],
-    ['non-string password', { token: 'abc', password: 5 }],
+    ['a password and no token', { password: PASSWORD }],
+    ['a non-string token with a password', { token: 5, password: PASSWORD }],
     ['number', { token: 5 }],
     ['null', { token: null }],
     ['array', { token: ['a'] }],
@@ -322,74 +321,50 @@ describe('registration keeps the password off the user until verified', () => {
   });
 });
 
-describe('verify-email password check', () => {
+describe('verify-email link token', () => {
   const ATTACKER = 'attacker chosen passphrase';
   const VICTIM = 'victim chosen passphrase';
 
-  it('(a) refuses the attacker older mail with the wrong password, keeps the token, verifies nothing', async () => {
+  it('activates the account from the link alone and applies the password chosen at sign-up', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
-    await register(t, 'victim@example.test', ATTACKER);
-    const attackerToken = lastToken(mailer);
-    await register(t, 'victim@example.test', VICTIM);
-    const res = await verify(t, attackerToken, VICTIM);
-    expect(res.statusCode).toBe(401);
-    expect(res.json()).toEqual({ error: 'invalid_password' });
-    expect(userRow(t.db, 'victim@example.test')).toEqual({ hash: null, verifiedAt: null });
-    expect(tokenCount(t.db)).toBe(2);
-    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(401);
+    await register(t, 'link@example.test', NEW_PASSWORD);
+    const res = await verify(t, lastToken(mailer));
+    expect(res.statusCode).toBe(204);
+    expect(userRow(t.db, 'link@example.test')?.hash?.startsWith('$argon2id$')).toBe(true);
+    expect(tokenCount(t.db)).toBe(0);
+    expect((await login(t, 'link@example.test', NEW_PASSWORD)).statusCode).toBe(200);
   });
 
-  it('(b) lets the victim verify with their own password and then log in; the attacker cannot', async () => {
+  it('ignores a password sent along with the token', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
-    await register(t, 'victim@example.test', ATTACKER);
-    await register(t, 'victim@example.test', VICTIM);
-    const victimToken = lastToken(mailer);
-    // A wrong try does not burn the token, so the owner can retry.
-    expect((await verify(t, victimToken, 'a wrong passphrase here')).statusCode).toBe(401);
-    expect((await verify(t, victimToken, VICTIM)).statusCode).toBe(204);
-    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(200);
-    expect((await login(t, 'victim@example.test', ATTACKER)).statusCode).toBe(401);
+    await register(t, 'extra@example.test');
+    const res = await post(t, '/api/auth/verify-email', { token: lastToken(mailer), password: 'any other passphrase' });
+    expect(res.statusCode).toBe(204);
+    expect((await login(t, 'extra@example.test')).statusCode).toBe(200);
   });
 
-  it('(c) the attacker newer mail with the attacker password cannot take over a verified account', async () => {
+  it('stores only the SHA-256 of the token', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
-    await register(t, 'victim@example.test', VICTIM);
-    const victimToken = lastToken(mailer);
-    await register(t, 'victim@example.test', ATTACKER);
-    const attackerToken = lastToken(mailer);
-    expect((await verify(t, victimToken, VICTIM)).statusCode).toBe(204);
-    // The attacker's token still holds a hash, but the user is already verified: nothing changes.
-    await verify(t, attackerToken, ATTACKER);
-    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(200);
-    expect((await login(t, 'victim@example.test', ATTACKER)).statusCode).toBe(401);
-  });
-
-  it('(c) the attacker cannot take over while the victim is still verifying', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'victim@example.test', VICTIM);
-    const victimToken = lastToken(mailer);
-    await register(t, 'victim@example.test', ATTACKER);
-    // The attacker never saw the victim's token: only the victim's password opens it.
-    expect((await verify(t, victimToken, ATTACKER)).statusCode).toBe(401);
-    expect(userRow(t.db, 'victim@example.test')?.verifiedAt).toBeNull();
-    expect((await verify(t, victimToken, VICTIM)).statusCode).toBe(204);
-    expect((await login(t, 'victim@example.test', ATTACKER)).statusCode).toBe(401);
-    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(200);
-  });
-
-  it('(e) a consumed token cannot be used again', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'once@example.test');
+    await register(t, 'hash@example.test');
     const token = lastToken(mailer);
+    const ids = t.db.$client.prepare('select id from email_verifications').all() as { id: string }[];
+    expect(ids).toEqual([{ id: hashToken(token) }]);
+    expect(JSON.stringify(t.db.$client.prepare('select * from email_verifications').all())).not.toContain(token);
+  });
+
+  it('takes only the verify-email IP limiter key, never an email or token key', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'keys@example.test');
+    const token = lastToken(mailer);
+    limiterKeys.taken.length = 0;
+    expect((await verify(t, '0'.repeat(64))).statusCode).toBe(400);
     expect((await verify(t, token)).statusCode).toBe(204);
-    const again = await verify(t, token);
-    expect(again.statusCode).toBe(400);
-    expect(again.json()).toEqual({ error: 'invalid_token' });
+    expect(limiterKeys.taken).toHaveLength(2);
+    expect(limiterKeys.taken.every((key) => key.startsWith('ip:'))).toBe(true);
   });
 
   it('refuses a token that carries no pending hash with 400 token_without_password and keeps it', async () => {
@@ -404,165 +379,7 @@ describe('verify-email password check', () => {
     expect(tokenCount(t.db)).toBe(1);
   });
 
-  it('refuses an over-long or too-short password with 401 invalid_password', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'len@example.test');
-    const token = lastToken(mailer);
-    for (const bad of ['short', 'x'.repeat(100_000)]) {
-      const res = await verify(t, token, bad);
-      expect(res.statusCode).toBe(401);
-      expect(res.json()).toEqual({ error: 'invalid_password' });
-    }
-  });
-});
-
-describe('verify-email brute-force limits', () => {
-  it('(a) burns the token on the fifth wrong password, then the correct password gets 400 invalid_token', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'burn@example.test');
-    const token = lastToken(mailer);
-    for (let i = 0; i < 5; i += 1) {
-      const res = await verify(t, token, `wrong passphrase number ${String(i)}`);
-      expect(res.statusCode).toBe(401);
-      expect(res.json()).toEqual({ error: 'invalid_password' });
-    }
-    expect(tokenCount(t.db)).toBe(0);
-    const right = await verify(t, token);
-    expect(right.statusCode).toBe(400);
-    expect(right.json()).toEqual({ error: 'invalid_token' });
-    t.clock.advance(15 * 60 * 1000 + 1);
-    expect((await verify(t, token)).statusCode).toBe(400);
-  });
-
-  it('(b) a wrong password refused by the email key does not count against the token', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'held2@example.test');
-    const tokenA = lastToken(mailer);
-    await register(t, 'held2@example.test');
-    const tokenB = lastToken(mailer);
-    for (let i = 0; i < 2; i += 1) await verify(t, tokenA, `wrong passphrase number ${String(i)}`);
-    for (let i = 0; i < 3; i += 1) await verify(t, tokenB, `wrong passphrase number ${String(i)}`);
-    const attempts = (): number =>
-      (t.db.$client
-        .prepare('select failed_attempts as n from email_verifications where id = ?')
-        .get(hashToken(tokenA)) as { n: number }).n;
-    expect(attempts()).toBe(2);
-    for (let i = 0; i < 4; i += 1) {
-      expect((await verify(t, tokenA, 'refused wrong passphrase')).statusCode).toBe(429);
-    }
-    expect(attempts()).toBe(2);
-    expect(tokenCount(t.db)).toBe(2);
-  });
-
-  it('(c) the count survives the rate window: the fifth wrong password still burns the token', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'window@example.test');
-    const token = lastToken(mailer);
-    for (let i = 0; i < 4; i += 1) {
-      expect((await verify(t, token, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
-    }
-    t.clock.advance(15 * 60 * 1000 + 1);
-    expect((await verify(t, token, 'wrong passphrase number 4')).statusCode).toBe(401);
-    expect(tokenCount(t.db)).toBe(0);
-    expect((await verify(t, token)).statusCode).toBe(400);
-  });
-
-  it('keeps the token while the misses stay under the limit', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'few@example.test');
-    const token = lastToken(mailer);
-    for (let i = 0; i < 3; i += 1) {
-      expect((await verify(t, token, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
-    }
-    expect((await verify(t, token)).statusCode).toBe(204);
-  });
-
-  it('five failed logins on the owner email do not block a correct verify', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'flood@example.test');
-    const token = lastToken(mailer);
-    // The register call took one count, so the fifth login is already refused.
-    for (let i = 0; i < 5; i += 1) {
-      await login(t, 'flood@example.test', `wrong passphrase number ${String(i)}`);
-    }
-    // The login email key is now full; verify-email keeps its own counter.
-    expect((await login(t, 'flood@example.test')).statusCode).toBe(429);
-    expect((await verify(t, token)).statusCode).toBe(204);
-    expect(tokenCount(t.db)).toBe(0);
-  });
-
-  it('the verify-email email limit refuses after its own five wrong attempts across tokens, keeps the token, and works after the window', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'flood@example.test');
-    const tokenA = lastToken(mailer);
-    await register(t, 'flood@example.test');
-    const tokenB = lastToken(mailer);
-    // Three misses on one token and two on the other: no token key reaches its limit, the email key does.
-    for (let i = 0; i < 3; i += 1) {
-      expect((await verify(t, tokenA, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
-    }
-    for (let i = 0; i < 2; i += 1) {
-      expect((await verify(t, tokenB, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
-    }
-    const before = argon.calls;
-    const res = await verify(t, tokenA);
-    expect(res.statusCode).toBe(429);
-    expect(res.json()).toEqual({ error: 'rate_limited' });
-    expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
-    expect(argon.calls).toBe(before);
-    expect(tokenCount(t.db)).toBe(2);
-    t.clock.advance(15 * 60 * 1000 + 1);
-    expect((await verify(t, tokenA)).statusCode).toBe(204);
-  });
-
-  it('does not charge the token while the email key refuses, and the correct password works after the window', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'held@example.test');
-    const tokenA = lastToken(mailer);
-    await register(t, 'held@example.test');
-    const tokenB = lastToken(mailer);
-    // Five misses fill the email key; the token key of A holds only two.
-    for (let i = 0; i < 2; i += 1) {
-      expect((await verify(t, tokenA, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
-    }
-    for (let i = 0; i < 3; i += 1) {
-      expect((await verify(t, tokenB, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
-    }
-    // More owner retries than the token limit: if they were charged, the token would be burned.
-    for (let i = 0; i < 7; i += 1) {
-      const res = await verify(t, tokenA);
-      expect(res.statusCode).toBe(429);
-      expect(res.json()).toEqual({ error: 'rate_limited' });
-    }
-    expect(tokenCount(t.db)).toBe(2);
-    t.clock.advance(15 * 60 * 1000 + 1);
-    expect((await verify(t, tokenA)).statusCode).toBe(204);
-  });
-
-  it('(b) a correct verify deletes the other tokens, and an older link returns invalid_token', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'multi@example.test');
-    const older = lastToken(mailer);
-    await register(t, 'multi@example.test');
-    const newer = lastToken(mailer);
-    expect(tokenCount(t.db)).toBe(2);
-    expect((await verify(t, newer)).statusCode).toBe(204);
-    expect(tokenCount(t.db)).toBe(0);
-    const res = await verify(t, older);
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'invalid_token' });
-  });
-
-  it('(c) a verified user token gets the same response as an unknown token', async () => {
+  it('a verified user token gets the same response as an unknown token', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'done@example.test');
@@ -578,123 +395,49 @@ describe('verify-email brute-force limits', () => {
     expect(verified.headers['content-type']).toBe(unknown.headers['content-type']);
   });
 
-  it('(e) parallel guesses on one token cannot verify the account once the limit is used up', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'race@example.test');
-    const token = lastToken(mailer);
-    // Five attempts are allowed. Wrong guesses come first and use them up; the correct ones
-    // start after the limit is reached.
-    const wrong = Array.from({ length: 6 }, (_v, i) => verify(t, token, `wrong passphrase number ${String(i)}`));
-    const right = Array.from({ length: 4 }, () => verify(t, token));
-    const results = await Promise.all([...wrong, ...right]);
-    // The email key refuses the rest (429) and keeps the token. None can succeed.
-    const bodies: Record<number, string> = {
-      400: '{"error":"invalid_token"}',
-      401: '{"error":"invalid_password"}',
-      429: '{"error":"rate_limited"}',
-    };
-    for (const res of results) {
-      expect(Object.keys(bodies).map(Number)).toContain(res.statusCode);
-      expect(res.body).toBe(bodies[res.statusCode]);
-    }
-    expect(results.some((res) => res.statusCode === 204)).toBe(false);
-    expect(userRow(t.db, 'race@example.test')).toEqual({ hash: null, verifiedAt: null });
-    // The fifth wrong password burned the token.
-    expect(tokenCount(t.db)).toBe(0);
-  });
-
-  it('charges each attempt before Argon2: parallel mixed guesses run Argon2 at most five times and none succeeds after the burn', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'charge@example.test');
-    const token = lastToken(mailer);
-    const before = argon.calls;
-    const wrongPw = (i: number): string => `wrong passphrase number ${String(i)}`;
-    // Four wrong guesses start first, so the fifth request's charge burns the token.
-    const results = await Promise.all([
-      verify(t, token, wrongPw(0)),
-      verify(t, token, wrongPw(1)),
-      verify(t, token, wrongPw(2)),
-      verify(t, token, wrongPw(3)),
-      verify(t, token),
-      verify(t, token),
-      verify(t, token, wrongPw(4)),
-      verify(t, token),
-      verify(t, token),
-    ]);
-    expect(argon.calls - before).toBeLessThanOrEqual(5);
-    expect(results.some((res) => res.statusCode === 204)).toBe(false);
-    expect(results[4].statusCode).toBe(401);
-    expect(results[4].body).toBe('{"error":"invalid_password"}');
-    expect(userRow(t.db, 'charge@example.test')).toEqual({ hash: null, verifiedAt: null });
-    expect(tokenCount(t.db)).toBe(0);
-  });
-
-  it('refuses the correct password on the fifth attempt with 401 invalid_password and burns the token', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'fifth@example.test');
-    const token = lastToken(mailer);
-    for (let i = 0; i < 4; i += 1) {
-      expect((await verify(t, token, `wrong passphrase number ${String(i)}`)).statusCode).toBe(401);
-    }
-    expect(tokenCount(t.db)).toBe(1);
-    const before = argon.calls;
-    const fifth = await verify(t, token);
-    expect(fifth.statusCode).toBe(401);
-    expect(fifth.body).toBe('{"error":"invalid_password"}');
-    expect(argon.calls).toBe(before);
-    expect(tokenCount(t.db)).toBe(0);
-    expect(userRow(t.db, 'fifth@example.test')).toEqual({ hash: null, verifiedAt: null });
-    expect((await verify(t, token)).statusCode).toBe(400);
-  });
-
-  it('a correct password on the fourth attempt still verifies and leaves no token', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'fourth@example.test');
-    const token = lastToken(mailer);
-    for (let i = 0; i < 3; i += 1) await verify(t, token, `wrong passphrase number ${String(i)}`);
-    expect((await verify(t, token)).statusCode).toBe(204);
-    expect(tokenCount(t.db)).toBe(0);
-    expect(userRow(t.db, 'fourth@example.test')?.verifiedAt).not.toBeNull();
-  });
-
-  it('(f) after the burn the correct password gets the same status and body as a wrong one', async () => {
-    const mailer = createCapturingMailer();
-    const t = setup({ mailer });
-    await register(t, 'same@example.test');
-    const token = lastToken(mailer);
-    await Promise.all(Array.from({ length: 6 }, (_v, i) => verify(t, token, `wrong passphrase number ${String(i)}`)));
-    const right = await verify(t, token);
-    const wrong = await verify(t, token, 'another wrong passphrase');
-    expect(right.statusCode).toBe(wrong.statusCode);
-    expect(right.body).toBe(wrong.body);
-    expect(right.headers['content-type']).toBe(wrong.headers['content-type']);
-  });
-
-  it('(g) a correct password whose consume fails gets the same status and body as a wrong one', async () => {
+  it('two parallel uses of one token: one 204, the other the same 400 as an unknown token', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'twice@example.test');
     const token = lastToken(mailer);
     const [first, second] = await Promise.all([verify(t, token), verify(t, token)]);
-    const wrong = await verify(t, '0'.repeat(64), 'wrong passphrase here');
-    const statuses = [first.statusCode, second.statusCode].sort();
-    // One wins, the other finds the token already consumed after its Argon2 check.
-    expect(statuses).toEqual([204, 401]);
-    const loser = first.statusCode === 401 ? first : second;
-    expect(loser.body).toBe('{"error":"invalid_password"}');
-    const wrongOnLiveToken = await (async () => {
-      await register(t, 'other@example.test');
-      return verify(t, lastToken(mailer), 'wrong passphrase here');
-    })();
-    expect(loser.statusCode).toBe(wrongOnLiveToken.statusCode);
-    expect(loser.body).toBe(wrongOnLiveToken.body);
-    expect(wrong.statusCode).toBe(400);
+    expect([first.statusCode, second.statusCode].sort()).toEqual([204, 400]);
+    const loser = first.statusCode === 400 ? first : second;
+    expect(loser.body).toBe((await verify(t, '0'.repeat(64))).body);
   });
 
+  it('a registration for someone else address gives the registrant no access to that account', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'victim@example.test', ATTACKER);
+    const attackerLink = lastToken(mailer);
+    // The link went to the victim's inbox; without it the registrant has no session and no API access.
+    const attempt = await login(t, 'victim@example.test', ATTACKER);
+    expect(attempt.statusCode).toBe(401);
+    expect(attempt.cookies).toHaveLength(0);
+    expect((await t.app.inject({ method: 'GET', url: '/api/auth/me' })).statusCode).toBe(401);
+    // The victim signs up for real: the earlier link is void, and only the victim's password works.
+    await register(t, 'victim@example.test', VICTIM);
+    const voided = await verify(t, attackerLink);
+    expect(voided.statusCode).toBe(400);
+    expect(voided.json()).toEqual({ error: 'invalid_token' });
+    expect((await verify(t, lastToken(mailer))).statusCode).toBe(204);
+    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(200);
+    expect((await login(t, 'victim@example.test', ATTACKER)).statusCode).toBe(401);
+  });
+
+  it('runs no Argon2 derivation on verify', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'cheap@example.test');
+    const before = argon.calls;
+    expect((await verify(t, '0'.repeat(64))).statusCode).toBe(400);
+    expect((await verify(t, lastToken(mailer))).statusCode).toBe(204);
+    expect(argon.calls).toBe(before);
+  });
+});
+
+describe('verify-email limits', () => {
   it('(d) still applies the per-IP limit', async () => {
     const t = setup();
     for (let i = 0; i < 20; i += 1) {
@@ -703,6 +446,7 @@ describe('verify-email brute-force limits', () => {
     const res = await verify(t, '0'.repeat(64));
     expect(res.statusCode).toBe(429);
     expect(res.json()).toEqual({ error: 'rate_limited' });
+    expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
   });
 
   it('(e) is not blocked by login or register floods from the same IP', async () => {
@@ -726,10 +470,23 @@ describe('verify-email brute-force limits', () => {
     }
     expect((await login(t, 'someone@example.test')).statusCode).toBe(401);
   });
+
+  it('five failed logins on the owner email do not block verify', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'flood@example.test');
+    const token = lastToken(mailer);
+    for (let i = 0; i < 5; i += 1) {
+      await login(t, 'flood@example.test', `wrong passphrase number ${String(i)}`);
+    }
+    expect((await login(t, 'flood@example.test')).statusCode).toBe(429);
+    expect((await verify(t, token)).statusCode).toBe(204);
+    expect(tokenCount(t.db)).toBe(0);
+  });
 });
 
 describe('re-registering', () => {
-  it('sends a new link with its own pending hash and leaves the old token valid', async () => {
+  it('sends a new link with its own pending hash and voids the old token', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'again@example.test');
@@ -737,31 +494,43 @@ describe('re-registering', () => {
     await register(t, 'again@example.test', NEW_PASSWORD);
     const newToken = lastToken(mailer);
     expect(newToken).not.toBe(oldToken);
-    // Nothing changes on the user until a token is used.
+    // Nothing changes on the user until a token is used; only the newest token is left.
     expect(userRow(t.db, 'again@example.test')).toEqual({ hash: null, verifiedAt: null });
-    expect(tokenCount(t.db)).toBe(2);
-
-    // The newest registrant verifies: their password is the one that works.
-    expect((await verify(t, newToken, NEW_PASSWORD)).statusCode).toBe(204);
-    expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(200);
-    expect((await login(t, 'again@example.test')).statusCode).toBe(401);
-    // Verifying deleted every token of the user, so the older link is now unknown.
+    expect(tokenCount(t.db)).toBe(1);
     const stale = await verify(t, oldToken);
     expect(stale.statusCode).toBe(400);
     expect(stale.json()).toEqual({ error: 'invalid_token' });
+    expect(userRow(t.db, 'again@example.test')).toEqual({ hash: null, verifiedAt: null });
+
+    // The newest registrant's password is the one that works.
+    expect((await verify(t, newToken)).statusCode).toBe(204);
     expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(200);
     expect((await login(t, 'again@example.test')).statusCode).toBe(401);
   });
 
-  it('keeps the old token valid until it expires after a repeat registration', async () => {
+  it('voids the old token at once, even well inside its 24 hours', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'slow@example.test');
     const oldToken = lastToken(mailer);
     t.clock.advance(VERIFICATION_TOKEN_TTL_MS / 2);
     await register(t, 'slow@example.test');
-    t.clock.advance(VERIFICATION_TOKEN_TTL_MS / 2 - 1);
-    expect((await verify(t, oldToken)).statusCode).toBe(204);
+    const newToken = lastToken(mailer);
+    expect((await verify(t, oldToken)).statusCode).toBe(400);
+    // The new token runs its own 24 hours from its own issue.
+    t.clock.advance(VERIFICATION_TOKEN_TTL_MS - 1);
+    expect((await verify(t, newToken)).statusCode).toBe(204);
+  });
+
+  it('voids only the tokens of that address', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'first@example.test');
+    const firstToken = lastToken(mailer);
+    await register(t, 'second@example.test');
+    await register(t, 'second@example.test');
+    expect(tokenCount(t.db)).toBe(2);
+    expect((await verify(t, firstToken)).statusCode).toBe(204);
   });
 
   it('leaves the hash of a verified email unchanged and verifies nothing', async () => {
@@ -860,8 +629,8 @@ describe('logs', () => {
     await register(t, email, secretPassword);
     const token = lastToken(mailer);
     await register(t, email, secretPassword);
-    await verify(t, token, secretPassword);
-    await verify(t, 'SECRETGARBAGETOKEN', secretPassword);
+    await verify(t, token);
+    await verify(t, 'SECRETGARBAGETOKEN');
     await login(t, email, secretPassword);
     const output = chunks.join('');
     expect(output).toContain('/api/auth/register');
