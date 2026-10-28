@@ -4,6 +4,8 @@ import { I18nProvider, type Locale } from '@/i18n';
 import { SettingsPage } from './SettingsPage';
 import pageSrc from './SettingsPage.tsx?raw';
 import appSrc from '../App.tsx?raw';
+import wallosSrc from './WallosSettings.tsx?raw';
+import actualSrc from './ActualSettings.tsx?raw';
 
 const render = (locale: Locale) =>
   renderToStaticMarkup(
@@ -84,5 +86,14 @@ describe('Theme control wiring', () => {
     expect(appSrc).toMatch(/onToggleTheme = useCallback\(\(\) => \{\s*chooseTheme\(toggleTheme\(theme\)\)/);
     expect(appSrc).toContain('writeTheme(next)');
     expect(pageSrc).toContain('useThemeControl()');
+  });
+});
+
+describe('Settings save refreshes the Sync Dashboard', () => {
+  it('re-runs the shared sync check after a successful Wallos or Actual save, so "not set up" does not stay stale', () => {
+    const wallos = wallosSrc.slice(wallosSrc.indexOf('const save = '), wallosSrc.indexOf('const runTest'));
+    const actual = actualSrc.slice(actualSrc.indexOf('const save = '), actualSrc.indexOf('const loadBudgets'));
+    expect(wallos).toContain('syncStore.requestRun()');
+    expect(actual).toContain('syncStore.requestRun()');
   });
 });

@@ -3,6 +3,7 @@ import { SaveFooter, SettingsCard } from '@/components/settings/SettingsCard';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
 import { ApiError, apiRequest } from '@/lib/api';
+import { syncStore } from '@/lib/sync-check';
 import { wallosSettingsMessages } from './WallosSettings.messages';
 
 interface WallosSettingsData {
@@ -189,6 +190,8 @@ export function WallosSettings() {
         setHasKey(loaded.hasKey);
         setApiKey('');
         setSaveNotice({ tone: 'success', text: t('status.saved') });
+        // The dashboard shows the last check (maybe "not set up"); refresh it for the new settings.
+        void syncStore.requestRun();
       })
       .catch((error: unknown) => {
         const code = error instanceof ApiError ? error.code : '';

@@ -3,6 +3,7 @@ import { SaveFooter, SettingsCard } from '@/components/settings/SettingsCard';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
 import { ApiError, apiRequest } from '@/lib/api';
+import { syncStore } from '@/lib/sync-check';
 import {
   fetchBaseCurrency,
   fetchBudgets,
@@ -288,6 +289,8 @@ export function ActualSettings() {
       .then(() => (pick === null ? undefined : saveBudget(pick)))
       .then(() => {
         setStatus({ kind: 'ok', text: pick === null ? 'saved' : 'budgetSaved' });
+        // The dashboard shows the last check (maybe "not set up"); refresh it for the new settings.
+        void syncStore.requestRun();
       })
       .catch(fail);
   };
