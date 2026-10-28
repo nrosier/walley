@@ -1,10 +1,7 @@
 /** Verify-email page strings. Other server error codes use errorText (common.messages.ts). Dutch uses formal "u". */
 const en = {
   title: 'Verify your email',
-  prompt: 'Enter the password you chose when you registered to confirm your email address.',
-  password: 'Password',
   submit: 'Confirm email',
-  wrongPassword: 'That is not the password this link was requested with. Try again.',
   legacy:
     'This link was issued by an older version and cannot be used. Register again to get a new link.',
   verifying: 'Confirming your email address...',
@@ -18,10 +15,7 @@ const en = {
 
 const nl: typeof en = {
   title: 'Bevestig uw e-mailadres',
-  prompt: 'Voer het wachtwoord in dat u bij het registreren hebt gekozen om uw e-mailadres te bevestigen.',
-  password: 'Wachtwoord',
   submit: 'E-mail bevestigen',
-  wrongPassword: 'Dit is niet het wachtwoord waarmee deze link is aangevraagd. Probeer het opnieuw.',
   legacy:
     'Deze link is door een oudere versie uitgegeven en kan niet worden gebruikt. Registreer opnieuw om een nieuwe link te ontvangen.',
   verifying: 'Uw e-mailadres wordt bevestigd...',

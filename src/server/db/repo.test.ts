@@ -203,17 +203,39 @@ describe('createUserRepo', () => {
       expect(mine.consumeEmailVerification(tok('c'), later)).toBe(true);
     });
 
-    it('consume applies the pending hash of the newest token, and a voided token changes nothing', () => {
+    it('M1: a new token keeps the pending hash of a live earlier token, and a voided token changes nothing', () => {
       const repo = createUserRepo(db, userId);
       const hashOf = () =>
         (db.$client.prepare('SELECT password_hash AS h FROM users WHERE id = ?').get(userId) as { h: string | null }).h;
       repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'hash-first' });
       repo.createEmailVerification({ idHash: tok('b'), now: t0, expiresAt: live, pendingPasswordHash: 'hash-second' });
-      // Creating b voided a.
+      // Creating b voided a, and b carries a's pending hash.
+      expect(tokenCount(userId)).toBe(1);
       expect(repo.consumeEmailVerification(tok('a'), t0)).toBe(false);
       expect(hashOf()).toBeNull();
       expect(repo.consumeEmailVerification(tok('b'), t0)).toBe(true);
+      expect(hashOf()).toBe('hash-first');
+    });
+
+    it('M1: with only an expired earlier token, the new token carries the new pending hash', () => {
+      const repo = createUserRepo(db, userId);
+      const hashOf = () =>
+        (db.$client.prepare('SELECT password_hash AS h FROM users WHERE id = ?').get(userId) as { h: string | null }).h;
+      repo.createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: new Date(t0.getTime() + 1_000), pendingPasswordHash: 'hash-first' });
+      const later = new Date(t0.getTime() + 5_000);
+      repo.createEmailVerification({ idHash: tok('b'), now: later, expiresAt: live, pendingPasswordHash: 'hash-second' });
+      expect(tokenCount(userId)).toBe(1);
+      expect(repo.consumeEmailVerification(tok('b'), later)).toBe(true);
       expect(hashOf()).toBe('hash-second');
+    });
+
+    it('M1: another user live token does not lend its pending hash', () => {
+      const pending = (id: string) =>
+        (db.$client.prepare('SELECT pending_password_hash AS h FROM email_verifications WHERE user_id = ?').get(id) as { h: string }).h;
+      createUserRepo(db, otherId).createEmailVerification({ idHash: tok('a'), now: t0, expiresAt: live, pendingPasswordHash: 'theirs' });
+      createUserRepo(db, userId).createEmailVerification({ idHash: tok('b'), now: t0, expiresAt: live, pendingPasswordHash: 'mine' });
+      expect(pending(userId)).toBe('mine');
+      expect(pending(otherId)).toBe('theirs');
     });
 
     it('consume deletes all of the user tokens, and not another user tokens', () => {

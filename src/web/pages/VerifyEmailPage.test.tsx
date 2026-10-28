@@ -1,7 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import { runVerification, takeToken, VerifyEmailView, type VerifyState } from './VerifyEmailPage';
+import pageSource from './VerifyEmailPage.tsx?raw';
 
 const TOKEN = 'abc123SECRETtoken';
 
@@ -26,8 +28,7 @@ const render = (state: VerifyState, locale: Locale = 'en') =>
     </I18nProvider>,
   );
 
-const PASSWORD = 'correct horse battery staple';
-const run = (impl: typeof fetch) => runVerification({ token: TOKEN, password: PASSWORD, fetchImpl: impl });
+const run = (impl: typeof fetch) => runVerification({ token: TOKEN, fetchImpl: impl });
 
 describe('takeToken', () => {
   it('returns the token and clears the hash', () => {
@@ -46,21 +47,15 @@ describe('takeToken', () => {
 });
 
 describe('runVerification', () => {
-  it('posts the token and password once, then reports success on 204', async () => {
+  it('posts {token} only, once, then reports success on 204', async () => {
     const { impl, calls } = fakeFetch(204);
     const state = await run(impl);
     expect(state).toEqual({ kind: 'success' });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe('/api/auth/verify-email');
     expect(calls[0]?.init?.method).toBe('POST');
-    expect(calls[0]?.init?.body).toBe(JSON.stringify({ token: TOKEN, password: PASSWORD }));
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ token: TOKEN }));
     expect(JSON.stringify(state)).not.toContain(TOKEN);
-    expect(JSON.stringify(state)).not.toContain(PASSWORD);
-  });
-
-  it('keeps the form with a wrong-password flag on 401 invalid_password', async () => {
-    const { impl } = fakeFetch(401, { error: 'invalid_password' });
-    expect(await run(impl)).toEqual({ kind: 'form', wrongPassword: true });
   });
 
   it('reports an expired link on 400 invalid_token', async () => {
@@ -85,17 +80,16 @@ describe('runVerification', () => {
 });
 
 describe('VerifyEmailView', () => {
-  it('asks for the password with a password input', () => {
+  it('M2: renders a Confirm button and no password field', () => {
     const html = render({ kind: 'form' });
-    expect(html).toContain('type="password"');
-    expect(html).toContain('Enter the password you chose');
+    expect(html).toMatch(/<button type="submit"[^>]*>Confirm email<\/button>/);
+    expect(html).not.toContain('<input');
+    expect(html).not.toContain('type="password"');
+    expect(html.toLowerCase()).not.toContain('password');
     expect(html).not.toContain('role="alert"');
   });
-  it('shows the wrong-password message and keeps the form', () => {
-    const html = render({ kind: 'form', wrongPassword: true });
-    expect(html).toContain('type="password"');
-    expect(html).toContain('role="alert"');
-    expect(html).toContain('not the password this link was requested with');
+  it('M2: disables the Confirm button while verifying', () => {
+    expect(render({ kind: 'verifying' })).toMatch(/<button type="submit" disabled=""/);
   });
   it('shows the legacy-link message', () => {
     expect(render({ kind: 'legacy' })).toContain('older version');
@@ -121,7 +115,7 @@ describe('VerifyEmailView', () => {
     expect(render({ kind: 'verifying' })).not.toContain('href=');
   });
   it('renders in Dutch', () => {
-    expect(render({ kind: 'form' }, 'nl')).toContain('Voer het wachtwoord in');
+    expect(render({ kind: 'form' }, 'nl')).toContain('E-mail bevestigen');
     expect(render({ kind: 'success' }, 'nl')).toContain('Uw e-mailadres is bevestigd.');
     expect(render({ kind: 'invalid' }, 'nl')).toContain('24 uur');
   });
@@ -129,12 +123,46 @@ describe('VerifyEmailView', () => {
 
 describe('VerifyEmailView styling', () => {
   it('uses the same centred auth card, brand mark, 44px controls and alert as the login page', () => {
-    const html = render({ kind: 'form', wrongPassword: true });
+    const html = render({ kind: 'verifying' });
     expect(html).toContain('min-h-dvh items-center justify-center');
     expect(html).toMatch(/data-slot="brand-mark"[^>]*>W</);
-    expect(html).toMatch(/<input[^>]*class="h-11 /);
     expect(html).toMatch(/<button type="submit"[^>]*class="[^"]*h-11/);
     expect(html.indexOf('data-slot="alert"')).toBeLessThan(html.indexOf('type="submit"'));
     expect(render({ kind: 'success' })).toContain('data-variant="success"');
+  });
+});
+
+describe('VerifyEmailPage does not post on mount (M2)', () => {
+  const source = ts.createSourceFile('VerifyEmailPage.tsx', pageSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+
+  /** The source text of every callback passed to useEffect / useLayoutEffect in the file. */
+  const effectBodies = (): string[] => {
+    const bodies: string[] = [];
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && /^use(Layout)?Effect$/.test(node.expression.text)) {
+        const callback = node.arguments[0];
+        if (callback !== undefined) bodies.push(callback.getText(source));
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    return bodies;
+  };
+
+  it('has no fetch, verification or submit call in any effect', () => {
+    const bodies = effectBodies();
+    expect(bodies.length).toBeGreaterThan(0);
+    for (const body of bodies) {
+      expect(body).not.toMatch(/runVerification|apiRequest|fetch|confirm\(|submit|onSubmit|requestSubmit/);
+    }
+  });
+
+  it('calls runVerification only from the click handler, with the token only', () => {
+    const calls = pageSource.match(/runVerification\(\{[^}]*\}\)/g) ?? [];
+    expect(calls).toEqual(['runVerification({ token: token.current })']);
+    expect(pageSource).toMatch(/const confirm = \(\) => \{[\s\S]*?runVerification\(/);
+    expect(pageSource).toContain('onSubmit={confirm}');
+    // A second click before the re-render does not post again.
+    expect(pageSource).toMatch(/if \(inFlight\.current[^)]*\) return;\s*inFlight\.current = true;/);
   });
 });

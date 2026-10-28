@@ -11,7 +11,7 @@
  * (`findEmailVerification`), whose result is then bound here as the user id.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
 import type { AuthMethod } from '../../lib/auth-mode.js';
 import { parseRate } from '../../lib/currency-convert.js';
 import type { MatchStatus } from '../../lib/match-status.js';
@@ -124,7 +124,12 @@ export interface UserRepo {
   readonly userId: string;
   getKeySalt(): Buffer | undefined;
   getEmail(): string | undefined;
-  /** Voids every earlier verification token of this user and inserts the new one, in one transaction. */
+  /**
+   * Voids every earlier verification token of this user and inserts the new one, in one
+   * transaction. When this user already has a live (unexpired) token with a pending password
+   * hash, the new token keeps that hash and `input.pendingPasswordHash` is discarded; otherwise
+   * the new token carries `input.pendingPasswordHash`.
+   */
   createEmailVerification(input: EmailVerificationInput): void;
   /**
    * Consumes a verification token owned by this user: deletes it when it matches and has not
@@ -326,6 +331,22 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
 
     createEmailVerification(input) {
       db.transaction((tx) => {
+        // A live (unexpired, unused) token keeps its pending password: a repeat registration
+        // re-sends the link but does not replace the first registrant's password (issue 132, M1).
+        const live = tx
+          .select({ pending: emailVerifications.pendingPasswordHash })
+          .from(emailVerifications)
+          .where(
+            and(
+              eq(emailVerifications.userId, userId),
+              gt(emailVerifications.expiresAt, input.now),
+              isNotNull(emailVerifications.pendingPasswordHash),
+            ),
+          )
+          .orderBy(desc(emailVerifications.createdAt))
+          .limit(1)
+          .get();
+        const pendingPasswordHash = live?.pending ?? input.pendingPasswordHash;
         // A new registration voids every earlier token of this user.
         tx.delete(emailVerifications).where(eq(emailVerifications.userId, userId)).run();
         tx.insert(emailVerifications)
@@ -333,7 +354,7 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
             id: input.idHash,
             userId,
             expiresAt: input.expiresAt,
-            pendingPasswordHash: input.pendingPasswordHash,
+            pendingPasswordHash,
             createdAt: input.now,
           })
           .run();

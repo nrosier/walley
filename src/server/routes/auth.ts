@@ -216,7 +216,8 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
       };
       // Stores only the hash of a fresh token and mails the link. Every older token of this user
       // is voided. The registrant's password hash rides on the token, never on the user, until
-      // the token is used.
+      // the token is used. If the user already has a live token, the repo keeps that token's
+      // pending hash and this registrant's hash is discarded (issue 132, M1).
       const issueVerification = (userId: string, pendingPasswordHash: string): void => {
         const token = randomBytes(32).toString('hex');
         const issuedAt = now();
@@ -235,7 +236,8 @@ export const authRoutes: FastifyPluginAsync<AuthRoutesOptions> = async (app, opt
           const user = createUser(db, { email, passwordHash: null });
           issueVerification(user.id, passwordHash);
         } else if (!existing.emailVerified) {
-          // The new token carries the new registrant's hash and voids the earlier tokens.
+          // A fresh link that voids the earlier tokens. It keeps the pending hash of a live
+          // earlier token; only with no live token does it carry this registrant's hash.
           issueVerification(existing.userId, passwordHash);
         } else {
           sendAlreadyRegistered();

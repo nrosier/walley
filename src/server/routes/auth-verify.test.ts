@@ -105,6 +105,14 @@ function userRow(db: AppDatabase, email: string) {
     .get(email) as { hash: string | null; verifiedAt: number | null } | undefined;
 }
 
+/** The pending password hash on the token row for this raw token, or undefined if there is no row. */
+function pendingHash(db: AppDatabase, token: string): string | null | undefined {
+  const row = db.$client
+    .prepare('select pending_password_hash as h from email_verifications where id = ?')
+    .get(hashToken(token)) as { h: string | null } | undefined;
+  return row?.h;
+}
+
 function tokenCount(db: AppDatabase): number {
   return (db.$client.prepare('select count(*) as n from email_verifications').get() as { n: number }).n;
 }
@@ -406,24 +414,53 @@ describe('verify-email link token', () => {
     expect(loser.body).toBe((await verify(t, '0'.repeat(64))).body);
   });
 
-  it('a registration for someone else address gives the registrant no access to that account', async () => {
+  it('M1: a second registration inside the live window keeps the first pending password, so only the first password works after verification', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
-    await register(t, 'victim@example.test', ATTACKER);
+    const first = await register(t, 'victim@example.test', ATTACKER);
+    expect(first.statusCode).toBe(202);
+    expect(first.headers['set-cookie']).toBeUndefined();
+    expect(first.cookies).toHaveLength(0);
     const attackerLink = lastToken(mailer);
+    const attackerHash = pendingHash(t.db, attackerLink);
+    expect(attackerHash?.startsWith('$argon2id$')).toBe(true);
     // The link went to the victim's inbox; without it the registrant has no session and no API access.
     const attempt = await login(t, 'victim@example.test', ATTACKER);
     expect(attempt.statusCode).toBe(401);
     expect(attempt.cookies).toHaveLength(0);
     expect((await t.app.inject({ method: 'GET', url: '/api/auth/me' })).statusCode).toBe(401);
-    // The victim signs up for real: the earlier link is void, and only the victim's password works.
-    await register(t, 'victim@example.test', VICTIM);
+
+    // The victim registers inside the live 24-hour window: the pending password is not replaced.
+    const second = await register(t, 'victim@example.test', VICTIM);
+    expect(second.statusCode).toBe(202);
+    expect(second.body).toBe(ACCEPTED_BODY);
+    expect(second.headers['set-cookie']).toBeUndefined();
+    expect(second.cookies).toHaveLength(0);
+    // A fresh link is mailed to the address, and it carries the first registrant's hash.
+    expect(mailer.sent).toHaveLength(2);
+    expect(mailer.sent[1]?.to).toBe('victim@example.test');
+    const liveLink = lastToken(mailer);
+    expect(liveLink).not.toBe(attackerLink);
+    expect(pendingHash(t.db, liveLink)).toBe(attackerHash);
+    // Only the earlier link of this address is voided; the user is untouched until a link is used.
+    expect(pendingHash(t.db, attackerLink)).toBeUndefined();
+    expect(tokenCount(t.db)).toBe(1);
+    expect(userRow(t.db, 'victim@example.test')).toEqual({ hash: null, verifiedAt: null });
     const voided = await verify(t, attackerLink);
     expect(voided.statusCode).toBe(400);
     expect(voided.json()).toEqual({ error: 'invalid_token' });
-    expect((await verify(t, lastToken(mailer))).statusCode).toBe(204);
-    expect((await login(t, 'victim@example.test', VICTIM)).statusCode).toBe(200);
-    expect((await login(t, 'victim@example.test', ATTACKER)).statusCode).toBe(401);
+
+    // Following the link activates the account with the first password, and gives no session.
+    const activated = await verify(t, liveLink);
+    expect(activated.statusCode).toBe(204);
+    expect(activated.headers['set-cookie']).toBeUndefined();
+    expect(activated.cookies).toHaveLength(0);
+    expect((await t.app.inject({ method: 'GET', url: '/api/auth/me' })).statusCode).toBe(401);
+    const withSecond = await login(t, 'victim@example.test', VICTIM);
+    expect(withSecond.statusCode).toBe(401);
+    expect(withSecond.json()).toEqual({ error: 'invalid_credentials' });
+    expect(withSecond.cookies).toHaveLength(0);
+    expect((await login(t, 'victim@example.test', ATTACKER)).statusCode).toBe(200);
   });
 
   it('runs no Argon2 derivation on verify', async () => {
@@ -486,26 +523,52 @@ describe('verify-email limits', () => {
 });
 
 describe('re-registering', () => {
-  it('sends a new link with its own pending hash and voids the old token', async () => {
+  it('M1: a repeat registration with a live link keeps the first pending password, voids the old token and mails a new link', async () => {
     const mailer = createCapturingMailer();
     const t = setup({ mailer });
     await register(t, 'again@example.test');
     const oldToken = lastToken(mailer);
-    await register(t, 'again@example.test', NEW_PASSWORD);
+    const firstHash = pendingHash(t.db, oldToken);
+    expect(firstHash?.startsWith('$argon2id$')).toBe(true);
+    const res = await register(t, 'again@example.test', NEW_PASSWORD);
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toBe(ACCEPTED_BODY);
+    expect(res.cookies).toHaveLength(0);
+    expect(mailer.sent).toHaveLength(2);
+    expect(mailer.sent[1]?.to).toBe('again@example.test');
     const newToken = lastToken(mailer);
     expect(newToken).not.toBe(oldToken);
-    // Nothing changes on the user until a token is used; only the newest token is left.
-    expect(userRow(t.db, 'again@example.test')).toEqual({ hash: null, verifiedAt: null });
+    // The new token row carries the first registration's hash; only the newest token is left.
+    expect(pendingHash(t.db, newToken)).toBe(firstHash);
+    expect(pendingHash(t.db, oldToken)).toBeUndefined();
     expect(tokenCount(t.db)).toBe(1);
+    // Nothing changes on the user until a token is used.
+    expect(userRow(t.db, 'again@example.test')).toEqual({ hash: null, verifiedAt: null });
     const stale = await verify(t, oldToken);
     expect(stale.statusCode).toBe(400);
     expect(stale.json()).toEqual({ error: 'invalid_token' });
     expect(userRow(t.db, 'again@example.test')).toEqual({ hash: null, verifiedAt: null });
 
-    // The newest registrant's password is the one that works.
+    // The first registrant's password is the one that works; the second is discarded.
     expect((await verify(t, newToken)).statusCode).toBe(204);
-    expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(200);
-    expect((await login(t, 'again@example.test')).statusCode).toBe(401);
+    expect((await login(t, 'again@example.test')).statusCode).toBe(200);
+    expect((await login(t, 'again@example.test', NEW_PASSWORD)).statusCode).toBe(401);
+  });
+
+  it('M1: a repeat registration with no live link stores the new password', async () => {
+    const mailer = createCapturingMailer();
+    const t = setup({ mailer });
+    await register(t, 'late@example.test');
+    const oldToken = lastToken(mailer);
+    const firstHash = pendingHash(t.db, oldToken);
+    t.clock.advance(VERIFICATION_TOKEN_TTL_MS);
+    await register(t, 'late@example.test', NEW_PASSWORD);
+    const newToken = lastToken(mailer);
+    expect(tokenCount(t.db)).toBe(1);
+    expect(pendingHash(t.db, newToken)).not.toBe(firstHash);
+    expect((await verify(t, newToken)).statusCode).toBe(204);
+    expect((await login(t, 'late@example.test', NEW_PASSWORD)).statusCode).toBe(200);
+    expect((await login(t, 'late@example.test')).statusCode).toBe(401);
   });
 
   it('voids the old token at once, even well inside its 24 hours', async () => {

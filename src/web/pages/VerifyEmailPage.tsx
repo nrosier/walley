@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { AUTH_BUTTON, AUTH_INPUT, AuthCard } from '@/components/auth/AuthCard';
+import { AUTH_BUTTON, AuthCard } from '@/components/auth/AuthCard';
 import { Alert } from '@/components/ui/alert';
 import { useT } from '@/i18n';
 import { apiRequest, ApiError } from '@/lib/api';
 import { verifyEmailPageMessages } from './VerifyEmailPage.messages';
 
 export type VerifyState =
-  | { kind: 'form'; wrongPassword?: boolean }
+  | { kind: 'form' }
   | { kind: 'verifying' }
   | { kind: 'success' }
   | { kind: 'invalid' }
@@ -31,14 +31,12 @@ export function takeToken(hash: string, clearHash: () => void): string | null {
 
 export interface VerifyOptions {
   token: string;
-  /** The password chosen at registration. The server checks it against the hash the token carries. */
-  password: string;
   fetchImpl?: typeof fetch;
 }
 
 /**
- * POSTs the token and password to /api/auth/verify-email. A 401 invalid_password keeps the form so the owner can retry.
- * The token and password are never logged, rendered or kept in the returned state.
+ * POSTs `{ token }` to /api/auth/verify-email. The link is the proof of inbox ownership, so no password is sent.
+ * The token is never logged, rendered or kept in the returned state.
  * Exported for tests (no DOM in the test environment); the page is the only caller.
  */
 // eslint-disable-next-line react-refresh/only-export-components
@@ -46,13 +44,12 @@ export async function runVerification(opts: VerifyOptions): Promise<VerifyState>
   try {
     await apiRequest('/api/auth/verify-email', {
       method: 'POST',
-      body: { token: opts.token, password: opts.password },
+      body: { token: opts.token },
       fetchImpl: opts.fetchImpl,
     });
     return { kind: 'success' };
   } catch (err) {
     if (err instanceof ApiError) {
-      if (err.status === 401 && err.code === 'invalid_password') return { kind: 'form', wrongPassword: true };
       if (err.status === 400 && err.code === 'token_without_password') return { kind: 'legacy' };
       if (err.status === 400 && err.code === 'invalid_token') return { kind: 'invalid' };
       if (err.status === 403 && err.code === 'local_auth_disabled') return { kind: 'disabled' };
@@ -69,24 +66,22 @@ function clearLocationHash(): void {
   window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
 }
 
-const inputClass = AUTH_INPUT;
 const buttonClass = AUTH_BUTTON;
 
-/** Renders one verification state. `onSubmit` receives the password typed into the form. */
+/** Renders one verification state. `onSubmit` is called when the owner clicks Confirm. */
 export function VerifyEmailView({
   state,
   onSubmit,
 }: {
   state: VerifyState;
-  onSubmit?: (password: string) => void;
+  onSubmit?: () => void;
 }) {
   const { t, errorText } = useT(verifyEmailPageMessages);
-  const [password, setPassword] = useState('');
   let message: string | null = null;
   let isError = true;
   switch (state.kind) {
     case 'form':
-      message = state.wrongPassword === true ? t('wrongPassword') : null;
+      message = null;
       break;
     case 'verifying':
       message = t('verifying');
@@ -120,24 +115,9 @@ export function VerifyEmailView({
           className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
-            onSubmit?.(password);
+            onSubmit?.();
           }}
         >
-          <p className="text-sm text-muted">{t('prompt')}</p>
-          <label className="block text-sm">
-            <span className="mb-1 block text-muted">{t('password')}</span>
-            <input
-              type="password"
-              name="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-              }}
-              className={inputClass}
-            />
-          </label>
           {message === null ? null : <Alert variant={isError ? 'error' : 'info'}>{message}</Alert>}
           <button type="submit" disabled={state.kind === 'verifying'} aria-busy={state.kind === 'verifying'} className={buttonClass}>
             {t('submit')}
@@ -158,9 +138,14 @@ export function VerifyEmailView({
   );
 }
 
-/** Verify-email page at /verify-email#token=...: asks for the registration password, then confirms the address once. */
+/**
+ * Verify-email page at /verify-email#token=...: shows a Confirm button and posts the token only when it is clicked
+ * (issue 132, M2). Nothing is posted on mount; the mount effect only moves the token from the hash into memory.
+ */
 export function VerifyEmailPage() {
   const token = useRef<string | null | undefined>(undefined);
+  // Set on the first click, so a second click before the re-render cannot post again.
+  const inFlight = useRef(false);
   const [state, setState] = useState<VerifyState>({ kind: 'form' });
 
   useEffect(() => {
@@ -170,11 +155,12 @@ export function VerifyEmailPage() {
     if (token.current === null) setState({ kind: 'missing' });
   }, []);
 
-  const submit = (password: string) => {
-    if (token.current === null || token.current === undefined) return;
+  const confirm = () => {
+    if (inFlight.current || token.current === null || token.current === undefined) return;
+    inFlight.current = true;
     setState({ kind: 'verifying' });
-    void runVerification({ token: token.current, password }).then(setState);
+    void runVerification({ token: token.current }).then(setState);
   };
 
-  return <VerifyEmailView state={state} onSubmit={submit} />;
+  return <VerifyEmailView state={state} onSubmit={confirm} />;
 }
