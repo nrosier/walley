@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import type { Route } from '@/lib/route';
+import appSrc from '../App.tsx?raw';
+import { documentTitle } from '../lib/document-title';
 import { AppShell } from './AppShell';
 
 const noop = () => undefined;
@@ -78,5 +80,37 @@ describe('AppShell', () => {
     expect(html).toContain('w-full');
     expect(html).toContain('min-h-(--control-h)');
     expect(html).toMatch(/<span class="sr-only md:not-sr-only">Matches<\/span>/);
+  });
+  it('Below 768px the header wraps, tabs form a second row, and nothing clips; title links to /sync', () => {
+    const html = render('sync');
+    const header = /<header class="([^"]*)"/.exec(html)?.[1] ?? '';
+    expect(header).toContain('flex-wrap');
+    expect(header).not.toMatch(/overflow-(hidden|x-auto|x-scroll)/);
+    // The tab nav drops to its own full-width row below md and joins the header row from md up.
+    const nav = /<nav [^>]*class="([^"]*)"/.exec(html)?.[1] ?? '';
+    for (const cls of ['order-last', 'w-full', 'md:order-none', 'md:w-auto', 'md:flex-1']) expect(nav).toContain(cls);
+    expect(nav).not.toMatch(/overflow-(hidden|x-auto|x-scroll)/);
+    // Tabs share the row and keep a name when icon-only; the email is hidden below md instead of clipping.
+    expect(html.match(/class="[^"]*\bflex-1\b[^"]*"[^>]*>(?:<svg|<span)/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+    expect(html).toMatch(/<span class="sr-only md:not-sr-only">Sync Dashboard<\/span>/);
+    expect(html).toMatch(/<span class="hidden max-w-48 truncate md:inline">a@example.test<\/span>/);
+    // Title links to /sync from every route and is a 44px target on narrow screens.
+    for (const route of ['sync', 'matches', 'settings'] as const) {
+      expect(render(route)).toMatch(/<a href="\/sync"[^>]*class="[^"]*min-h-\(--control-h\)[^"]*"[^>]*>Walley<\/a>/);
+    }
+  });
+  it('Each route sets its own <title> (for example "Matches - Walley"); skip link is first focusable', () => {
+    const titles = (['sync', 'matches', 'settings'] as const).map((r) => documentTitle(r, 'en'));
+    expect(titles).toEqual(['Sync Dashboard - Walley', 'Matches - Walley', 'Settings - Walley']);
+    expect(documentTitle('settings', 'nl')).toBe('Instellingen - Walley');
+    // App sets the title for every route (including login and verify-email) before choosing what to render.
+    expect(appSrc).toMatch(/const route = useRoute\(\);\s*useDocumentTitle\(route\);/);
+    for (const route of ['sync', 'matches', 'settings'] as const) {
+      const html = render(route);
+      // The first focusable element in the shell is the skip link; no positive tabindex jumps ahead of it.
+      const first = /<(?:a|button|input|select|textarea)\b[^>]*>|<[^>]*\btabindex="[^"]*"[^>]*>/.exec(html)?.[0] ?? '';
+      expect(first, route).toContain('href="#main"');
+      expect(html).not.toMatch(/tabindex="[1-9]/);
+    }
   });
 });

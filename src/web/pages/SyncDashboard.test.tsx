@@ -78,6 +78,37 @@ describe('SyncDashboard states', () => {
     expect(html).toContain('Suggested match: Netflix');
     expect(html).toContain('aria-label="Link Netflix to NETFLIX.COM"');
   });
+  it('Link shows a "Suggested match: X" line when a candidate exists, otherwise Create appears', () => {
+    const html = render(ready());
+    const wallos = columnOf(html, 'wallos');
+    const actual = columnOf(html, 'actual');
+    const rowOf = (column: string, id: string) => {
+      const start = column.indexOf(`data-row-id="${id}"`);
+      expect(start, id).toBeGreaterThan(-1);
+      const next = column.indexOf('data-row-id=', start + 1);
+      return column.slice(start, next === -1 ? undefined : next);
+    };
+    // Candidate: the line names the other side, Link is the action, Create is absent.
+    const netflix = rowOf(wallos, 'w1');
+    expect(netflix).toContain('Suggested match: NETFLIX.COM');
+    expect(netflix).toMatch(/>Link<\/button>/);
+    expect(netflix).not.toContain('>Create in');
+    const netflixActual = rowOf(actual, 'a1');
+    expect(netflixActual).toContain('Suggested match: Netflix');
+    expect(netflixActual).toMatch(/>Link<\/button>/);
+    // No candidate: no suggestion line, no Link, Create instead.
+    const gym = rowOf(wallos, 'w2');
+    expect(gym).not.toContain('Suggested match');
+    expect(gym).not.toContain('>Link<');
+    expect(gym).toContain('>Create in AB<');
+    const rent = rowOf(actual, 'a2');
+    expect(rent).not.toContain('Suggested match');
+    expect(rent).toContain('>Create in Wallos<');
+    // Both strings exist in nl.
+    const nl = render(ready(), {}, 'nl');
+    expect(nl).toContain('Voorgestelde koppeling: NETFLIX.COM');
+    expect(nl).toContain('Aanmaken in AB');
+  });
   it('Create appears only on rows without a candidate and opens the pre-fill modals', () => {
     const html = render(ready());
     expect(columnOf(html, 'wallos').match(/>Create in AB<\/button>/g)).toHaveLength(1);
