@@ -28,6 +28,8 @@ const TEXT_PAIRS: Array<[string, string]> = [
   ['danger', 'danger-bg'],
   ['danger-line', 'card'],
   ['info', 'card'],
+  ['info', 'background'],
+  ['info', 'surface-2'],
   ['info', 'info-bg'],
   ['accent-text', 'card'],
   ['accent-text', 'background'],
@@ -111,8 +113,9 @@ describe.each(THEMES)('%s theme contrast', (theme) => {
     expect(ratio(theme, 'input-border', surface)).toBeGreaterThanOrEqual(3.0);
   });
 
-  it('danger-line on card and surface-2 is at least 3.0', () => {
+  it('danger-line on card, background and surface-2 is at least 3.0', () => {
     expect(ratio(theme, 'danger-line', 'card')).toBeGreaterThanOrEqual(3.0);
+    expect(ratio(theme, 'danger-line', 'background')).toBeGreaterThanOrEqual(3.0);
     expect(ratio(theme, 'danger-line', 'surface-2')).toBeGreaterThanOrEqual(3.0);
   });
 
