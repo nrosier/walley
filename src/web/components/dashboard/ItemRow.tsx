@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import type { SyncCandidate } from '../../../lib/sync-check-types';
 import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
+import { cycleLabel } from '@/lib/billing-cycle-label';
 import { type RowModel, type Side } from '@/lib/sync-check';
 import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
 import { StatusBadge } from '../StatusBadge';
@@ -108,7 +109,14 @@ export function ItemRow(props: ItemRowProps) {
           </Badge>
         ) : null}
         {row.ignored ? <StatusBadge kind="ignored" /> : null}
-        <span className="text-right">{amount}</span>
+        <span className="flex flex-wrap items-baseline justify-end gap-x-2 text-right">
+          {amount}
+          {row.cycle === undefined || row.ignored ? null : (
+            <span className="text-xs text-muted" data-cycle={row.cycle.key}>
+              {cycleLabel(t, row.cycle)}
+            </span>
+          )}
+        </span>
         {row.ignored ? null : best !== undefined ? (
           <Button
             type="button"

@@ -4,6 +4,7 @@
  * fakes. Every read and write goes through the caller's user-scoped repo. Nothing here logs, and
  * no error carries a name or an amount.
  */
+import { billingCycleOf } from '../../lib/billing-cycle.js';
 import { actualToWallos, FrequencyMappingError } from '../../lib/frequency-mapper.js';
 import { CurrencyConversionError } from '../../lib/currency-convert.js';
 import { amountWithinTolerance, DEFAULT_TOLERANCE_PERCENT, rangeMidpointCents } from '../../lib/amount-match.js';
@@ -343,13 +344,11 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
 
   const unlinkedWallos = classified.unlinkedWallosIds.flatMap((id) => wallosSides.get(id) ?? []);
   const unlinkedActual = classified.unlinkedActualIds.flatMap((id) => actualSides.get(id) ?? []);
-  const toItem = ({ id, name, amountCents, isRange, reason }: Side): SyncItem => ({
-    id,
-    name,
-    amountCents,
-    isRange,
-    reason,
-  });
+  // #136: unlinked items only. Both sides reach the same mapping through their hashed fields.
+  const toItem = ({ id, name, amountCents, isRange, reason, fields }: Side): SyncItem => {
+    const cycle = fields === null ? null : billingCycleOf(fields.frequency, fields.interval);
+    return { id, name, amountCents, isRange, reason, ...(cycle === null ? {} : { cycle }) };
+  };
 
   // A candidate must pass BOTH the name and the amount rule.
   const candidates: SyncCandidate[] = [];

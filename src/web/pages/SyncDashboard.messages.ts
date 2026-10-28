@@ -51,6 +51,16 @@ const en = {
     tryAgain: 'Try again',
     tryAgainNamed: 'Try again: {name}',
   },
+  cycle: {
+    monthly: 'Every month',
+    monthlyN: 'Every {n} months',
+    yearly: 'Every year',
+    yearlyN: 'Every {n} years',
+    weekly: 'Every week',
+    weeklyN: 'Every {n} weeks',
+    custom_days: 'Every day',
+    custom_daysN: 'Every {n} days',
+  },
   reason: {
     patterns_unsupported: 'Repeat pattern not supported',
     no_recurrence: 'No recurrence',
@@ -113,6 +123,16 @@ const nl: typeof en = {
     nothingChanged: 'Er is niets gewijzigd.',
     tryAgain: 'Opnieuw proberen',
     tryAgainNamed: 'Opnieuw proberen: {name}',
+  },
+  cycle: {
+    monthly: 'Elke maand',
+    monthlyN: 'Elke {n} maanden',
+    yearly: 'Elk jaar',
+    yearlyN: 'Elke {n} jaar',
+    weekly: 'Elke week',
+    weeklyN: 'Elke {n} weken',
+    custom_days: 'Elke dag',
+    custom_daysN: 'Elke {n} dagen',
   },
   reason: {
     patterns_unsupported: 'Herhalingspatroon niet ondersteund',

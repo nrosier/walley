@@ -20,7 +20,10 @@ afterEach(async () => {
 
 function setup(overrides: Partial<CreateDeps> = {}) {
   const t = makeAuthApp({ mailer: createCapturingMailer() });
-  const owned: Record<string, { sub: number; sched: string; subName: string; schedName: string }> = {};
+  const owned: Record<
+    string,
+    { sub: number; sched: string; subName: string; schedName: string; cycle: number; every: number; recur: { frequency: string; interval?: number } }
+  > = {};
   const createSchedule = vi.fn();
   const createSubscription = vi.fn();
   const deps: CreateDeps = {
@@ -31,8 +34,8 @@ function setup(overrides: Partial<CreateDeps> = {}) {
           name: owned[id]?.subName ?? 'Netflix',
           price: '12.50',
           currency_id: 1,
-          cycle: 3,
-          frequency: 1,
+          cycle: owned[id]?.cycle ?? 3,
+          frequency: owned[id]?.every ?? 1,
           next_payment: '2026-11-03',
           start_date: '2026-01-01',
           inactive: 0,
@@ -54,7 +57,7 @@ function setup(overrides: Partial<CreateDeps> = {}) {
             name: owned[id]?.schedName ?? 'Spotify',
             amount: -999,
             amountOp: 'is',
-            date: { frequency: 'monthly', start: '2026-01-01' },
+            date: { ...(owned[id]?.recur ?? { frequency: 'monthly' }), start: '2026-01-01' },
           },
         ],
       } as never),
@@ -76,8 +79,9 @@ function setup(overrides: Partial<CreateDeps> = {}) {
   void t.app.close();
   const a = makeUser(t.db);
   const b = makeUser(t.db);
-  owned[a] = { sub: 7, sched: 'sch-a', subName: 'Netflix', schedName: 'Spotify' };
-  owned[b] = { sub: 8, sched: 'sch-b', subName: 'Bravoflix', schedName: 'Bravotunes' };
+  // A: every 7 days (Wallos) and yearly (Actual). B: every 2 weeks (Wallos) and every 3 months (Actual).
+  owned[a] = { sub: 7, sched: 'sch-a', subName: 'Netflix', schedName: 'Spotify', cycle: 1, every: 7, recur: { frequency: 'yearly' } };
+  owned[b] = { sub: 8, sched: 'sch-b', subName: 'Bravoflix', schedName: 'Bravotunes', cycle: 2, every: 2, recur: { frequency: 'monthly', interval: 3 } };
   const ctx = { db: t.db, clock: t.clock };
   return { app, db: t.db, a, b, sa: signIn(ctx, a), sb: signIn(ctx, b), createSchedule, createSubscription };
 }
@@ -177,5 +181,50 @@ describe('POST /api/sync/check', () => {
     expect(res.statusCode).toBe(500);
     expect(res.json()).toEqual({ error: 'internal_error' });
     expect(res.body).not.toMatch(SECRETISH);
+  });
+});
+
+interface Item {
+  id: string;
+  cycle?: { key: string; count: number };
+}
+interface Body {
+  unlinkedWallos: Item[];
+  unlinkedActual: Item[];
+  linked: Record<string, unknown>[];
+  ignored: Record<string, unknown>[];
+}
+
+describe('POST /api/sync/check billing cycle (#136)', () => {
+  it('includes a billing cycle for each unlinked Wallos subscription and Actual schedule', async () => {
+    const { app, sa } = setup();
+    const res = await injectAs(app, sa, { method: 'POST', url: URL });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<Body>();
+    expect(body.unlinkedWallos).toEqual([expect.objectContaining({ id: '7', cycle: { key: 'custom_days', count: 7 } })]);
+    expect(body.unlinkedActual).toEqual([expect.objectContaining({ id: 'sch-a', cycle: { key: 'yearly', count: 1 } })]);
+  });
+
+  it('keeps user B\'s sync result free of user A\'s items and carries only B\'s cycles', async () => {
+    const { app, sb } = setup();
+    const res = await injectAs(app, sb, { method: 'POST', url: URL });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toMatch(/"7"|sch-a|Netflix|Spotify/);
+    const body = res.json<Body>();
+    expect(body.unlinkedWallos.map((i) => [i.id, i.cycle])).toEqual([['8', { key: 'weekly', count: 2 }]]);
+    expect(body.unlinkedActual.map((i) => [i.id, i.cycle])).toEqual([['sch-b', { key: 'monthly', count: 3 }]]);
+  });
+
+  it('leaves linked and ignored rows without a cycle field', async () => {
+    const { app, db, a, sa } = setup();
+    const repo = createUserRepo(db, a);
+    repo.insertMatch({ wallosId: '7', actualScheduleId: null, status: 'IGNORED_WALLOS' });
+    repo.insertMatch({ wallosId: null, actualScheduleId: 'sch-a', status: 'IGNORED_ACTUAL' });
+    const res = await injectAs(app, sa, { method: 'POST', url: URL });
+    const body = res.json<Body>();
+    expect(body.unlinkedWallos).toEqual([]);
+    expect(body.unlinkedActual).toEqual([]);
+    expect(body.ignored).toHaveLength(2);
+    for (const row of body.ignored) expect(Object.keys(row)).not.toContain('cycle');
   });
 });

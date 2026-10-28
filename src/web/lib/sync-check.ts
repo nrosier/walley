@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import type { BillingCycle } from '../../lib/billing-cycle';
 import type {
   SyncCandidate,
   SyncCheckResult,
@@ -122,6 +123,8 @@ export interface RowModel {
   readonly ignored: boolean;
   /** Id of the ignore record; null on rows that are not ignored. */
   readonly matchId: string | null;
+  /** Billing cycle of an unlinked row (#136); absent on ignored rows and unmappable items. */
+  readonly cycle?: BillingCycle;
 }
 
 const fromItem = (item: SyncItem): RowModel => ({
@@ -132,6 +135,7 @@ const fromItem = (item: SyncItem): RowModel => ({
   reason: item.reason,
   ignored: false,
   matchId: null,
+  ...(item.cycle === undefined ? {} : { cycle: item.cycle }),
 });
 
 const fromIgnored = (row: SyncIgnored): RowModel => ({

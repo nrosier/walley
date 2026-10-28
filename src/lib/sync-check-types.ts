@@ -2,6 +2,7 @@
  * Response types of POST /api/sync/check, shared by the server (`src/server/matching/sync-check.ts`)
  * and the web app. Types only, browser-safe.
  */
+import type { BillingCycle } from './billing-cycle.js';
 import type { MatchAmount } from './match-fields.js';
 import type { MatchStatus } from './match-status.js';
 
@@ -24,6 +25,11 @@ export interface SyncItem {
   readonly amountCents: number | null;
   readonly isRange: boolean;
   readonly reason: UnmappableReason | null;
+  /**
+   * Billing cycle of an unlinked item (#136), from the shared mapping for both sides. Absent when
+   * the item is unmappable and on every linked or ignored row, so those shapes are unchanged.
+   */
+  readonly cycle?: BillingCycle;
 }
 
 export interface SyncCandidate {
