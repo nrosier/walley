@@ -6,6 +6,7 @@ import { applyResolve, driftedFields, performResolve } from '@/lib/resolve-misma
 import type { SyncCheckResult, SyncMismatch, SyncMismatchFields } from '../../../lib/sync-check-types';
 import src from './DiffModal.tsx?raw';
 import shellSrc from '../ui/dialog-shell.tsx?raw';
+import matchesSrc from '../../pages/Matches.tsx?raw';
 import { DiffModal } from './DiffModal';
 import { diffModalMessages, isOverwriteErrorCode, OVERWRITE_ERROR_CODES } from './DiffModal.messages';
 
@@ -221,5 +222,19 @@ describe('DiffModal design contract', () => {
     expect(src).toContain('Intl.DateTimeFormat');
     expect(src).toContain('frequencies.');
     expect(diffModalMessages.en.frequencies.yearly).toBe('Yearly');
+  });
+});
+
+describe('Matches and diff modal checklist (issue 113)', () => {
+  it('Focus returns to the Review button on close', () => {
+    // The modal remembers the match under review, and on close focuses the row's Review button.
+    expect(src).toContain('lastId.current = openId');
+    const close = src.slice(src.indexOf('onCloseAutoFocus'), src.indexOf('footer={'));
+    expect(close).toContain('[data-review-for=');
+    expect(close).toContain('event.preventDefault()');
+    expect(close).toContain('review.focus()');
+    // Matches renders the hook the modal looks for, on Mismatch rows only.
+    expect(matchesSrc).toContain('data-review-for={row.matchId}');
+    expect(matchesSrc).toContain("row.status === 'MISMATCH_DETECTED' && onReview !== undefined");
   });
 });

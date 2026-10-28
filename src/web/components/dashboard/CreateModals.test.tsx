@@ -392,3 +392,15 @@ describe('close on success and toast notices (issue 110)', () => {
     for (const src of [actualSrc, wallosSrc]) expect(src).toContain('{errorCode !== null ? <Alert variant="error">{errorText(errorCode)}</Alert> : null}');
   });
 });
+
+describe('Create modals checklist (issue 113)', () => {
+  it('Below 768px the modal is a full-screen sheet', () => {
+    // Both modals open through CreateModalFrame, which renders DialogShell.
+    for (const src of [actualSrc, wallosSrc]) expect(src).toContain('<CreateModalFrame');
+    expect(frameSrc).toContain('<DialogShell');
+    // Below the md breakpoint (768px) the shell fills the viewport with no rounding, border or centring offset.
+    for (const cls of ['max-md:inset-0', 'max-md:h-dvh', 'max-md:max-h-none', 'max-md:max-w-none', 'max-md:translate-x-0', 'max-md:translate-y-0', 'max-md:rounded-none', 'max-md:border-0']) {
+      expect(shellSrc, cls).toContain(cls);
+    }
+  });
+});

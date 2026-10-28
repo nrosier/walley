@@ -6,6 +6,8 @@ import pageSrc from './SettingsPage.tsx?raw';
 import appSrc from '../App.tsx?raw';
 import wallosSrc from './WallosSettings.tsx?raw';
 import actualSrc from './ActualSettings.tsx?raw';
+import matchingSrc from './MatchingSettings.tsx?raw';
+import { settingsPageMessages } from './SettingsPage.messages';
 
 const render = (locale: Locale) =>
   renderToStaticMarkup(
@@ -95,5 +97,48 @@ describe('Settings save refreshes the Sync Dashboard', () => {
     const actual = actualSrc.slice(actualSrc.indexOf('const save = '), actualSrc.indexOf('const loadBudgets'));
     expect(wallos).toContain('syncStore.requestRun()');
     expect(actual).toContain('syncStore.requestRun()');
+  });
+});
+
+describe('Settings checklist (issue 113)', () => {
+  it('Each account card has a single footer Save covering budget pick and tolerance, with "Unsaved changes" / "No unsaved changes"', () => {
+    const html = render('en');
+    for (const [card, form, label] of [
+      ['settings-wallos', 'wallos-settings-form', 'Save Wallos'],
+      ['settings-actual', 'actual-settings-form', 'Save Actual Budget'],
+      ['settings-matching', 'matching-settings-form', 'Save Matching'],
+    ] as const) {
+      const start = html.indexOf(`id="${card}"`);
+      const section = html.slice(start, html.indexOf('</section>', start));
+      const footer = section.slice(section.indexOf('<footer'));
+      expect(footer.match(/type="submit"/g), card).toHaveLength(1);
+      expect(footer, card).toContain(`form="${form}"`);
+      expect(footer, card).toContain(`>${label}<`);
+      expect(footer, card).toContain('No unsaved changes');
+    }
+    // Budget pick only changes the form; the footer Save sends it. Tolerance saves only through the footer.
+    const pick = actualSrc.slice(actualSrc.indexOf('const pickBudget'), actualSrc.indexOf('return (\n    <ActualSettingsView'));
+    expect(pick).not.toContain('saveBudgetChoice');
+    expect(actualSrc.slice(actualSrc.indexOf('const save = '), actualSrc.indexOf('const loadBudgets'))).toContain('saveBudget(pick)');
+    expect(matchingSrc).toContain('<SaveFooter');
+    expect(matchingSrc).not.toMatch(/onBlur|onPointerUp|onKeyUp/);
+    expect(settingsPageMessages.en.save).toEqual({ unsaved: 'Unsaved changes', clean: 'No unsaved changes' });
+  });
+  it('General saves instantly with "Saved"; Theme control is in General and matches the header toggle', () => {
+    const html = render('en');
+    const general = html.slice(html.indexOf('id="settings-general"'), html.indexOf('id="settings-wallos"'));
+    expect(general).toContain('role="radiogroup" aria-label="Theme"');
+    expect(general).not.toContain('type="submit"');
+    expect(general).toContain('role="status"');
+    // Language and theme changes apply at once and flash "Saved".
+    const card = pageSrc.slice(pageSrc.indexOf('function GeneralCard'), pageSrc.indexOf('export function SettingsPage'));
+    expect(card).toContain('<LanguageSelect onChange={flash} />');
+    expect(card).toMatch(/setTheme\(parseTheme\(value\)\);\s*flash\(\);/);
+    expect(card).toContain("t('general.saved')");
+    expect(settingsPageMessages.en.general.saved).toBe('Saved');
+    // The control reads and writes the same theme state the header toggle uses.
+    expect(card).toContain('useThemeControl()');
+    expect(appSrc).toContain('ThemeControlContext.Provider value={themeControl}');
+    expect(appSrc).toContain('onToggleTheme={onToggleTheme}');
   });
 });

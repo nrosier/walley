@@ -435,3 +435,25 @@ describe('Matches orphan actions menu', () => {
     expect(matchesSrc).toMatch(/<RelinkDialog[\s\S]*?candidateIds=\{orphanAction\.row\.relinkCandidateIds\}/);
   });
 });
+
+describe('Matches and diff modal checklist (issue 113)', () => {
+  it('Header is sticky with Wallos / Actual Budget groups; search and counts line work; empty state offers both actions', () => {
+    const html = render({});
+    // Two sticky header levels with the Wallos / Actual Budget group cells.
+    expect(html).toContain('sticky top-0');
+    expect(html).toContain('sticky top-8');
+    expect(html).toContain('>Wallos</th>');
+    expect(html).toContain('>Actual Budget</th>');
+    // Search narrows the rows and the counts line follows.
+    expect(html).toContain('type="search"');
+    expect(html).toContain('3 of 3 pairs, 1 with differences');
+    const filtered = render({ query: 'fitness' });
+    expect(filtered.match(/data-match-row/g)).toHaveLength(1);
+    expect(filtered).toContain('1 of 3 pairs');
+    // The empty state offers Open Sync Dashboard and Run Sync Check.
+    const empty = render({ result: fixture({ linked: [] }) });
+    expect(empty).toContain('href="/sync"');
+    expect(empty).toContain('Open Sync Dashboard');
+    expect(empty.match(/>Run Sync Check</g)).toHaveLength(1);
+  });
+});
