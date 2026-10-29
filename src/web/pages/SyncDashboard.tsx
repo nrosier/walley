@@ -145,7 +145,7 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
       onClick={(e) => {
         followInApp(e, '/settings');
       }}
-      className="inline-flex min-h-(--control-h) items-center rounded-md border border-input-border px-3 text-sm font-medium outline-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="inline-flex min-h-(--control-h) items-center rounded-md border border-input-border px-3 text-sm font-medium hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       {t('failure.checkSettings')}
     </a>

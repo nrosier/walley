@@ -24,7 +24,7 @@ export interface Notice {
 }
 
 const FIELD =
-  'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+  'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 /** Only url and hasKey are taken from a response. The key itself is never read back. */
 // Exported for tests; the module is otherwise a component file.

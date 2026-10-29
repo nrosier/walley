@@ -21,7 +21,7 @@ export function Toolbar(props: ToolbarProps) {
         aria-label={t('toolbar.search')}
         placeholder={t('toolbar.searchPlaceholder')}
         onChange={(e) => props.onQueryChange?.(e.target.value)}
-        className="min-h-(--control-h) w-56 rounded-md border border-input-border bg-background px-3 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring max-md:w-full"
+        className="min-h-(--control-h) w-56 rounded-md border border-input-border bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring max-md:w-full"
       />
       <Button
         type="button"

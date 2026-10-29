@@ -17,7 +17,7 @@ export interface DisclosureProps {
 export function Disclosure({ title, children, defaultOpen, open, onOpenChange, className }: DisclosureProps) {
   return (
     <Collapsible.Root defaultOpen={defaultOpen} open={open} onOpenChange={onOpenChange} className={className}>
-      <Collapsible.Trigger className="group inline-flex min-h-(--control-h) items-center gap-1.5 rounded-md text-sm font-medium outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+      <Collapsible.Trigger className="group inline-flex min-h-(--control-h) items-center gap-1.5 rounded-md text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         <ChevronRight className={cn('size-4 transition-transform group-data-[state=open]:rotate-90')} aria-hidden="true" />
         {title}
       </Collapsible.Trigger>

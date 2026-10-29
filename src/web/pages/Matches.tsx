@@ -133,7 +133,7 @@ export function MatchesView({
             onClick={(e) => {
               followInApp(e, '/sync');
             }}
-            className="inline-flex min-h-(--control-h) items-center rounded-md border border-input-border px-3 text-sm font-medium outline-none hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            className="inline-flex min-h-(--control-h) items-center rounded-md border border-input-border px-3 text-sm font-medium hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             {t('emptyActions.dashboard')}
           </a>
@@ -145,7 +145,7 @@ export function MatchesView({
     body = <p className="text-sm text-muted">{t('noMatches')}</p>;
   } else {
     body = (
-      <div className="max-h-[70vh] overflow-auto rounded-lg border bg-card">
+      <div className="rounded-lg border bg-card max-md:max-h-[70vh] max-md:overflow-auto">
         <table aria-label={t('table.label')} className="w-full border-separate border-spacing-0">
           <thead>
             <tr>
@@ -238,7 +238,7 @@ export function MatchesView({
           aria-label={t('search')}
           placeholder={t('searchPlaceholder')}
           onChange={(e) => onQueryChange?.(e.target.value)}
-          className="min-h-(--control-h) w-56 rounded-md border border-input-border bg-background px-3 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring max-md:w-full"
+          className="min-h-(--control-h) w-56 rounded-md border border-input-border bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring max-md:w-full"
         />
         <label className="flex min-h-(--control-h) items-center gap-2 text-sm">
           <button
@@ -247,7 +247,7 @@ export function MatchesView({
             aria-checked={showIgnored}
             onClick={() => onShowIgnoredChange?.(!showIgnored)}
             className={cn(
-              'relative h-5 w-9 shrink-0 rounded-full border border-input-border outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+              'relative h-5 w-9 shrink-0 rounded-full border border-input-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
               showIgnored ? 'bg-primary' : 'bg-neutral-bg',
             )}
           >
@@ -304,7 +304,7 @@ export function MatchesView({
                 </thead>
                 <tbody>
                   {ignored.map((row) => (
-                    <tr key={`${row.side}:${row.itemId}`} data-ignored-row data-match-id={row.matchId} tabIndex={-1} className="border-b outline-none last:border-b-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                    <tr key={`${row.side}:${row.itemId}`} data-ignored-row data-match-id={row.matchId} tabIndex={-1} className="border-b last:border-b-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
                       <td className={cn(CELL, 'font-medium')}>
                         <Value muted={row.name === null}>{row.name ?? DASH}</Value>
                       </td>

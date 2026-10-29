@@ -6,7 +6,7 @@ import { LOCALES, parseLocale, type Locale } from './locale';
 
 /** Native select with the shared field look (44px, same border, background and focus ring as the auth inputs). */
 const SELECT_CLASS =
-  'h-11 w-full rounded-md border border-input-border bg-background pl-9 pr-3 text-sm text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+  'h-11 w-full rounded-md border border-input-border bg-background pl-9 pr-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 /**
  * Labelled language picker: a centred label above a native select (globe icon beside it). The choice is stored per

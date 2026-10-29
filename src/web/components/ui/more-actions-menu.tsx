@@ -31,7 +31,7 @@ export function MoreActionsMenu({ items, name, className, defaultOpen }: MoreAct
       <DropdownMenu.Trigger
         aria-label={label}
         className={cn(
-          'inline-flex min-h-(--control-h) min-w-(--control-h) items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+          'inline-flex min-h-(--control-h) min-w-(--control-h) items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
           className,
         )}
       >

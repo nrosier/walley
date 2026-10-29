@@ -195,7 +195,7 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
             setFailure(null);
             setSent(false);
           }}
-          className="flex min-h-11 w-full items-center justify-center rounded-md text-center text-sm text-foreground underline outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="flex min-h-11 w-full items-center justify-center rounded-md text-center text-sm text-foreground underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           {registering ? t('backToSignIn') : t('showRegister')}
         </button>

@@ -5,11 +5,11 @@ import { authCardMessages } from './AuthCard.messages';
 
 /** Input class for the auth pages: 44px tall, the stronger input border, the shared focus ring. */
 export const AUTH_INPUT =
-  'h-11 w-full rounded-md border border-input-border bg-background px-3 text-sm text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+  'h-11 w-full rounded-md border border-input-border bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 /** Primary button class for the auth pages (44px). */
 export const AUTH_BUTTON =
-  'inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground outline-none hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50';
+  'inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50';
 
 export interface AuthCardProps {
   /** Translated heading. */

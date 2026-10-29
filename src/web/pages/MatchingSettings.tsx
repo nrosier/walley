@@ -13,7 +13,7 @@ export const MAX_TOLERANCE_PERCENT = 50;
 const ENDPOINT = '/api/settings/matching';
 
 const FIELD =
-  'min-h-(--control-h) w-full rounded-md border bg-background px-3 font-mono text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+  'min-h-(--control-h) w-full rounded-md border bg-background px-3 font-mono text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 /** The value as a number when it is finite and within 0 to 50 inclusive; otherwise null. */
 // eslint-disable-next-line react-refresh/only-export-components -- exported for tests

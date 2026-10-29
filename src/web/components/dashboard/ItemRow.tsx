@@ -92,7 +92,7 @@ export function ItemRow(props: ItemRowProps) {
     <li
       data-row-id={row.id}
       tabIndex={-1}
-      className="border-b outline-none last:border-b-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      className="border-b last:border-b-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
     >
       <div className={`flex items-center gap-x-3 ${CELL}`}>
         <div className="min-w-0 flex-1">

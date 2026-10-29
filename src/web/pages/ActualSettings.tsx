@@ -17,7 +17,7 @@ import { actualSettingsMessages } from './ActualSettings.messages';
 import { settingsPageMessages } from './SettingsPage.messages';
 
 const FIELD =
-  'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+  'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 type Status = { kind: 'none' } | { kind: 'busy'; text: 'saving' | 'loadingBudgets' } | { kind: 'ok'; text: 'saved' | 'budgetSaved' } | { kind: 'error'; code: string };
 

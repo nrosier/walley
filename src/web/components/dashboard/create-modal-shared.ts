@@ -4,7 +4,7 @@ import type { createModalMessages } from './CreateModal.messages';
 
 /** Form inputs use the stronger input border and the shared control height (44px on narrow screens). */
 export const FIELD_CLASS =
-  'min-h-(--control-h) rounded-md border border-input-border bg-background px-2 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+  'min-h-(--control-h) rounded-md border border-input-border bg-background px-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 type Unit = 'day' | 'week' | 'month' | 'year';
 export type EveryKey = Extract<MessageKey<typeof createModalMessages.en>, `every.${string}`>;

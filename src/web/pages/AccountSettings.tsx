@@ -65,9 +65,9 @@ export async function changePassword(
 }
 
 const inputClass =
-  'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+  'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 py-1.5 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 const buttonClass =
-  'min-h-(--control-h) rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground outline-none hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50';
+  'min-h-(--control-h) rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50';
 
 function PasswordForm() {
   const { t, errorText } = useT(accountSettingsMessages);

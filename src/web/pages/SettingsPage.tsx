@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { SettingsCard } from '@/components/settings/SettingsCard';
 import { SegmentedControl } from '@/components/ui/segmented-control';
@@ -38,13 +38,20 @@ function GeneralCard() {
     },
     [],
   );
-  const flash = () => {
+  const flash = useCallback(() => {
     setSaved(true);
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       setSaved(false);
     }, 4000);
-  };
+  }, []);
+  // The theme is stored the moment it changes, from this control or the header toggle, so the card says "Saved" for either.
+  const shownTheme = useRef(theme);
+  useEffect(() => {
+    if (shownTheme.current === theme) return;
+    shownTheme.current = theme;
+    flash();
+  }, [theme, flash]);
   return (
     <SettingsCard
       id="settings-general"
@@ -76,7 +83,6 @@ function GeneralCard() {
             value={theme}
             onValueChange={(value) => {
               setTheme(parseTheme(value));
-              flash();
             }}
             options={[
               { value: 'dark', label: t('theme.dark') },
@@ -113,7 +119,7 @@ export function SettingsPage() {
                     e.preventDefault();
                     go(s.id);
                   }}
-                  className="flex min-h-(--control-h) items-center rounded-md px-3 text-sm text-muted outline-none hover:bg-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-[current=true]:bg-hover aria-[current=true]:font-medium aria-[current=true]:text-foreground"
+                  className="flex min-h-(--control-h) items-center rounded-md px-3 text-sm text-muted hover:bg-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-[current=true]:bg-hover aria-[current=true]:font-medium aria-[current=true]:text-foreground"
                 >
                   {t(`sections.${s.key}`)}
                 </a>
@@ -128,7 +134,7 @@ export function SettingsPage() {
             onChange={(e) => {
               go(e.target.value);
             }}
-            className="min-h-(--control-h) rounded-md border border-input-border bg-background px-2 text-sm outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            className="min-h-(--control-h) rounded-md border border-input-border bg-background px-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             {SECTIONS.map((s) => (
               <option key={s.id} value={s.id}>

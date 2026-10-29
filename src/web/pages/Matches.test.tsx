@@ -363,7 +363,18 @@ describe('Matches table layout and cues', () => {
     expect(html).toContain('sticky top-0');
     expect(html).toContain('sticky top-8');
     expect(html).toContain('sticky left-0');
-    expect(html).toContain('overflow-auto');
+  });
+  it('does not put an unconditional overflow or max-height on the wrapper around the sticky header (issue 113)', () => {
+    const html = render({});
+    const table = html.indexOf('<table');
+    const wrapper = html.slice(html.lastIndexOf('<div', table), table);
+    // An overflow:auto ancestor becomes the sticky scroll container, so the header would not stick to the page.
+    expect(wrapper).toContain('rounded-lg border');
+    const classes = (/class="([^"]*)"/.exec(wrapper)?.[1] ?? '').split(/\s+/);
+    expect(classes.filter((c) => !c.includes(':') && /^(overflow|max-h-)/.test(c))).toEqual([]);
+    // Below the md breakpoint the wrapper still scrolls sideways, so only a max-md: variant may set overflow.
+    expect(wrapper).toContain('max-md:overflow-auto');
+    expect(matchesSrc).not.toContain('max-h-[70vh] overflow-auto');
   });
   it('makes differing amounts bold with hidden "differs" text, and leaves equal amounts plain', () => {
     const html = render({});

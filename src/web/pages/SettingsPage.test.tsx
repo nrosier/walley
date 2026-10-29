@@ -134,12 +134,33 @@ describe('Settings checklist (issue 113)', () => {
     // Language and theme changes apply at once and flash "Saved".
     const card = pageSrc.slice(pageSrc.indexOf('function GeneralCard'), pageSrc.indexOf('export function SettingsPage'));
     expect(card).toContain('<LanguageSelect onChange={flash} />');
-    expect(card).toMatch(/setTheme\(parseTheme\(value\)\);\s*flash\(\);/);
+    expect(card).toContain('setTheme(parseTheme(value))');
+    // The theme itself drives the flash (a change from this control or from the header toggle).
+    expect(card).toMatch(/useEffect\(\(\) => \{[^}]*shownTheme\.current[^}]*flash\(\);\s*\}, \[theme, flash\]\)/);
     expect(card).toContain("t('general.saved')");
     expect(settingsPageMessages.en.general.saved).toBe('Saved');
     // The control reads and writes the same theme state the header toggle uses.
     expect(card).toContain('useThemeControl()');
     expect(appSrc).toContain('ThemeControlContext.Provider value={themeControl}');
     expect(appSrc).toContain('onToggleTheme={onToggleTheme}');
+  });
+});
+
+describe('General card saved status (issue 113)', () => {
+  const card = pageSrc.slice(pageSrc.indexOf('function GeneralCard'), pageSrc.indexOf('export function SettingsPage'));
+  it('renders the polite "Saved" status element in the card footer and shows the existing general.saved text when saved', () => {
+    expect(card).toMatch(/<span role="status" aria-live="polite"[^>]*>\s*\{saved \? \(/);
+    expect(card).toContain("t('general.saved')");
+    const en = settingsPageMessages.en.general.saved;
+    const nl = settingsPageMessages.nl.general.saved;
+    expect([en, nl]).toEqual(['Saved', 'Opgeslagen']);
+  });
+  it('sets the saved state whenever the theme changes, so the Theme control (and the header toggle) show Saved', () => {
+    const flashBody = card.slice(card.indexOf('const flash'), card.indexOf('const shownTheme'));
+    expect(flashBody).toContain('setSaved(true)');
+    expect(flashBody).toContain('setSaved(false)');
+    expect(card).toContain('flash();');
+    expect(card).toContain('[theme, flash]');
+    expect(card).toMatch(/onValueChange=\{\(value\) => \{\s*setTheme\(parseTheme\(value\)\);\s*\}\}/);
   });
 });

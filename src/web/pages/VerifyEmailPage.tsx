@@ -129,7 +129,7 @@ export function VerifyEmailView({
       {showForm ? null : (
         <a
           href="/login"
-          className="flex min-h-11 items-center justify-center rounded-md text-center text-sm text-foreground underline outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="flex min-h-11 items-center justify-center rounded-md text-center text-sm text-foreground underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           {t('signIn')}
         </a>
