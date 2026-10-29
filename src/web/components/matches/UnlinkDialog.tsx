@@ -61,6 +61,7 @@ export function UnlinkDialog({ row, onConfirm, onCancel }: UnlinkDialogProps) {
         <AlertDialogFooter>
           <AlertDialogCancel>{modal('cancel')}</AlertDialogCancel>
           <AlertDialogAction
+            className="border border-danger-line bg-card text-danger hover:bg-danger-bg"
             onClick={() => {
               if (row !== null) onConfirm(row);
             }}

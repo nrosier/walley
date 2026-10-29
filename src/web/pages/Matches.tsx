@@ -142,7 +142,22 @@ export function MatchesView({
       </div>
     );
   } else if (shown.length === 0) {
-    body = <p className="text-sm text-muted">{t('noMatches')}</p>;
+    body = (
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm text-muted">{t('noMatches')}</p>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-(--control-h)"
+          onClick={() => {
+            onQueryChange?.('');
+            document.querySelector<HTMLElement>('input[type="search"]')?.focus();
+          }}
+        >
+          {t('clearSearch')}
+        </Button>
+      </div>
+    );
   } else {
     body = (
       <div className="rounded-lg border bg-card max-md:max-h-[70vh] max-md:overflow-auto">
@@ -213,7 +228,7 @@ export function MatchesView({
                       <MoreActionsMenu
                         name={label}
                         className="ml-1 align-middle"
-                        items={[{ id: 'unlink', label: unlinkLabel, onSelect: () => onUnlink?.(row) }]}
+                        items={[{ id: 'unlink', label: unlinkLabel, destructive: true, onSelect: () => onUnlink?.(row) }]}
                       />
                     ) : null}
                   </td>

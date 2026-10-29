@@ -20,6 +20,7 @@ const en = {
   search: 'Search by name',
   searchPlaceholder: 'Search by name',
   noMatches: 'No pairs match your search.',
+  clearSearch: 'Clear search',
   counts: '{shown} of {total} pairs, {differing} with differences',
   ignored: {
     toggle: 'Show ignored items',
@@ -71,6 +72,7 @@ const nl: typeof en = {
   search: 'Zoeken op naam',
   searchPlaceholder: 'Zoeken op naam',
   noMatches: 'Geen paren komen overeen met uw zoekopdracht.',
+  clearSearch: 'Zoekopdracht wissen',
   counts: '{shown} van {total} paren, {differing} met verschillen',
   ignored: {
     toggle: 'Genegeerde items tonen',

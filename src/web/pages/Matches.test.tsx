@@ -9,6 +9,7 @@ import { matchesMessages } from './Matches.messages';
 import { checkIfEmpty, createSyncStore, restoreAndRecheck, syncStore } from '@/lib/sync-check';
 import { performResolve } from '@/lib/resolve-mismatch';
 import { catalogues } from '@/i18n/catalogues';
+import { cn } from 'cn';
 import { MoreActionsMenu } from '../components/ui/more-actions-menu';
 import { UnlinkDialog } from '../components/matches/UnlinkDialog';
 import { unlinkDialogMessages } from '../components/matches/UnlinkDialog.messages';
@@ -401,6 +402,16 @@ describe('Matches table layout and cues', () => {
     expect(none).toContain('No pairs match your search.');
     expect(none).not.toContain('data-match-row');
   });
+  it('113 a search that matches nothing offers Clear search next to Run Sync Check', () => {
+    const none = render({ query: 'zzz' });
+    expect(none).toContain('No pairs match your search.');
+    expect(none).toContain('>Clear search<');
+    expect(none.match(/>Run Sync Check</g)).toHaveLength(1);
+    expect(render({ query: 'zzz' }, 'nl')).toContain('>Zoekopdracht wissen<');
+    expect(matchesMessages.nl.clearSearch).not.toBe(matchesMessages.en.clearSearch);
+    // Clearing sends an empty query.
+    expect(matchesSrc).toMatch(/onClick=\{\(\) => \{\s*onQueryChange\?\.\(''\)/);
+  });
   it('the empty state offers both actions: open the Sync Dashboard and Run Sync Check', () => {
     const html = render({ result: fixture({ linked: [] }) });
     expect(html).toContain('href="/sync"');
@@ -489,7 +500,7 @@ describe('Issue 137: Unlink a Synced pair from the Matches page', () => {
     expect(html).toContain('aria-label="More actions for Synced One"');
     expect(diffModalMessages.en.unlink).toBe('Unlink');
     expect(diffModalMessages.nl.unlink).toBe('Ontkoppelen');
-    expect(matchesSrc).toContain("items={[{ id: 'unlink', label: unlinkLabel, onSelect: () => onUnlink?.(row) }]}");
+    expect(matchesSrc).toContain("items={[{ id: 'unlink', label: unlinkLabel, destructive: true, onSelect: () => onUnlink?.(row) }]}");
   });
 
   it('137 the Unlink menu appears only on LINKED rows, not on mismatch, orphaned or ignored rows', () => {
@@ -523,6 +534,19 @@ describe('Issue 137: Unlink a Synced pair from the Matches page', () => {
       </I18nProvider>,
     );
     expect(closed).not.toContain('Unlink this pair?');
+  });
+
+  it('113 the row-menu Unlink item and its confirm action use the danger token, not foreground or indigo', () => {
+    expect(matchesSrc).toMatch(/id: 'unlink', label: unlinkLabel, destructive: true/);
+    expect(menuSrc).toMatch(/item\.destructive === true && '[^']*text-danger/);
+    const action = unlinkDialogSrc.match(/<AlertDialogAction\s+className="([^"]*)"/)?.[1] ?? '';
+    expect(action).toContain('text-danger');
+    expect(action).toContain('border-danger-line');
+    expect(action).not.toMatch(/text-foreground|bg-primary|indigo/);
+    // The merged class list drops the default indigo fill.
+    const merged = cn('bg-primary text-primary-foreground hover:bg-primary/90', action);
+    expect(merged).toContain('text-danger');
+    expect(merged).not.toMatch(/(^| )(bg-primary|text-primary-foreground)( |$)/);
   });
 
   it('137 confirming sends the existing resolve unlink action for that match; cancelling sends nothing', () => {

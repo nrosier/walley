@@ -11,6 +11,8 @@ export interface MoreActionsItem {
   onSelect: () => void;
   icon?: ReactNode;
   disabled?: boolean;
+  /** Destructive action: the label uses the danger token (red text, danger-bg highlight). */
+  destructive?: boolean;
 }
 
 export interface MoreActionsMenuProps {
@@ -49,7 +51,10 @@ export function MoreActionsMenu({ items, name, className, defaultOpen }: MoreAct
               key={item.id}
               disabled={item.disabled}
               onSelect={item.onSelect}
-              className="flex min-h-(--control-h) cursor-default items-center gap-2 rounded-sm px-2 py-1.5 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-hover"
+              className={cn(
+                'flex min-h-(--control-h) cursor-default items-center gap-2 rounded-sm px-2 py-1.5 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-hover',
+                item.destructive === true && 'text-danger data-[highlighted]:bg-danger-bg',
+              )}
             >
               {item.icon}
               {item.label}
