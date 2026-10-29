@@ -8,6 +8,7 @@ import { Matches, MatchesView, type MatchesViewProps } from './Matches';
 import { matchesMessages } from './Matches.messages';
 import { checkIfEmpty, createSyncStore, restoreAndRecheck, syncStore } from '@/lib/sync-check';
 import { performResolve } from '@/lib/resolve-mismatch';
+import { rowDiffers } from '@/lib/row-differs';
 import { catalogues } from '@/i18n/catalogues';
 import { cn } from 'cn';
 import { MoreActionsMenu } from '../components/ui/more-actions-menu';
@@ -394,6 +395,22 @@ describe('Matches table layout and cues', () => {
     expect(render({ checking: true })).toContain('Checking...');
     expect(render({}, 'nl')).toContain('3 van 3 paren, 1 met verschillen');
   });
+  it('113 the counts line and the row cue use the same rule (one differing row, one equal row)', () => {
+    const equalRow = linkedRow({ matchId: 'e1', wallosId: 'we', actualScheduleId: 'ae', wallosName: 'Same', actualName: 'Same', wallosAmountCents: 1000, actualAmountCents: 1000 });
+    const differingRow = linkedRow({ matchId: 'd1', wallosId: 'wd', actualScheduleId: 'ad', wallosName: 'iCloud+', actualName: 'APPLE', wallosAmountCents: 299, actualAmountCents: 300 });
+    const html = render({ result: fixture({ linked: [equalRow, differingRow] }) });
+    // Status is LINKED on both rows, so only the amount rule can flag the second one.
+    expect(html).toContain('2 of 2 pairs, 1 with differences');
+    expect(html.match(/<span class="sr-only"> differs<\/span>/g)).toHaveLength(2);
+    const cued = html.split('data-match-row').slice(1).filter((r) => r.includes('> differs</span>'));
+    expect(cued).toHaveLength(1);
+    expect(cued[0]).toContain('iCloud+');
+    expect(rowDiffers(equalRow)).toBe(false);
+    expect(rowDiffers(differingRow)).toBe(true);
+    // A drift flag counts too, even with equal amounts.
+    expect(rowDiffers(linkedRow({ status: 'MISMATCH_DETECTED' }))).toBe(true);
+    expect(rowDiffers(linkedRow({ wallosAmountCents: 5, actualAmountCents: null }))).toBe(false);
+  });
   it('filters pairs by either name and says so when nothing matches', () => {
     const html = render({ query: 'fitness' });
     expect(html.match(/data-match-row/g)).toHaveLength(1);
@@ -406,7 +423,12 @@ describe('Matches table layout and cues', () => {
     const none = render({ query: 'zzz' });
     expect(none).toContain('No pairs match your search.');
     expect(none).toContain('>Clear search<');
-    expect(none.match(/>Run Sync Check</g)).toHaveLength(1);
+    // The toolbar keeps its button and the empty state adds its own, after the message and next to Clear search.
+    expect(none.match(/>Run Sync Check</g)).toHaveLength(2);
+    const emptyState = none.slice(none.indexOf('No pairs match your search.'));
+    expect(emptyState).toContain('>Clear search<');
+    expect(emptyState.match(/>Run Sync Check</g)).toHaveLength(1);
+    expect(none.indexOf('>Run Sync Check<')).toBeLessThan(none.indexOf('No pairs match your search.'));
     expect(render({ query: 'zzz' }, 'nl')).toContain('>Zoekopdracht wissen<');
     expect(matchesMessages.nl.clearSearch).not.toBe(matchesMessages.en.clearSearch);
     // Clearing sends an empty query.

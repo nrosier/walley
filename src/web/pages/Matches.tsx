@@ -7,6 +7,7 @@ import { useT } from '@/i18n';
 import type { ResolveAction } from '@/lib/matches.api';
 import { performResolve } from '@/lib/resolve-mismatch';
 import { followInApp } from '@/lib/route';
+import { rowDiffers } from '@/lib/row-differs';
 import { checkIfEmpty, nextRowId, restoreAndRecheck, syncStore, useSyncCheck } from '@/lib/sync-check';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '../components/StatusBadge';
@@ -103,9 +104,7 @@ export function MatchesView({
 
   const q = query.trim().toLowerCase();
   const shown = q === '' ? linked : linked.filter((r) => `${r.wallosName ?? ''} ${r.actualName ?? ''}`.toLowerCase().includes(q));
-  const differing = linked.filter((r) => r.status === 'MISMATCH_DETECTED').length;
-  const amountsDiffer = (r: SyncLinked) =>
-    r.wallosAmountCents !== null && r.actualAmountCents !== null && r.wallosAmountCents !== r.actualAmountCents;
+  const differing = linked.filter(rowDiffers).length;
   /** Amount cell: bold with a hidden "differs" when the two sides disagree, so colour is not the only cue. */
   const amountCell = (cents: number | null, differs: boolean) => (
     <td className={cn(CELL, 'border-b border-r text-right font-mono', differs && 'font-bold')}>
@@ -156,6 +155,7 @@ export function MatchesView({
         >
           {t('clearSearch')}
         </Button>
+        {runButton(running ? t('emptyActions.running') : t('emptyActions.run'))}
       </div>
     );
   } else {
@@ -178,7 +178,7 @@ export function MatchesView({
           <tbody>
             {shown.map((row) => {
               const kind = pairBadge({ status: row.status, orphan: row.orphan });
-              const differs = amountsDiffer(row);
+              const differs = rowDiffers(row);
               const label = row.wallosName ?? row.actualName ?? DASH;
               return (
                 <tr key={`${row.wallosId}:${row.actualScheduleId}`} data-match-row data-linked-id={row.matchId} className="group">
