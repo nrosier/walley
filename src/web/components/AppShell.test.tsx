@@ -113,4 +113,17 @@ describe('AppShell', () => {
       expect(html).not.toMatch(/tabindex="[1-9]/);
     }
   });
+  it('issue 113: skip link, logo, tabs and header buttons carry the shared 2px/2px solid focus treatment', () => {
+    const html = render('matches');
+    const shared = ['focus-visible:outline-2', 'focus-visible:outline-offset-2', 'focus-visible:outline-ring'];
+    const tags = html.match(/<(?:a|button)\b[^>]*>/g) ?? [];
+    // skip link, logo, 3 tabs, Refresh, theme toggle, Account menu
+    expect(tags).toHaveLength(8);
+    for (const tag of tags) {
+      for (const cls of shared) expect(tag, tag).toContain(cls);
+      // No competing ring, auto outline or animated outline width/offset on these controls.
+      expect(tag, tag).not.toMatch(/(^|[\s"])ring-|focus:ring|transition-all|outline-none|outline-1|outline-3/);
+    }
+    expect(tags[0]).toContain('href="#main"');
+  });
 });

@@ -27,6 +27,13 @@ describe('issue 113 focus ring (2px, 2px offset)', () => {
   });
 });
 
+describe('issue 113 focus ring is not animated', () => {
+  it('Button and the dialog action buttons do not use transition-all (it animates outline width and offset, so a focus reading shows 3px / 0px mid-transition)', () => {
+    for (const text of [buttonSrc, dialogSrc]) expect(text).not.toContain('transition-all');
+    expect(buttonSrc).toContain('transition-colors');
+  });
+});
+
 describe('issue 113 hover token', () => {
   it('Button and dialog no longer use hover:bg-accent', () => {
     expect(buttonSrc).not.toContain('hover:bg-accent');
