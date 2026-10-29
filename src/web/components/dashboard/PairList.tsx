@@ -1,11 +1,13 @@
+import { useState } from 'react';
 import type { SyncCandidate } from '../../../lib/sync-check-types';
 import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
-import type { PairRow } from '@/lib/pair-rows';
+import type { PairKind, PairRow } from '@/lib/pair-rows';
 import type { RowModel, Side } from '@/lib/sync-check';
 import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
 import { StatusBadge } from '../StatusBadge';
 import { Badge } from '../ui/badge';
+import { Disclosure } from '../ui/disclosure';
 import { ItemRow } from './ItemRow';
 
 export interface PairListProps {
@@ -59,12 +61,17 @@ function Placeholder({ side, className }: { side: Side; className: string }) {
   return <div aria-hidden="true" data-placeholder={side} className={className} />;
 }
 
+/** The order of the group boxes; rows arrive in this order from buildPairRows. */
+const GROUP_KINDS: readonly PairKind[] = ['linked', 'suggested', 'wallos', 'actual'];
+
 /**
  * The dashboard rows, one grid row each: Wallos cell left, Actual cell right at md and up. Below
- * 768px only the active side's cells show, and a row with no cell on that side hides.
+ * 768px only the active side's cells show, and a row with no cell on that side hides. The rows sit
+ * in one foldable box per kind (linked, suggested, Wallos only, Actual only); an empty group has no box.
  */
 export function PairList(props: PairListProps) {
   const { t } = useT(syncDashboardMessages);
+  const [folded, setFolded] = useState<ReadonlySet<PairKind>>(() => new Set());
   const createLabel = (side: Side) => (side === 'wallos' ? t('row.createInActual') : t('row.createInWallos'));
   const hide = (side: Side) => (props.pane === side ? '' : 'max-md:hidden');
   const hasCell = (side: Side) => props.rows.some((r) => (side === 'wallos' ? r.wallos : r.actual) !== null);
@@ -99,9 +106,46 @@ export function PairList(props: PairListProps) {
       </div>
     );
   };
+  const rowOf = (r: PairRow) => {
+    const cell = props.pane === 'wallos' ? r.wallos : r.actual;
+    return (
+      <li
+        key={r.key}
+        data-pair={r.kind}
+        className={`grid grid-cols-1 border-b last:border-b-0 md:grid-cols-2 ${cell === null ? 'max-md:hidden' : ''}`}
+      >
+        {cellOf(r, 'wallos')}
+        {cellOf(r, 'actual')}
+      </li>
+    );
+  };
+  const groupOf = (kind: PairKind) => {
+    const rows = props.rows.filter((r) => r.kind === kind);
+    if (rows.length === 0) return null;
+    const onPane = rows.some((r) => (props.pane === 'wallos' ? r.wallos : r.actual) !== null);
+    return (
+      <section key={kind} data-group={kind} className={`min-w-0 rounded-lg border bg-card ${onPane ? '' : 'max-md:hidden'}`}>
+        <Disclosure
+          className="px-3"
+          title={t(`groups.${kind}`, { count: rows.length })}
+          open={!folded.has(kind)}
+          onOpenChange={(open) => {
+            setFolded((prev) => {
+              const next = new Set(prev);
+              if (open) next.delete(kind);
+              else next.add(kind);
+              return next;
+            });
+          }}
+        >
+          <ul className="-mx-3 border-t">{rows.map(rowOf)}</ul>
+        </Disclosure>
+      </section>
+    );
+  };
   return (
-    <div data-pairs="" tabIndex={-1} className="min-w-0 rounded-lg border bg-card outline-none">
-      <div className="grid grid-cols-1 border-b md:grid-cols-2">
+    <div data-pairs="" tabIndex={-1} className="min-w-0 outline-none">
+      <div className="grid grid-cols-1 md:grid-cols-2">
         <h2 id="col-wallos" className={`px-3 py-1.5 text-sm font-semibold ${hide('wallos')}`}>
           {props.wallosTitle} <span className="font-mono text-xs font-normal text-muted">{props.wallosCount}</span>
         </h2>
@@ -110,26 +154,12 @@ export function PairList(props: PairListProps) {
         </h2>
       </div>
       {props.rows.length === 0 ? (
-        <p className="px-3 py-1.5 text-sm text-muted">{props.emptyText}</p>
+        <p className="rounded-lg border bg-card px-3 py-1.5 text-sm text-muted">{props.emptyText}</p>
       ) : (
-        <>
-          <ul>
-            {props.rows.map((r) => {
-              const cell = props.pane === 'wallos' ? r.wallos : r.actual;
-              return (
-                <li
-                  key={r.key}
-                  data-pair={r.kind}
-                  className={`grid grid-cols-1 border-b last:border-b-0 md:grid-cols-2 ${cell === null ? 'max-md:hidden' : ''}`}
-                >
-                  {cellOf(r, 'wallos')}
-                  {cellOf(r, 'actual')}
-                </li>
-              );
-            })}
-          </ul>
+        <div className="flex flex-col gap-3">
+          {GROUP_KINDS.map(groupOf)}
           {hasCell(props.pane) ? null : <p className="px-3 py-1.5 text-sm text-muted md:hidden">{props.emptyText}</p>}
-        </>
+        </div>
       )}
     </div>
   );

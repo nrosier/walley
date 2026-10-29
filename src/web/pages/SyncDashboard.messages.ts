@@ -16,6 +16,12 @@ const en = {
     wallos: 'Wallos ({count})',
     actual: 'Actual Budget ({count})',
   },
+  groups: {
+    linked: 'Linked pairs ({count})',
+    suggested: 'Suggested pairs ({count})',
+    wallos: 'Wallos only ({count})',
+    actual: 'Actual only ({count})',
+  },
   ignoredTitle: 'Ignored items ({count})',
   states: {
     idle: 'Run a sync check to see unlinked items.',
@@ -88,6 +94,12 @@ const nl: typeof en = {
     label: 'Lijst tonen',
     wallos: 'Wallos ({count})',
     actual: 'Actual Budget ({count})',
+  },
+  groups: {
+    linked: 'Gekoppelde paren ({count})',
+    suggested: 'Voorgestelde paren ({count})',
+    wallos: 'Alleen in Wallos ({count})',
+    actual: 'Alleen in Actual ({count})',
   },
   ignoredTitle: 'Genegeerde items ({count})',
   states: {

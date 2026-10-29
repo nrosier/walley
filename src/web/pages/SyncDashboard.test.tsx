@@ -238,7 +238,8 @@ describe('SyncDashboard states', () => {
     expect(at('NETFLIX.COM')).toBeLessThan(at('Gym'));
     expect(at('Gym')).toBeLessThan(at('Rent'));
     // The linked row carries its status badge and no actions.
-    const linked = html.slice(html.indexOf('data-pair="linked"'), html.indexOf('data-pair="suggested"'));
+    const linkedStart = html.indexOf('data-pair="linked"');
+    const linked = html.slice(linkedStart, html.indexOf('</li>', linkedStart));
     expect(linked).toContain('data-kind="synced"');
     expect(linked).not.toContain('<button');
     // The suggested row holds both sides of the pair side by side.
@@ -275,6 +276,78 @@ describe('SyncDashboard states', () => {
     expect(html.match(/data-row-id="w9"/g) ?? []).toHaveLength(0); // collapsed: content is not rendered
     expect(html).not.toContain('data-pair="ignored"');
     expect(html).not.toContain('Old');
+  });
+  describe('group boxes', () => {
+    const linkedRow = {
+      matchId: 'm7',
+      wallosId: 'wl',
+      actualScheduleId: 'al',
+      status: 'LINKED' as const,
+      orphan: null,
+      wallosName: 'Linked W',
+      actualName: 'Linked A',
+      wallosAmountCents: 700,
+      actualAmountCents: 700,
+      isRange: false,
+      relinkCandidateIds: [],
+    };
+    const all = (): SyncStoreState => ({ status: 'ready', result: { ...sample(), linked: [linkedRow] }, errorCode: null });
+    const groupOf = (html: string, kind: string) => {
+      const start = html.indexOf(`data-group="${kind}"`);
+      expect(start, `group ${kind}`).toBeGreaterThan(-1);
+      const next = html.indexOf('data-group="', start + 1);
+      return html.slice(start, next === -1 ? undefined : next);
+    };
+    it('each non-empty group is its own open disclosure with a count, in order', () => {
+      const html = render(all());
+      expect([...html.matchAll(/data-group="(\w+)"/g)].map((m) => m[1])).toEqual(['linked', 'suggested', 'wallos', 'actual']);
+      expect(groupOf(html, 'linked')).toContain('Linked pairs (1)');
+      expect(groupOf(html, 'suggested')).toContain('Suggested pairs (1)');
+      expect(groupOf(html, 'wallos')).toContain('Wallos only (1)');
+      expect(groupOf(html, 'actual')).toContain('Actual only (1)');
+      for (const kind of ['linked', 'suggested', 'wallos', 'actual']) {
+        expect(groupOf(html, kind)).toContain('aria-expanded="true"');
+      }
+      // Rows stay in their own group.
+      expect(groupOf(html, 'linked')).toContain('data-pair="linked"');
+      expect(groupOf(html, 'linked')).not.toContain('data-pair="suggested"');
+      expect(groupOf(html, 'wallos')).toContain('data-row-id="w2"');
+      expect(groupOf(html, 'actual')).toContain('data-row-id="a2"');
+    });
+    it('a group with no rows is not rendered', () => {
+      const html = render(ready());
+      expect(html).not.toContain('data-group="linked"');
+      expect(html).not.toContain('Linked pairs');
+      expect(html).toContain('data-group="suggested"');
+    });
+    it('the search hides a group with no match', () => {
+      const html = render(all(), { query: 'rent' });
+      expect(html).toContain('data-group="actual"');
+      expect(html).toContain('Actual only (1)');
+      for (const kind of ['linked', 'suggested', 'wallos']) expect(html).not.toContain(`data-group="${kind}"`);
+    });
+    it('keeps the order of rows inside a group', () => {
+      const r = {
+        ...sample(),
+        unlinkedWallos: [
+          { id: 'wa', name: 'Zeta', amountCents: 100, isRange: false, reason: null },
+          { id: 'wb', name: 'Alpha', amountCents: 100, isRange: false, reason: null },
+        ],
+        unlinkedActual: [],
+        candidates: [],
+      };
+      const html = render({ status: 'ready', result: r, errorCode: null });
+      const box = groupOf(html, 'wallos');
+      expect(box).toContain('Wallos only (2)');
+      expect(box.indexOf('Zeta')).toBeLessThan(box.indexOf('Alpha'));
+    });
+    it('group headings exist in nl', () => {
+      const html = render(all(), {}, 'nl');
+      expect(html).toContain('Gekoppelde paren (1)');
+      expect(html).toContain('Voorgestelde paren (1)');
+      expect(html).toContain('Alleen in Wallos (1)');
+      expect(html).toContain('Alleen in Actual (1)');
+    });
   });
   it('shows a row error and renders in nl', () => {
     expect(render(ready(), {}, 'nl')).toContain('Aanmaken in AB');
