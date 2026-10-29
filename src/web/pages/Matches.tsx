@@ -104,7 +104,8 @@ export function MatchesView({
 
   const q = query.trim().toLowerCase();
   const shown = q === '' ? linked : linked.filter((r) => `${r.wallosName ?? ''} ${r.actualName ?? ''}`.toLowerCase().includes(q));
-  const differing = linked.filter(rowDiffers).length;
+  /** Counts describe the visible rows: the same filtered list feeds the table, "N of M" and "K with differences". */
+  const differing = shown.filter(rowDiffers).length;
   /** Amount cell: bold with a hidden "differs" when the two sides disagree, so colour is not the only cue. */
   const amountCell = (cents: number | null, differs: boolean) => (
     <td className={cn(CELL, 'border-b border-r text-right font-mono', differs && 'font-bold')}>

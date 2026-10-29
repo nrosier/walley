@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import type { SyncCheckResult, SyncLinked, SyncIgnored } from '../../lib/sync-check-types';
 import matchesSrc from './Matches.tsx?raw';
+import appShellSrc from '../components/AppShell.tsx?raw';
+import appSrc from '../App.tsx?raw';
 import storeSrc from '@/lib/sync-check.ts?raw';
 import { Matches, MatchesView, type MatchesViewProps } from './Matches';
 import { matchesMessages } from './Matches.messages';
@@ -378,6 +380,36 @@ describe('Matches table layout and cues', () => {
     expect(wrapper).toContain('max-md:overflow-auto');
     expect(matchesSrc).not.toContain('max-h-[70vh] overflow-auto');
   });
+  it('113 the sticky header has no overflow ancestor on desktop, so the document is the sticky container', () => {
+    // Every wrapper from the table up to the document: Matches wrapper, section, AppShell main and root div, App.
+    const html = render({});
+    const table = html.indexOf('<table');
+    const wrapper = html.slice(html.lastIndexOf('<div', table), table);
+    const desktopOverflow = (classes: string): string[] =>
+      classes.split(/\s+/).filter((c) => !c.includes(':') && /^(overflow(-[xy])?-(hidden|auto|scroll|clip)|max-h-|h-screen|h-dvh|h-svh)/.test(c));
+    expect(desktopOverflow(/class="([^"]*)"/.exec(wrapper)?.[1] ?? '')).toEqual([]);
+    for (const src of [matchesSrc, appShellSrc, appSrc]) {
+      // Only the Matches table wrapper may name overflow, and only with a max-md: variant (sideways scroll on narrow screens).
+      const names = [...src.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g)].map((m) => m[1] ?? m[2] ?? '');
+      const offenders = names.flatMap(desktopOverflow).filter((c) => c !== 'overflow-x-auto');
+      expect(offenders).toEqual([]);
+    }
+    // The ignored table keeps overflow-x-auto, but it has no sticky header and sits outside the main table.
+    expect(matchesSrc.match(/overflow-x-auto/g)).toHaveLength(1);
+  });
+  it('113 the sticky header cells pin at top-0 and top-8 because the app navbar is not sticky', () => {
+    // AppShell's header is a normal block, so the table header pins to the viewport top (no navbar offset).
+    const header = /<header className="([^"]*)"/.exec(appShellSrc)?.[1] ?? '';
+    expect(header).not.toBe('');
+    expect(header).not.toMatch(/\b(sticky|fixed)\b/);
+    const html = render({});
+    const head = html.slice(html.indexOf('<thead'), html.indexOf('</thead>'));
+    const cells = [...head.matchAll(/<th [^>]*class="([^"]*)"/g)].map((m) => m[1] ?? '');
+    expect(cells).toHaveLength(7);
+    // Level 1 (group and Status cells) at top-0, level 2 (Name and Amount cells) directly under it at top-8.
+    expect(cells.filter((c) => /\bsticky\b/.test(c) && /\btop-0\b/.test(c))).toHaveLength(3);
+    expect(cells.filter((c) => /\bsticky\b/.test(c) && /\btop-8\b/.test(c))).toHaveLength(4);
+  });
   it('makes differing amounts bold with hidden "differs" text, and leaves equal amounts plain', () => {
     const html = render({});
     expect(html.match(/<span class="sr-only"> differs<\/span>/g)).toHaveLength(2);
@@ -410,6 +442,23 @@ describe('Matches table layout and cues', () => {
     // A drift flag counts too, even with equal amounts.
     expect(rowDiffers(linkedRow({ status: 'MISMATCH_DETECTED' }))).toBe(true);
     expect(rowDiffers(linkedRow({ wallosAmountCents: 5, actualAmountCents: null }))).toBe(false);
+  });
+  it('113 the counts line counts the filtered rows (one differing, two equal)', () => {
+    const same = (id: string, name: string) => linkedRow({ matchId: id, wallosId: `w${id}`, actualScheduleId: `a${id}`, wallosName: name, actualName: name, wallosAmountCents: 1000, actualAmountCents: 1000 });
+    const linked = [
+      same('e1', 'Spotify'),
+      linkedRow({ matchId: 'd1', wallosId: 'wd', actualScheduleId: 'ad', wallosName: 'iCloud+', actualName: 'APPLE', wallosAmountCents: 299, actualAmountCents: 300 }),
+      same('e2', 'Netflix'),
+    ];
+    const result = fixture({ linked });
+    expect(render({ result })).toContain('3 of 3 pairs, 1 with differences');
+    const differing = render({ result, query: 'icloud' });
+    expect(differing).toContain('1 of 3 pairs, 1 with differences');
+    expect(differing.match(/data-match-row/g)).toHaveLength(1);
+    const equal = render({ result, query: 'spotify' });
+    expect(equal).toContain('1 of 3 pairs, 0 with differences');
+    expect(equal.match(/data-match-row/g)).toHaveLength(1);
+    expect(render({ result, query: 'icloud' }, 'nl')).toContain('1 van 3 paren, 1 met verschillen');
   });
   it('filters pairs by either name and says so when nothing matches', () => {
     const html = render({ query: 'fitness' });
