@@ -3,6 +3,7 @@ const en = {
   signedInAs: 'Signed in as {email}',
   loading: 'Loading account...',
   loadError: 'Could not load the account. Reload the page to try again.',
+  sessionExpired: 'Your session has expired. Sign in again to see your account.',
   password: {
     current: 'Current password',
     next: 'New password',
@@ -34,6 +35,7 @@ const nl: typeof en = {
   signedInAs: 'Aangemeld als {email}',
   loading: 'Account wordt geladen...',
   loadError: 'Het account kon niet worden geladen. Laad de pagina opnieuw om het nog eens te proberen.',
+  sessionExpired: 'Je sessie is verlopen. Log opnieuw in om je account te zien.',
   password: {
     current: 'Huidig wachtwoord',
     next: 'Nieuw wachtwoord',

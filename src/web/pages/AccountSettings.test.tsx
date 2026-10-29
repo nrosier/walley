@@ -5,7 +5,7 @@ import { accountSettingsMessages } from './AccountSettings.messages';
 import { PASSWORD_MAX_CODE_POINTS, PASSWORD_MIN_CODE_POINTS } from '../../lib/password-policy';
 import { appMessages } from '../App.messages';
 import { requestLogout } from '../App';
-import { AccountSettingsView, changePassword, saveRegistration, type AccountInfo } from './AccountSettings';
+import { AccountSettingsView, changePassword, loadAccount, saveRegistration, type AccountInfo } from './AccountSettings';
 
 const render = (account: AccountInfo, locale: Locale = 'en') =>
   renderToStaticMarkup(
@@ -158,5 +158,22 @@ describe('registration toggle', () => {
   it('saveRegistration returns the server error code on 403', async () => {
     const { fetchImpl } = fakeFetch(403, { error: 'forbidden' });
     expect(await saveRegistration(false, fetchImpl)).toEqual({ ok: false, code: 'forbidden' });
+  });
+  it('loadAccount does not return ready for a body without identities', async () => {
+    const { fetchImpl } = fakeFetch(200, { error: 'unauthenticated' });
+    expect((await loadAccount(fetchImpl)).status).toBe('error');
+  });
+  it('loadAccount returns ready for a full account body', async () => {
+    const { fetchImpl } = fakeFetch(200, local);
+    expect(await loadAccount(fetchImpl)).toEqual({ status: 'ready', account: local });
+  });
+  it('loadAccount flags a 401 as expired', async () => {
+    const { fetchImpl } = fakeFetch(401, { error: 'unauthenticated' });
+    expect(await loadAccount(fetchImpl)).toEqual({ status: 'error', expired: true });
+  });
+  it('has the sessionExpired message in en and nl', () => {
+    const nl = createT(accountSettingsMessages, 'nl');
+    expect(en('sessionExpired')).toBe('Your session has expired. Sign in again to see your account.');
+    expect(nl('sessionExpired')).toBe('Je sessie is verlopen. Log opnieuw in om je account te zien.');
   });
 });

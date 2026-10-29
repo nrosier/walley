@@ -229,26 +229,47 @@ export function AccountSettingsView({ account }: { account: AccountInfo }) {
   );
 }
 
-type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; account: AccountInfo };
+export type AccountLoadState =
+  | { status: 'loading' }
+  | { status: 'error'; expired?: boolean }
+  | { status: 'ready'; account: AccountInfo };
+
+/** True only for a body with the AccountInfo shape (email, mode, identities array). */
+// eslint-disable-next-line react-refresh/only-export-components -- exported for tests
+export function isAccountInfo(body: unknown): body is AccountInfo {
+  if (typeof body !== 'object' || body === null) return false;
+  const b = body as Record<string, unknown>;
+  return typeof b.email === 'string' && typeof b.mode === 'string' && Array.isArray(b.identities);
+}
+
+/** Loads GET /api/account into a view state. A 401 or a body that is not an account is an error, never 'ready'. */
+// eslint-disable-next-line react-refresh/only-export-components -- exported for tests with a fake fetch
+export async function loadAccount(
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+): Promise<AccountLoadState> {
+  try {
+    const body = await apiRequest('/api/account', { signal, fetchImpl });
+    return isAccountInfo(body) ? { status: 'ready', account: body } : { status: 'error' };
+  } catch (err: unknown) {
+    return { status: 'error', expired: err instanceof ApiError && err.status === 401 };
+  }
+}
 
 /** Loads GET /api/account and renders the matching view. */
 export function AccountSettings() {
   const { t } = useT(accountSettingsMessages);
-  const [state, setState] = useState<State>({ status: 'loading' });
+  const [state, setState] = useState<AccountLoadState>({ status: 'loading' });
   useEffect(() => {
     const controller = new AbortController();
-    apiRequest<AccountInfo>('/api/account', { signal: controller.signal })
-      .then((account) => {
-        setState({ status: 'ready', account });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setState({ status: 'error' });
-      });
+    void loadAccount(undefined, controller.signal).then((next) => {
+      if (!controller.signal.aborted) setState(next);
+    });
     return () => {
       controller.abort();
     };
   }, []);
   if (state.status === 'loading') return <AccountCard><p className="text-sm text-muted">{t('loading')}</p></AccountCard>;
-  if (state.status === 'error') return <AccountCard><p role="alert" className="text-sm text-warning">{t('loadError')}</p></AccountCard>;
+  if (state.status === 'error') return <AccountCard><p role="alert" className="text-sm text-warning">{state.expired === true ? t('sessionExpired') : t('loadError')}</p></AccountCard>;
   return <AccountSettingsView account={state.account} />;
 }
