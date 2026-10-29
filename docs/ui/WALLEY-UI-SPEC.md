@@ -315,7 +315,7 @@ Shadcn UI components are built on Tailwind classes, so they cannot be kept as sh
 | `components/ui/badge.tsx`, `StatusBadge.tsx` | CHANGE | Replace Lucide icons with inline SVG [D-a decided]; removal from `src/web` and `package.json` is a FOLLOW-UP |
 | `components/ui/dialog.tsx` | KEEP | Verify focus return and stacked AlertDialog; add full-screen mobile variant |
 | `components/dashboard/Toolbar.tsx` | CHANGE | Add last-check line, offline-disabled state, Clear search |
-| `components/dashboard/ItemRow.tsx`, `ItemColumn`, `WallosColumn`, `ActualColumn` | CHANGE | Busy/error row states, held-reason text, narrow layout, column count |
+| `components/dashboard/ItemRow.tsx`, `PairList`, `IgnoredSection` | CHANGE | Busy/error row states, held-reason text, narrow layout, column count |
 | `components/dashboard/CreateActualModal.tsx`, `CreateWallosModal.tsx`, `create-modal-shared.ts` | CHANGE | Pinned footer, payee as radio cards, partial-success warning, full-screen mobile |
 | `components/matches/DiffModal.tsx` | CHANGE | Consequence text per option, button hierarchy, danger style for Unlink, focus return |
 | `pages/SyncDashboard.tsx` | CHANGE | Stale-result handling, not-configured empty state, sync-failure side naming |

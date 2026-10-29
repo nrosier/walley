@@ -127,7 +127,7 @@ export interface RowModel {
   readonly cycle?: BillingCycle;
 }
 
-const fromItem = (item: SyncItem): RowModel => ({
+export const fromItem = (item: SyncItem): RowModel => ({
   id: item.id,
   name: item.name,
   amountCents: item.amountCents,

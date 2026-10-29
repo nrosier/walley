@@ -20,6 +20,14 @@ export interface ItemRowProps {
   baseCurrency: string;
   /** All candidates of the last check; the row picks its own. */
   candidates: readonly SyncCandidate[];
+  /**
+   * The candidate this row is paired with in the dashboard. A candidate makes it the primary Link;
+   * null means the row is unpaired (Create is primary, other candidates stay in More actions);
+   * undefined picks the best candidate of the item.
+   */
+  suggestion?: SyncCandidate | null;
+  /** Render a cell inside a pair row (a div with no list styling) instead of a list item. */
+  cell?: boolean;
   disabled?: boolean;
   error?: string | null;
   createLabel: string;
@@ -45,7 +53,8 @@ export function ItemRow(props: ItemRowProps) {
   const mine = props.candidates
     .filter((c) => (side === 'wallos' ? c.wallosId === row.id : c.actualScheduleId === row.id))
     .sort((a, b) => b.nameScore - a.nameScore);
-  const best = row.reason === null ? mine[0] : undefined;
+  const picked = props.suggestion === undefined ? mine[0] : (props.suggestion ?? undefined);
+  const best = row.reason === null ? picked : undefined;
   const otherName = (c: SyncCandidate) => (side === 'wallos' ? c.actualName : c.wallosName);
   const busy = props.disabled === true;
 
@@ -71,7 +80,7 @@ export function ItemRow(props: ItemRowProps) {
     }
   } else {
     // Other candidates stay reachable here so the suggestion is not the only way to link.
-    for (const c of mine.slice(best === undefined ? 0 : 1)) {
+    for (const c of mine.filter((m) => best === undefined || m.wallosId !== best.wallosId || m.actualScheduleId !== best.actualScheduleId)) {
       if (row.reason !== null) break;
       menu.push({
         id: `link:${c.wallosId}:${c.actualScheduleId}`,
@@ -88,11 +97,13 @@ export function ItemRow(props: ItemRowProps) {
     });
   }
 
+  const Tag = props.cell === true ? 'div' : 'li';
   return (
-    <li
+    <Tag
       data-row-id={row.id}
+      data-side={side}
       tabIndex={-1}
-      className="border-b last:border-b-0 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      className={`${props.cell === true ? 'h-full' : 'border-b last:border-b-0'} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring`}
     >
       <div className={`flex items-center gap-x-3 ${CELL}`}>
         <div className="min-w-0 flex-1">
@@ -183,23 +194,19 @@ export function ItemRow(props: ItemRowProps) {
           </Alert>
         </div>
       ) : null}
-    </li>
+    </Tag>
   );
 }
 
-export interface ItemColumnProps {
+export interface IgnoredSectionProps {
   side: Side;
   title: string;
+  /** Ignored rows of this side; the section renders nothing when empty. */
   rows: readonly RowModel[];
-  /** Ignored rows of this column; shown in a disclosure. */
-  ignoredRows?: readonly RowModel[];
-  ignoredOpen?: boolean;
-  onIgnoredOpenChange?: (open: boolean) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   baseCurrency: string;
-  candidates: readonly SyncCandidate[];
   createLabel: string;
-  /** Message for an empty column. */
-  emptyText: string;
   busyId?: string | null;
   errorRowId?: string | null;
   errorText?: string | null;
@@ -210,52 +217,41 @@ export interface ItemColumnProps {
   onRetry?: () => void;
 }
 
-/** Shared column body used by WallosColumn and ActualColumn. */
-export function ItemColumn(props: ItemColumnProps) {
+/** The ignored items of one side in a collapsed disclosure. */
+export function IgnoredSection(props: IgnoredSectionProps) {
   const { t } = useT(syncDashboardMessages);
-  const headingId = `col-${props.side}`;
-  const renderRow = (row: RowModel) => (
-    <ItemRow
-      key={row.id}
-      row={row}
-      side={props.side}
-      baseCurrency={props.baseCurrency}
-      candidates={props.candidates}
-      createLabel={props.createLabel}
-      disabled={props.busyId === row.id}
-      error={props.errorRowId === row.id ? props.errorText : null}
-      onLink={props.onLink}
-      onIgnore={props.onIgnore}
-      onRestore={props.onRestore}
-      onRetry={props.onRetry}
-    />
-  );
-  const ignored = props.ignoredRows ?? [];
+  if (props.rows.length === 0) return null;
   return (
     <section
-      aria-labelledby={headingId}
+      aria-labelledby={`col-${props.side}`}
       data-column={props.side}
-      tabIndex={-1}
-      className={`min-w-0 rounded-lg border bg-card outline-none ${props.className ?? ''}`}
+      className={`min-w-0 rounded-lg border bg-card ${props.className ?? ''}`}
     >
-      <h2 id={headingId} className="border-b px-3 py-1.5 text-sm font-semibold">
-        {props.title} <span className="font-mono text-xs font-normal text-muted">{props.rows.length}</span>
-      </h2>
-      {props.rows.length === 0 ? (
-        <p className="px-3 py-1.5 text-sm text-muted">{props.emptyText}</p>
-      ) : (
-        <ul>{props.rows.map(renderRow)}</ul>
-      )}
-      {ignored.length > 0 ? (
-        <Disclosure
-          className="border-t px-3"
-          title={t('ignoredTitle', { count: ignored.length })}
-          open={props.ignoredOpen}
-          onOpenChange={props.onIgnoredOpenChange}
-        >
-          <ul className="-mx-3">{ignored.map(renderRow)}</ul>
-        </Disclosure>
-      ) : null}
+      <Disclosure
+        className="px-3"
+        title={t('ignoredTitle', { count: props.rows.length })}
+        open={props.open}
+        onOpenChange={props.onOpenChange}
+      >
+        <ul className="-mx-3">
+          {props.rows.map((row) => (
+            <ItemRow
+              key={row.id}
+              row={row}
+              side={props.side}
+              baseCurrency={props.baseCurrency}
+              candidates={[]}
+              createLabel={props.createLabel}
+              disabled={props.busyId === row.id}
+              error={props.errorRowId === row.id ? props.errorText : null}
+              onLink={props.onLink}
+              onIgnore={props.onIgnore}
+              onRestore={props.onRestore}
+              onRetry={props.onRetry}
+            />
+          ))}
+        </ul>
+      </Disclosure>
     </section>
   );
 }

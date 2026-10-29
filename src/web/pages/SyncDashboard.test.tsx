@@ -8,8 +8,8 @@ import storeSrc from '@/lib/sync-check.ts?raw';
 import apiSrc from '@/lib/matches.api.ts?raw';
 import rowSrc from '@/components/dashboard/ItemRow.tsx?raw';
 import toolbarSrc from '@/components/dashboard/Toolbar.tsx?raw';
-import wallosColumnSrc from '@/components/dashboard/WallosColumn.tsx?raw';
-import actualColumnSrc from '@/components/dashboard/ActualColumn.tsx?raw';
+import pairListSrc from '@/components/dashboard/PairList.tsx?raw';
+import pairRowsSrc from '@/lib/pair-rows.ts?raw';
 import { ItemRow } from '@/components/dashboard/ItemRow';
 import { syncDashboardMessages } from './SyncDashboard.messages';
 import { createT } from '@/i18n/translate';
@@ -18,11 +18,13 @@ import { SyncDashboardView, type SyncDashboardViewProps } from './SyncDashboard'
 
 const restoreLabel = (locale: Locale) => createT(syncDashboardMessages, locale)('row.restoreNamed', { name: 'Amazon Prime' });
 
-/** The markup of one column: from its data-column marker to the closing section tag. */
-const columnOf = (html: string, side: 'wallos' | 'actual') => {
-  const start = html.indexOf(`data-column="${side}"`);
-  expect(start, `${side} column`).toBeGreaterThan(-1);
-  return html.slice(start, html.indexOf('</section>', start));
+/** The markup of one cell: from its data-row-id and data-side marker to the next cell. */
+const cellOf = (html: string, side: 'wallos' | 'actual', id: string) => {
+  const marker = `data-row-id="${id}" data-side="${side}"`;
+  const start = html.indexOf(marker);
+  expect(start, `${side} cell ${id}`).toBeGreaterThan(-1);
+  const next = html.indexOf('data-row-id=', start + 1);
+  return html.slice(start, next === -1 ? undefined : next);
 };
 
 const render = (state: SyncStoreState, extra: Partial<SyncDashboardViewProps> = {}, locale: Locale = 'en') =>
@@ -49,15 +51,15 @@ describe('SyncDashboard states', () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain('Could not reach Wallos.');
   });
-  it('empty: both columns say there is nothing to link', () => {
+  it('empty: the list says there is nothing to link', () => {
     const empty = { ...sample(), unlinkedWallos: [], unlinkedActual: [], candidates: [], ignored: [] };
     const html = render({ status: 'ready', result: empty, errorCode: null });
-    expect(html.match(/Nothing to link here\./g)).toHaveLength(2);
+    expect(html.match(/Nothing to link here\./g)).toHaveLength(1);
   });
-  it('populated: two columns, money in font-mono, search filters', () => {
+  it('populated: a Wallos and an Actual heading, money in font-mono, search filters', () => {
     const html = render(ready());
-    expect(html).toContain('data-column="wallos"');
-    expect(html).toContain('data-column="actual"');
+    expect(html).toContain('id="col-wallos"');
+    expect(html).toContain('id="col-actual"');
     expect(html).toMatch(/font-mono[^>]*>€12\.99/);
     const filtered = render(ready(), { query: 'rent' });
     expect(filtered).toContain('Rent');
@@ -80,28 +82,20 @@ describe('SyncDashboard states', () => {
   });
   it('Link shows a "Suggested match: X" line when a candidate exists, otherwise Create appears', () => {
     const html = render(ready());
-    const wallos = columnOf(html, 'wallos');
-    const actual = columnOf(html, 'actual');
-    const rowOf = (column: string, id: string) => {
-      const start = column.indexOf(`data-row-id="${id}"`);
-      expect(start, id).toBeGreaterThan(-1);
-      const next = column.indexOf('data-row-id=', start + 1);
-      return column.slice(start, next === -1 ? undefined : next);
-    };
     // Candidate: the line names the other side, Link is the action, Create is absent.
-    const netflix = rowOf(wallos, 'w1');
+    const netflix = cellOf(html, 'wallos', 'w1');
     expect(netflix).toContain('Suggested match: NETFLIX.COM');
     expect(netflix).toMatch(/>Link<\/button>/);
     expect(netflix).not.toContain('>Create in');
-    const netflixActual = rowOf(actual, 'a1');
+    const netflixActual = cellOf(html, 'actual', 'a1');
     expect(netflixActual).toContain('Suggested match: Netflix');
     expect(netflixActual).toMatch(/>Link<\/button>/);
     // No candidate: no suggestion line, no Link, Create instead.
-    const gym = rowOf(wallos, 'w2');
+    const gym = cellOf(html, 'wallos', 'w2');
     expect(gym).not.toContain('Suggested match');
     expect(gym).not.toContain('>Link<');
     expect(gym).toContain('>Create in AB<');
-    const rent = rowOf(actual, 'a2');
+    const rent = cellOf(html, 'actual', 'a2');
     expect(rent).not.toContain('Suggested match');
     expect(rent).toContain('>Create in Wallos<');
     // Both strings exist in nl.
@@ -111,8 +105,8 @@ describe('SyncDashboard states', () => {
   });
   it('Create appears only on rows without a candidate and opens the pre-fill modals', () => {
     const html = render(ready());
-    expect(columnOf(html, 'wallos').match(/>Create in AB<\/button>/g)).toHaveLength(1);
-    expect(columnOf(html, 'actual').match(/>Create in Wallos<\/button>/g)).toHaveLength(1);
+    expect(html.match(/>Create in AB<\/button>/g)).toHaveLength(1);
+    expect(html.match(/>Create in Wallos<\/button>/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Create in AB: Gym"');
     expect(html).toContain('aria-label="Create in Wallos: Rent"');
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Create in/);
@@ -131,7 +125,7 @@ describe('SyncDashboard states', () => {
     expect(html).toMatch(/data-variant="default"[^>]*>Run Sync Check</);
   });
   it('the dashboard and its column and row sources make no /api/integrations call', () => {
-    const files: Record<string, string> = { dashboardSrc, storeSrc, apiSrc, rowSrc, toolbarSrc, wallosColumnSrc, actualColumnSrc };
+    const files: Record<string, string> = { dashboardSrc, storeSrc, apiSrc, rowSrc, toolbarSrc, pairListSrc, pairRowsSrc };
     for (const [f, src] of Object.entries(files)) {
       expect(src, f).not.toContain('/api/integrations');
     }
@@ -200,16 +194,87 @@ describe('SyncDashboard states', () => {
     expect(failedSide('request_failed')).toBeNull();
     expect(failedSide(null)).toBeNull();
   });
-  it('a segmented control switches the lists below 768px; both lists stay in markup', () => {
+  it('mobile keeps the segmented control and shows one side at a time (#142)', () => {
     const html = render(ready());
     expect(html).toContain('role="radiogroup"');
     expect(html).toContain('aria-label="Show list"');
     expect(html).toContain('Wallos (2)');
     expect(html).toContain('Actual Budget (2)');
     expect(html).toContain('md:hidden');
-    // Wallos is the default pane, so only the Actual column hides below 768px.
-    expect(html).toMatch(/data-column="actual"[^>]*max-md:hidden/);
-    expect(html).not.toMatch(/data-column="wallos"[^>]*max-md:hidden/);
+    // Wallos is the default pane: Actual cells and the Actual heading hide below 768px, Wallos ones do not.
+    expect(cellOf(html, 'actual', 'a1')).not.toContain('max-md:hidden');
+    expect(html).toMatch(/<div class="min-w-0 max-md:hidden md:border-l"><div data-row-id="a1" data-side="actual"/);
+    expect(html).toMatch(/<div class="min-w-0 {2}"><div data-row-id="w1" data-side="wallos"/);
+    expect(html).toMatch(/id="col-actual" class="[^"]*max-md:hidden/);
+    expect(html).not.toMatch(/id="col-wallos" class="[^"]*max-md:hidden/);
+    // A row with nothing on the shown side hides there: the Actual-only row (Rent).
+    expect(html).toMatch(/data-pair="actual" class="[^"]*max-md:hidden/);
+    expect(html).not.toMatch(/data-pair="wallos" class="[^"]*max-md:hidden/);
+  });
+  it('renders linked pairs first, then suggested pairs by score, then Wallos-only, then Actual-only (#142)', () => {
+    const r = {
+      ...sample(),
+      linked: [
+        {
+          matchId: 'm7',
+          wallosId: 'wl',
+          actualScheduleId: 'al',
+          status: 'LINKED' as const,
+          orphan: null,
+          wallosName: 'Linked W',
+          actualName: 'Linked A',
+          wallosAmountCents: 700,
+          actualAmountCents: 700,
+          isRange: false,
+          relinkCandidateIds: [],
+        },
+      ],
+    };
+    const html = render({ status: 'ready', result: r, errorCode: null });
+    const kinds = [...html.matchAll(/data-pair="(\w+)"/g)].map((m) => m[1]);
+    expect(kinds).toEqual(['linked', 'suggested', 'wallos', 'actual']);
+    const at = (name: string) => html.indexOf(name);
+    expect(at('Linked W')).toBeLessThan(at('NETFLIX.COM'));
+    expect(at('NETFLIX.COM')).toBeLessThan(at('Gym'));
+    expect(at('Gym')).toBeLessThan(at('Rent'));
+    // The linked row carries its status badge and no actions.
+    const linked = html.slice(html.indexOf('data-pair="linked"'), html.indexOf('data-pair="suggested"'));
+    expect(linked).toContain('data-kind="synced"');
+    expect(linked).not.toContain('<button');
+    // The suggested row holds both sides of the pair side by side.
+    const suggested = html.slice(html.indexOf('data-pair="suggested"'), html.indexOf('data-pair="wallos"'));
+    expect(suggested).toContain('data-row-id="w1" data-side="wallos"');
+    expect(suggested).toContain('data-row-id="a1" data-side="actual"');
+  });
+  it('an unpaired item gets an empty placeholder of the other side in its row (#142)', () => {
+    const html = render(ready());
+    const wallosOnly = html.slice(html.indexOf('data-pair="wallos"'), html.indexOf('data-pair="actual"'));
+    expect(wallosOnly).toContain('data-row-id="w2" data-side="wallos"');
+    expect(wallosOnly).toContain('aria-hidden="true" data-placeholder="actual"');
+    expect(wallosOnly).not.toContain('data-side="actual"');
+    const actualOnly = html.slice(html.indexOf('data-pair="actual"'));
+    expect(actualOnly).toContain('data-row-id="a2" data-side="actual"');
+    expect(actualOnly).toContain('data-placeholder="wallos"');
+    // The placeholder is the first cell of its row: left of the Actual item.
+    expect(actualOnly.indexOf('data-placeholder="wallos"')).toBeLessThan(actualOnly.indexOf('data-row-id="a2"'));
+    // A paired row has no placeholder.
+    const suggested = html.slice(html.indexOf('data-pair="suggested"'), html.indexOf('data-pair="wallos"'));
+    expect(suggested).not.toContain('data-placeholder');
+  });
+  it('search keeps a row when either side matches (#142)', () => {
+    // "NETFLIX.COM" is the Actual name only; the row keeps its Wallos cell.
+    const html = render(ready(), { query: 'netflix.com' });
+    expect(html).toContain('data-row-id="w1" data-side="wallos"');
+    expect(html).toContain('data-row-id="a1" data-side="actual"');
+    expect(html).not.toContain('Gym');
+    expect(html).not.toContain('Rent');
+  });
+  it('ignored items stay in the per-side disclosure, not in the pair rows (#142)', () => {
+    const html = render(ready());
+    expect(html).toContain('Ignored items (1)');
+    expect(html.match(/data-row-id="w9"/g) ?? []).toHaveLength(0); // collapsed: content is not rendered
+    expect(html).not.toContain('data-pair="ignored"');
+    expect(html).not.toContain('Old');
   });
   it('shows a row error and renders in nl', () => {
     expect(render(ready(), {}, 'nl')).toContain('Aanmaken in AB');

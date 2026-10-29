@@ -1,14 +1,15 @@
 import { useCallback, useState } from 'react';
 import { NoticeToast } from '@/components/dashboard/NoticeToast';
-import { ActualColumn } from '@/components/dashboard/ActualColumn';
+import { IgnoredSection } from '@/components/dashboard/ItemRow';
+import { PairList } from '@/components/dashboard/PairList';
 import { HealthStatus } from '@/components/HealthStatus';
 import { Toolbar } from '@/components/dashboard/Toolbar';
-import { WallosColumn } from '@/components/dashboard/WallosColumn';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useT } from '@/i18n';
+import { buildPairRows, cellsOf } from '@/lib/pair-rows';
 import { followInApp } from '@/lib/route';
 import { failedSide, NOT_CONFIGURED_CODES } from '@/lib/sync-failure';
 import {
@@ -83,24 +84,22 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
     const filtering = props.query.trim() !== '';
     const emptyText = filtering ? t('states.noMatches') : t('states.empty');
     const ignoredFor = (s: Side): RowModel[] => buildRows(result, s, props.query, true).filter((r) => r.ignored);
-    const unlinkedFor = (s: Side): RowModel[] => buildRows(result, s, props.query, false);
+    const pairRows = buildPairRows(result, props.query);
+    const wallosCount = cellsOf(pairRows, 'wallos').length;
+    const actualCount = cellsOf(pairRows, 'actual').length;
     const errorInIgnored = props.errorRowId != null && [...ignoredFor('wallos'), ...ignoredFor('actual')].some((r) => r.id === props.errorRowId);
-    const common = {
+    const ignoredCommon = {
       baseCurrency: result.baseCurrency,
-      candidates: result.candidates,
-      emptyText,
       busyId: props.busyId,
       errorRowId: props.errorRowId,
       errorText: props.rowError,
-      ignoredOpen: ignoredOpen || errorInIgnored,
-      onIgnoredOpenChange: setIgnoredOpen,
+      open: ignoredOpen || errorInIgnored,
+      onOpenChange: setIgnoredOpen,
       onLink: props.onLink,
       onIgnore: props.onIgnore,
       onRestore: props.onRestore,
       onRetry: props.onRetryRow,
     };
-    const wallosRows = unlinkedFor('wallos');
-    const actualRows = unlinkedFor('actual');
     body = (
       <div aria-busy={running}>
         {failed ? (
@@ -117,22 +116,44 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
             setPane(v === 'actual' ? 'actual' : 'wallos');
           }}
           options={[
-            { value: 'wallos', label: t('panes.wallos', { count: wallosRows.length }) },
-            { value: 'actual', label: t('panes.actual', { count: actualRows.length }) },
+            { value: 'wallos', label: t('panes.wallos', { count: wallosCount }) },
+            { value: 'actual', label: t('panes.actual', { count: actualCount }) },
           ]}
         />
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <WallosColumn
-            {...common}
+        <PairList
+          rows={pairRows}
+          pane={pane}
+          baseCurrency={result.baseCurrency}
+          candidates={result.candidates}
+          emptyText={emptyText}
+          wallosTitle={t('columns.wallos')}
+          actualTitle={t('columns.actual')}
+          wallosCount={wallosCount}
+          actualCount={actualCount}
+          busyId={props.busyId}
+          errorRowId={props.errorRowId}
+          errorText={props.rowError}
+          onLink={props.onLink}
+          onIgnore={props.onIgnore}
+          onRestore={props.onRestore}
+          onRetry={props.onRetryRow}
+        />
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <IgnoredSection
+            {...ignoredCommon}
+            side="wallos"
+            title={t('columns.wallos')}
+            createLabel={t('row.createInActual')}
+            rows={ignoredFor('wallos')}
             className={pane === 'wallos' ? '' : 'max-md:hidden'}
-            rows={wallosRows}
-            ignoredRows={ignoredFor('wallos')}
           />
-          <ActualColumn
-            {...common}
+          <IgnoredSection
+            {...ignoredCommon}
+            side="actual"
+            title={t('columns.actual')}
+            createLabel={t('row.createInWallos')}
+            rows={ignoredFor('actual')}
             className={pane === 'actual' ? '' : 'max-md:hidden'}
-            rows={actualRows}
-            ignoredRows={ignoredFor('actual')}
           />
         </div>
       </div>
@@ -189,9 +210,9 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
 
 function focusAfter(side: Side, id: string | null) {
   requestAnimationFrame(() => {
-    const col = document.querySelector<HTMLElement>(`[data-column="${side}"]`);
-    const target = id === null ? null : col?.querySelector<HTMLElement>(`[data-row-id="${CSS.escape(id)}"]`);
-    (target ?? col)?.focus();
+    const target =
+      id === null ? null : document.querySelector<HTMLElement>(`[data-side="${side}"][data-row-id="${CSS.escape(id)}"]`);
+    (target ?? document.querySelector<HTMLElement>('[data-pairs]'))?.focus();
   });
 }
 
@@ -207,7 +228,10 @@ export function SyncDashboard() {
     (side: Side, id: string, action: RowAction) => {
       const result = sync.result;
       if (result === null) return;
-      const ids = buildRows(result, side, query, true).map((r) => r.id);
+      const ids = [
+        ...cellsOf(buildPairRows(result, query), side).map((r) => r.id),
+        ...buildRows(result, side, query, true).filter((r) => r.ignored).map((r) => r.id),
+      ];
       const next = nextRowId(ids, id);
       setBusyId(id);
       setFailed(null);
