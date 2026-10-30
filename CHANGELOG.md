@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Nothing yet.
 
+## [0.3.1] - 2026-10-30
+
+### Changed
+
+- The Sync Dashboard reuses each account's Wallos and Actual data for five minutes, so reloading the page no longer calls both services every time. Run Sync Check and Refresh always fetch fresh data.
+- Changes you make directly in Wallos or Actual Budget can take up to five minutes to appear on the dashboard. Saving a Walley action or a Wallos or Actual settings change refreshes the data at once.
+
 ## [0.3.0] - 2026-10-30
 
 ### Breaking
