@@ -42,7 +42,7 @@ Do not begin from a desired control such as “add a modal” or “add a menu i
 
 Organize primary navigation around user goals. Group by the task the user recognizes. Do not group by module name, data type, implementation package, or delivery order.
 
-Example for Walley's top-level navigation: **Sync Dashboard**, **Matches**, **Settings**. Account and sign-out controls sit in the header.
+Example for Walley's top-level navigation: **Sync Dashboard**, **Settings**. Account and sign-out controls sit in the header.
 
 Apply these rules:
 

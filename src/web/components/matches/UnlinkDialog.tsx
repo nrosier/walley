@@ -22,7 +22,7 @@ export interface UnlinkDialogProps {
   onCancel: () => void;
 }
 
-/** Confirmation for unlinking a Synced pair from the Matches row menu. Names both items; nothing remote changes. */
+/** Confirmation for unlinking a Synced pair from the linked-pair row menu on the Sync Dashboard. Names both items; nothing remote changes. */
 export function UnlinkDialog({ row, onConfirm, onCancel }: UnlinkDialogProps) {
   const modal = useT(diffModalMessages).t;
   const { t } = useT(unlinkDialogMessages);
