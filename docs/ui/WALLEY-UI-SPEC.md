@@ -10,13 +10,12 @@ Walley is a sync and matching tool for Wallos subscriptions and Actual Budget (A
 
 | Screen | Route | A user must be able to |
 | --- | --- | --- |
-| Sync Dashboard | `/sync` (also `/`) | Run a sync check, see unlinked Wallos subscriptions (left) and AB schedules (right), search, show ignored items, Link, Create in AB / Create in Wallos, Ignore, Restore |
-| Matches | `/matches` | See linked pairs with status, spot a Mismatch, open the diff modal, show ignored items, Restore |
+| Sync Dashboard | `/sync` (also `/`, and any unknown path) | Run a sync check, see unlinked Wallos subscriptions (left) and AB schedules (right), search, show ignored items, Link, Create in AB / Create in Wallos, Ignore, Restore; see linked pairs with status, spot a Mismatch, open the diff modal, show ignored items, Restore |
 | Settings | `/settings` | Configure Wallos (URL, API key, Test connection), Actual Budget (URL, password / sync key, load and pick budget, see base currency), matching tolerance, language, password (local mode) or OIDC info |
 | Login | `/login` | Sign in by email and password (local mode) or by a single "Log in with OpenID" button (OIDC mode); register when enabled |
 | Verify email | `/verify-email#token=...` | See verifying, success, invalid, disabled, missing or error, and reach sign-in |
 | Create modals | opened from Dashboard rows | Review pre-filled values, adjust, create the item in the other system |
-| Diff modal | opened from a Mismatch row in Matches | See drifted fields side by side, choose Overwrite Wallos, Overwrite Actual, Ignore Diff or Unlink |
+| Diff modal | opened from a Mismatch row on the Sync Dashboard | See drifted fields side by side, choose Overwrite Wallos, Overwrite Actual, Ignore Diff or Unlink |
 
 Out of scope: new data features, new routes, backend changes.
 
@@ -25,18 +24,18 @@ Out of scope: new data features, new routes, backend changes.
 One level of navigation. No rail, no drawer, no menus beyond the account menu. Goal-based groups are not needed with three destinations.
 
 ```
-Header:  Walley (bold) | Sync Dashboard  Matches  Settings | [Refresh] [Theme] [Account v]
+Header:  Walley (bold) | Sync Dashboard  Settings | [Refresh] [Theme] [Account v]
 ```
 
 - App title "Walley": bold, text, links to `/sync`.
-- Tabs are route links (`<a href>`, `aria-current="page"`), not `role="tab"`. Labels: Sync Dashboard, Matches, Settings (from `AppShell.messages.ts`).
+- Tabs are route links (`<a href>`, `aria-current="page"`), not `role="tab"`. Labels: Sync Dashboard, Settings (from `AppShell.messages.ts`). There is no Matches tab; linked pairs live on the Sync Dashboard.
 - Refresh: label "Refresh" with icon (`AppShell.messages.ts`). [approved, not yet in messages files; behaviour not in the code today: on `/sync` it runs the sync check; elsewhere it reloads the page data.] Disabled and labelled "Checking..." while running.
 - Theme toggle: switches light/dark; canonical copy also lives in Settings > General as "This device" (guide section 3.3). One source of truth: `walley-theme` in localStorage.
 - Account menu: trigger shows the user email; one dropdown level with "Log out".
-- Page title: each page has one `<h1>` and the document title names feature and subject, for example "Matches - Walley". Walley has no record subject, so feature plus app name is the pattern.
+- Page title: each page has one `<h1>` and the document title names feature and subject, for example "Sync Dashboard - Walley". Walley has no record subject, so feature plus app name is the pattern.
 - Login and Verify email render without the header.
 
-Routes (path router, existing): `/sync`, `/matches`, `/settings`, `/login`, `/verify-email`. Unknown paths go to `/sync`. No new routes. Settings sections are in-page anchors, not routes (see 3.3).
+Routes (path router, existing): `/sync`, `/settings`, `/login`, `/verify-email`. Unknown paths, including `/matches`, go to `/sync`. No new routes. Settings sections are in-page anchors, not routes (see 3.3).
 
 State that survives reload: theme and language (device), search text and "Show Ignored Items" (page state, not persisted, reset on reload), last sync result (in memory only; Dashboard never checks on mount).
 
@@ -48,7 +47,7 @@ Page order (guide section 5): h1, context line, inputs and primary action, statu
 
 ```
 +--------------------------------------------------------------------------+
-| Walley   Sync Dashboard  Matches  Settings        Refresh  Theme  me@x v |
+| Walley   Sync Dashboard  Settings                 Refresh  Theme  me@x v |
 +--------------------------------------------------------------------------+
 | Sync Dashboard                                                           |
 | [D-e decided] Last check: 14:32 - 12 Wallos unlinked - 9 Actual unlinked |
@@ -70,10 +69,10 @@ Page order (guide section 5): h1, context line, inputs and primary action, statu
 - Create buttons are currently held ("Held: creating items arrives in a later release."). Held state: disabled with the reason shown next to it, not a tooltip alone.
 - Last-check line is [approved, not yet in messages files] copy [D-e decided: add it]; it needs the check timestamp (UI-only, held in the shared store).
 
-### 3.2 Matches
+### 3.2 Linked pairs (on the Sync Dashboard)
 
 ```
-| Matches                                                                  |
+| Linked pairs                                                             |
 | [D-e decided] 8 linked - 2 mismatch        [ ] Show ignored items         |
 +--------------------------------------------------------------------------+
 | Wallos subscription | Wallos amount | Actual Budget schedule | Actual amt | Status    | Action |
@@ -85,7 +84,7 @@ Page order (guide section 5): h1, context line, inputs and primary action, statu
 | Item | Side | Amount | (Ignored)                             [Restore]    |
 ```
 
-- Table, compact density [D-b decided: compact for Dashboard and Matches], sticky header, numeric columns right aligned with tabular numerals, em dash for a missing side.
+- Table, compact density [D-b decided: compact for Dashboard and linked pairs], sticky header, numeric columns right aligned with tabular numerals, em dash for a missing side.
 - Status column uses `StatusBadge` (Synced green, Mismatch amber, Ignored gray, Orphaned gray with amber border and icon).
 - "Review" opens the diff modal; shown only on Mismatch rows. Whole row is not clickable; the button is.
 - Ignored items are a second section below, not mixed into the linked table.
@@ -197,7 +196,7 @@ Optimistic update with per-row rollback is existing behaviour and is kept; on ro
 | Screen | Loading | Empty | Zero-result | Error | Success |
 | --- | --- | --- | --- | --- | --- |
 | Dashboard | Before first check: idle text "Run a sync check to see unlinked items." While running: skeleton rows in both columns, run button "Checking...", region `aria-busy`, previous result kept and marked stale | "Nothing to link here." with the check time (valid zero: the check succeeded) | "No items match your search." plus "Clear search" [approved, not yet in messages files] | Alert "The sync check failed." plus cause and "Retry" [approved, not yet in messages files] (see 4.4) | Row action: row moves out of list, focus goes to the next row, polite announcement "{name} linked" |
-| Matches | Table skeleton with final column geometry | "No linked pairs yet. Run Sync Check on the Sync Dashboard to load them." with a link to `/sync` | Ignored toggle on with none: "No ignored items." | Alert with "Retry" [approved, not yet in messages files] | Restore: row leaves ignored list, announcement |
+| Linked pairs (Sync Dashboard) | Table skeleton with final column geometry | "No linked pairs yet. Run Sync Check on the Sync Dashboard to load them." | Ignored toggle on with none: "No ignored items." | Alert with "Retry" [approved, not yet in messages files] | Restore: row leaves ignored list, announcement |
 | Settings | Field skeletons per section | not applicable (forms always render) | not applicable | Inline error beside field; section-level alert for network errors; entered values preserved | Inline "Saved" status (`role="status"`), no toast |
 | Create modal | "Loading the pre-fill..." with skeleton fields | not applicable | not applicable | Alert in footer region; inputs preserved; Create re-enabled | "Created." then close, announce on the Dashboard |
 | Diff modal | Buttons show "Working..." [approved, not yet in messages files] per action, others disabled | not applicable | not applicable | Mapped message from `overwriteErrors`; modal stays open | Close, row badge updates, sync result refreshed |
@@ -263,8 +262,8 @@ Sizes match the scale CLAUDE.md names (`text-xs` to `text-sm`); they are defined
 | Token | Value | Use |
 | --- | --- | --- |
 | spacing unit | 4px grid: 4, 8, 12, 16, 24, 32 | all layout spacing |
-| `--cell-pad` | `py 6px, px 12px` (`py-1.5 px-3`) | table cells, list rows [D-b decided: compact for Dashboard and Matches; standard for Settings, Login, Verify-email and modals] |
-| `--control-h` | 32px compact (desktop, Dashboard and Matches) [D-b decided]; 44px on touch [D-d decided: coarse pointer and narrow layouts only] | inputs, buttons, selects |
+| `--cell-pad` | `py 6px, px 12px` (`py-1.5 px-3`) | table cells, list rows [D-b decided: compact for Dashboard and linked pairs; standard for Settings, Login, Verify-email and modals] |
+| `--control-h` | 32px compact (desktop, Dashboard and linked pairs) [D-b decided]; 44px on touch [D-d decided: coarse pointer and narrow layouts only] | inputs, buttons, selects |
 | `--radius` | 6px (cards, inputs, buttons); `--radius-pill` 9999px (badges) | |
 | `--border-width` | 1px, `--line` colour | cards, panels, inputs, table row dividers |
 | `--focus-ring` | 2px solid `--focus`, 2px offset | every interactive element, `:focus-visible` |
@@ -296,11 +295,11 @@ Breakpoints are not defined in CLAUDE.md or the code beyond the framework defaul
   - Dashboard columns stack: Wallos first, then Actual, each with its heading and count; or a two-option segmented control "Wallos | Actual Budget" shows one list at a time (recommended; keeps the first screenful short). The control is a labelled radio group, not tabs.
   - Toolbar wraps: search full width, switch and Run Sync Check on the next line; Run Sync Check stays visible (sticky bottom action bar with safe-area padding is NOT used; the toolbar scrolls with the page).
   - Header: tabs stay as links in one row if they fit; otherwise collapse to a labelled Select "Main" (never a scrolling tab row). Refresh and theme stay as icon buttons with accessible names; account menu stays.
-  - Matches table scrolls horizontally inside a labelled container, first column sticky; Status and Review stay reachable.
+  - Linked-pairs table scrolls horizontally inside a labelled container, first column sticky; Status and Review stay reachable.
   - Settings section nav becomes a labelled Select.
   - Modals become full-screen sheets with pinned header and footer; body scrolls; padded with `env(safe-area-inset-*)`.
   - Controls return to 44px height on coarse pointers and narrow layouts [D-d decided].
-- Above 1440: content max width 1440px centered for the Dashboard and Matches; Settings and Login keep a narrow measure (about 68ch for prose, 40rem forms).
+- Above 1440: content max width 1440px centered for the Dashboard (including linked pairs); Settings and Login keep a narrow measure (about 68ch for prose, 40rem forms).
 
 ## 8. Reuse
 
@@ -319,7 +318,7 @@ Shadcn UI components are built on Tailwind classes, so they cannot be kept as sh
 | `components/dashboard/CreateActualModal.tsx`, `CreateWallosModal.tsx`, `create-modal-shared.ts` | CHANGE | Pinned footer, payee as radio cards, partial-success warning, full-screen mobile |
 | `components/matches/DiffModal.tsx` | CHANGE | Consequence text per option, button hierarchy, danger style for Unlink, focus return |
 | `pages/SyncDashboard.tsx` | CHANGE | Stale-result handling, not-configured empty state, sync-failure side naming |
-| `pages/Matches.tsx` | CHANGE | Compact table, sticky header, contained overflow, empty-state link |
+| `pages/SyncDashboard.tsx` (linked-pairs table) | CHANGE | Compact table, sticky header, contained overflow, empty-state link |
 | `pages/SettingsPage.tsx` | CHANGE | Scope labels, section anchor nav / narrow Select |
 | `pages/WallosSettings.tsx`, `ActualSettings.tsx`, `MatchingSettings.tsx`, `AccountSettings.tsx` | CHANGE | Move to shared Field anatomy, per-field errors, "Saved" status |
 | `pages/LoginPage.tsx`, `VerifyEmailPage.tsx` | KEEP | Align error and status regions with `StatusMessage` |
@@ -332,8 +331,8 @@ Shadcn UI components are built on Tailwind classes, so they cannot be kept as sh
 | `SegmentedControl` (radio group) | NEW | Billing cycle, narrow Dashboard pane switch |
 | `OptionCards` | NEW | Payee choice, Diff options if cards are used |
 | `StatusMessage` | NEW | status / alert / busy |
-| `EmptyState` | NEW | Dashboard, Matches, not-configured |
-| `DataTable` | NEW | Typed alignment, sticky header, contained overflow, used by Matches and the Diff table |
+| `EmptyState` | NEW | Dashboard (including linked pairs), not-configured |
+| `DataTable` | NEW | Typed alignment, sticky header, contained overflow, used by the linked-pairs table and the Diff table |
 | `Skeleton` | NEW | Row and field placeholders, reduced-motion aware |
 | `OfflineNotice` | NEW | Online/offline detection and disabled-reason wiring |
 
@@ -361,7 +360,7 @@ Sync Dashboard
 - [ ] Keyboard order matches section 6 end to end without a mouse.
 - [ ] Below 768px: panes stack or switch via segmented control; nothing clipped.
 
-Matches
+Linked pairs (Sync Dashboard)
 - [ ] Loading skeleton with fixed column geometry.
 - [ ] Empty: message plus link to the Dashboard.
 - [ ] Synced, Mismatch, Ignored and Orphaned badges each show text; amounts right aligned.
@@ -420,9 +419,9 @@ CLAUDE.md requires Tailwind and Lucide (the code uses both: `index.css` imports 
 - Former recommendation: Option 1. Overridden by the owner.
 
 **D-b. Default density.**
-Decided: Compact on Dashboard and Matches. Standard on Settings, Login, Verify-email and modals.
+Decided: Compact on Dashboard and linked pairs. Standard on Settings, Login, Verify-email and modals.
 - Option 1: Compact everywhere on desktop; standard sizing on coarse-pointer.
-- Option 2: Standard by default; compact only for Dashboard rows and the Matches table. (Chosen, with Verify-email also standard.)
+- Option 2: Standard by default; compact only for Dashboard rows and the linked-pairs table. (Chosen, with Verify-email also standard.)
 
 **D-c. Palette and token names.**
 Decided: Rename to the guide's token names (`--bg`, `--surface`, `--line`, `--text`, `--muted`, `--accent`, `--focus`) using the CLAUDE.md hex values. Add `--danger`, `--danger-bg` and `--info` under the new names. FOLLOW-UP: the rename across `src/web` (`index.css`, `palette.ts`, tests, primitives) is not part of this spec change.
@@ -445,7 +444,7 @@ Remaining implementation items (not conflicts): error/info colour tokens (5.1); 
 
 1. Tokens and shared controls (`Field`, `TextField`, `Select`, `StatusMessage`, `EmptyState`, `DataTable`, `Skeleton`); add danger/info tokens; extend contrast test.
 2. Shell: skip link, narrow header, offline notice. No routing change.
-3. Dashboard and Matches: states, compact density, narrow layout.
+3. Dashboard (including linked pairs): states, compact density, narrow layout.
 4. Modals: Create and Diff hierarchy, focus return, full-screen mobile.
 5. Settings: scope labels, anchor nav, field anatomy.
 6. Enforcement: primitive test, MAP.md updates.

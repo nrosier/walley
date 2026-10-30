@@ -14,7 +14,7 @@ import { submitCreate, wallosDisabledReason, wallosEdits, wallosSubmitDisabled, 
 export interface CreateWallosFormProps {
   prefill: WallosSubscriptionPrefill;
   scheduleId: string;
-  /** Orphaned match the new subscription is attached to (Recreate from Matches); sent in the create body. */
+  /** Orphaned match the new subscription is attached to (Recreate from the Sync Dashboard); sent in the create body. */
   matchId?: string;
   fetchImpl?: typeof fetch;
   /** Where Cancel and Create render (the modal's pinned footer); see `CreateFooter.host`. */
@@ -179,7 +179,7 @@ export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, foot
 export interface CreateWallosModalProps {
   scheduleId: string;
   scheduleName: string;
-  /** Recreate from an orphaned Matches row: the create call repoints this match. */
+  /** Recreate from an orphaned linked-pair row on the Sync Dashboard: the create call repoints this match. */
   matchId?: string;
   onClose: () => void;
   fetchImpl?: typeof fetch;

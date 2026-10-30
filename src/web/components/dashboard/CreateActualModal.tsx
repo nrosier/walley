@@ -123,7 +123,7 @@ export function PayeePicker({ payees, value, onValueChange }: PayeePickerProps) 
 export interface CreateActualFormProps {
   prefill: ActualSchedulePrefill;
   wallosId: string;
-  /** Orphaned match the new schedule is attached to (Recreate from Matches); sent in the create body. */
+  /** Orphaned match the new schedule is attached to (Recreate from the Sync Dashboard); sent in the create body. */
   matchId?: string;
   fetchImpl?: typeof fetch;
   /** Called after the rate was saved or cleared so the caller can re-fetch the pre-fill. */
@@ -300,7 +300,7 @@ export function CreateActualForm({ prefill, wallosId, matchId, fetchImpl, onRate
 export interface CreateActualModalProps {
   wallosId: string;
   wallosName: string;
-  /** Recreate from an orphaned Matches row: the create call repoints this match. */
+  /** Recreate from an orphaned linked-pair row on the Sync Dashboard: the create call repoints this match. */
   matchId?: string;
   onClose: () => void;
   fetchImpl?: typeof fetch;
