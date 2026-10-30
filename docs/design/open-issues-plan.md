@@ -1,6 +1,6 @@
 # Plan: close the 24 open issues
 
-Status: approved. Q2, Q3 and Q6 answered; vitest-axe still open (see Open questions).
+Status: approved. The Matches tab is removed (`pages/Matches.tsx` is deleted); its rows now live on the Sync Dashboard (`pages/SyncDashboard.tsx`, `components/dashboard/PairList.tsx`). Q2, Q3 and Q6 answered; vitest-axe still open (see Open questions).
 Branch: `m7-sync-dashboard` (36 commits ahead of `main`). Baseline: 91 test files, 1375 tests, all passing.
 Source: planning run on 2026-10-23 with opus-planner, checked against the code. Review page was in Lavish (`/tmp/walley-plan/walley-open-issues-plan.html`, not in the repo).
 
@@ -50,7 +50,7 @@ Source: planning run on 2026-10-23 with opus-planner, checked against the code. 
 
 **Open, confirmed**
 - #108 Auto-link after create: create routes in `create.ts` never call `insertMatch`.
-- #109 Re-create or re-link an orphan: orphans show only as a badge (`Matches.tsx:84`). No action exists.
+- #109 Re-create or re-link an orphan: orphans show only as a badge (`PairList.tsx`, formerly `Matches.tsx:84`). No action exists.
 - #110 Close modal on success: `CreateWallosModal.tsx` and `CreateActualModal.tsx:44` show "done" and never call `onClose`.
 - #111 Payment method and category: `WallosSubscriptionPayload` (`wallos/write.ts`) has neither field. `WallosClient` has no list calls.
 
@@ -70,7 +70,7 @@ Phase 0 has no dependencies and can start now. Other phases follow the `after` c
 | 2B | #111 (server) | Wallos list calls, payload fields, prefill lists, validation. | sonnet-engineer | 2A |
 | 2C | #109 (server) | Relink and recreate routes. Runs after 2B, or split carefully: both touch `create.ts` and `integrations.ts`. | sonnet-engineer | 2A |
 | 3A | #110 | Close modal on success, notices in dashboard `role="status"` (en and nl). | haiku-coder | 2A |
-| 3D | #109 (UI) | Orphan actions in `Matches.tsx`, `lib/matches.api.ts`, optimistic apply. | sonnet-engineer | 2C (parallel with 3A) |
+| 3D | #109 (UI) | Orphan actions in `components/dashboard/PairList.tsx` (`pages/SyncDashboard.tsx`), `lib/matches.api.ts`, optimistic apply. The Matches tab is removed; the Sync Dashboard replaces it. | sonnet-engineer | 2C (parallel with 3A) |
 | 3C | #28 (UI) | Rate field in `CreateActualModal.tsx`, `lib/overrides.api.ts`. | sonnet-engineer | 3A, 2D |
 | 3B | #111 (UI) | Two optional selects in `CreateWallosModal.tsx`. | haiku-coder | 3C (same modals), 2B |
 | 4A | #57 | One flow test in `src/server/flows.integration.test.ts`, `fetch` set to throw. | sonnet-engineer | 2A, 2C |

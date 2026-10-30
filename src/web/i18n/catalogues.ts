@@ -19,6 +19,7 @@ import { actualSettingsMessages } from '../pages/ActualSettings.messages';
 import { matchingSettingsMessages } from '../pages/MatchingSettings.messages';
 import { settingsPageMessages } from '../pages/SettingsPage.messages';
 import { loginPageMessages } from '../pages/LoginPage.messages';
+import { notFoundMessages } from '../pages/NotFound.messages';
 import { syncDashboardMessages } from '../pages/SyncDashboard.messages';
 import { verifyEmailPageMessages } from '../pages/VerifyEmailPage.messages';
 import { wallosSettingsMessages } from '../pages/WallosSettings.messages';
@@ -39,6 +40,7 @@ export const catalogues: Readonly<Record<string, Catalogue<object>>> = {
   statusBadge: statusBadgeMessages,
   settingsPage: settingsPageMessages,
   loginPage: loginPageMessages,
+  notFound: notFoundMessages,
   verifyEmailPage: verifyEmailPageMessages,
   actualSettings: actualSettingsMessages,
   wallosSettings: wallosSettingsMessages,

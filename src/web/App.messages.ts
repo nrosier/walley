@@ -4,7 +4,7 @@ const en = {
   logoutFailed: 'Could not sign you out. Check your connection and try again.',
   verifyEmail: { title: 'Verify your email' },
   documentTitle: '{page} - Walley',
-  routes: { sync: 'Sync Dashboard', settings: 'Settings', login: 'Sign in', verifyEmail: 'Verify your email' },
+  routes: { sync: 'Sync Dashboard', settings: 'Settings', login: 'Sign in', verifyEmail: 'Verify your email', notFound: 'Page not found' },
 };
 
 const nl: typeof en = {
@@ -13,7 +13,7 @@ const nl: typeof en = {
   logoutFailed: 'Afmelden is niet gelukt. Controleer uw verbinding en probeer het opnieuw.',
   verifyEmail: { title: 'Bevestig uw e-mailadres' },
   documentTitle: '{page} - Walley',
-  routes: { sync: 'Synchronisatie', settings: 'Instellingen', login: 'Inloggen', verifyEmail: 'Bevestig uw e-mailadres' },
+  routes: { sync: 'Synchronisatie', settings: 'Instellingen', login: 'Inloggen', verifyEmail: 'Bevestig uw e-mailadres', notFound: 'Pagina niet gevonden' },
 };
 
 export const appMessages = { en, nl };
