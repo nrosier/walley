@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Nothing yet.
 
+## [0.3.0] - 2026-10-30
+
+### Breaking
+
+- The Matches tab and the /matches page are removed. Linked pairs are on the Sync Dashboard; old /matches links now show a Page not found page.
+
+### Added
+
+- A Page not found page for unknown addresses, with a link back to the Sync Dashboard.
+- Recreate, Link, Review and Unlink actions on the Sync Dashboard, where the Matches actions used to be.
+- A counts line on the Sync Dashboard for linked pairs, with a cue on pairs whose amounts differ.
+- A desktop sticky header for the Sync Dashboard columns, from 768px wide.
+- An app footer with the version, a copyright line and an About dialog.
+
+### Changed
+
+- The Sync Dashboard runs a sync check when it loads. Run Sync Check stays as a manual refresh.
+- Linked pairs and their actions are on the Sync Dashboard grid; below 768px a pane switch shows one side at a time instead of a scrolling table.
+
 ## [0.2.3] - 2026-10-30
 
 ### Changed
