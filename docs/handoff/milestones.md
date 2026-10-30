@@ -1,32 +1,34 @@
 # Walley milestone handoff
 
-Last updated: 2026-10-22. Read this first if you are picking the work up in a new session.
+Last updated: 2026-10-30. Read this first if you are picking the work up in a new session.
+
+## Release
+
+- Release 0.1.0 is tagged at `cf5f9d0` and pushed. GitHub release: https://github.com/nrosier/walley/releases/tag/0.1.0
+- `main` is at `3721874` and pushed.
 
 ## Branches
 
-| Branch | Purpose | Head | Status |
-| --- | --- | --- | --- |
-| `main` | Base | `16602ed` | Behind `m3-authentication` by M3 work; not updated on purpose |
-| `m3-authentication` | M1 to M3 (auth, follow-up fixes, email verification) | `85a5023` | Local only, not pushed |
-| `m4-integrations` | M4 (Wallos and Actual integration, server side) | `d2070d5` | Local only, not pushed |
-| `m5-matching` | M5 (design decisions, matching helpers) | see `git log m5-matching` | Local only, based on `m4-integrations` |
+| Branch | Purpose | Status |
+| --- | --- | --- |
+| `main` | Base | Pushed, head `3721874` |
+| `feat-113-amber-danger-tokens` | Issue 113 (UI redesign) | Local, merged to `main` |
+| `feat-59-readme-setup-guide` | Issue 59 (README setup guide) | Local, merged to `main` |
+| `renovate/lucide-monorepo` | lucide-react bump (PR 144) | Local, merged to `main` via PR 144 |
+| `renovate/vite-8.x` | Renovate dependency update | Remote only, not merged |
 
-Rule: one branch per milestone, with that milestone's issues committed to it. Commits are never pushed and no PRs are opened without an explicit instruction.
+The branches `m3-authentication`, `m4-integrations` and `m5-matching` named in earlier versions of this doc do not exist in this clone.
 
 ## Closed issues
 
-- M1 to M3: #98, #100, #101, #102, #103 (accepted), #99 (email verification). Earlier milestones were closed before this handoff.
-- M4: #23, #25, #26, #27, #31, #32.
-- M3 #99 email verification is on `m3-authentication`.
+- M1 to M8 are all closed (open = 0).
+- Closed issue counts per milestone, from the milestone data: M1 12, M2 6, M3 15, M4 10, M5 8, M6 8, M7 6, M8 7.
+- M9 "Hardening and Quality" has one open issue (#58) and its other issues are closed. This includes #59 (README setup guide) and #113 (UI redesign), both closed by release 0.1.0.
 
 ## Open issues
 
-- **M4 (waiting on live write approval):** #24, #28, #29, #30. Server work is built and committed. Live write checks and the M6/M8 UI are still needed.
-- **M5:** #33, #34, #35, #36, #37, #38, #39, #40. Helpers for #33, #34, #36, #37 are built and uncommitted on `m5-matching`. #35 and #38 depend on them. #39 is the sync check endpoint. #40 is split: #40a (ignore_diff, unlink) can proceed; #40b (overwrite Wallos and Actual) is held for live-write approval.
-- **M6:** #41, #42, #43, #44, #45, #46, #61.
-- **M7:** #47, #48, #49, #50, #51.
-- **M8:** #52, #53, #54. Submit wiring for #52 and #53, and the overwrite actions in #54, are held for live-write approval.
-- **M9:** #55, #56, #57, #58, #59.
+- **M9 (deferred past 0.1.0 by owner decision):** #58 (accessibility pass).
+- **No milestone:** #142, #136, #135, #117, #116, #71 (Dependency Dashboard).
 
 ## Owner decisions (confirmed)
 
@@ -46,10 +48,10 @@ Rule: one branch per milestone, with that milestone's issues committed to it. Co
 
 ## Open decisions
 
-- M6: router choice (add `react-router` or hash routing); whether register and verify pages belong in #61; whether Test Connection uses form values or saved credentials only; whether a password change signs out other sessions.
-- M6: tolerance is 0 to 50 in #45, but the DB allows 0 to 100.
-- M9: README gaps (first-run walkthrough and OIDC provider steps); splitting #55 to #57 into now and later halves; adding `vitest-axe`; redacting cookie and authorization headers in logs.
 - M5: name-match threshold 0.6 is untested on real payee data.
+- M6 decisions (router choice, register and verify pages in #61, Test Connection credential source, password change session sign-out, tolerance range 0 to 50 in #45 versus 0 to 100 in the DB): resolved with the M6 close. All M6 issues are closed, so these are dropped from this list.
+- M9 README gaps (first-run walkthrough, OIDC provider steps) and splitting #55 to #57: resolved with the M9 close. Their issues are closed (#59 closed; #55 to #57 closed), so these are dropped from this list.
+- M9 adding `vitest-axe` and redacting cookie and authorization headers in logs: status unverified. No issue mapping was checked for these; they may belong to #58.
 
 ## Live data facts (read-only check, 2026-10-22)
 
@@ -64,7 +66,7 @@ Rule: one branch per milestone, with that milestone's issues committed to it. Co
 
 ## Next steps
 
-1. Commit the M5 matching helpers to `m5-matching`, with the MAP entries.
-2. Create the new M5 issue for Link, Ignore and Restore.
-3. Resolve the open M6 decisions, then start M6 tasks in the order the M6 plan gives.
-4. When live-write approval is given, run the held M4 checks (#24, #28, #29, #30) and the held M5 #40b and M8 writes.
+1. Decide whether #135 and the other unassigned open issues (#142, #136, #117, #116, #71) join a milestone for the next release.
+2. Run the #58 accessibility pass when the owner schedules it.
+3. Rotate the test secrets that were printed into the session output. They were exposed; the values are not recorded here.
+4. If still outstanding: fix the test persistence issue in `.env.local` and the password in `accounts.env`.
