@@ -7,6 +7,7 @@ import { deriveFlowKey } from './crypto/keys.js';
 import { closeDatabase, openDatabase, type AppDatabase } from './db/client.js';
 import { createUserRepo } from './db/repo.js';
 import { realCreateDeps } from './integrations/create.js';
+import { createUpstreamCache } from './cache/upstream-cache.js';
 import { withActualServer, withActualSession } from './integrations/actual/session.js';
 import { createWallosClient } from './integrations/wallos/client.js';
 import { createMailer, createSmtpTransport } from './mail/index.js';
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
       db,
       trustProxy: config.trustProxy,
       integrations: realCreateDeps(wallos, repoFor, actualDeps),
+      cache: createUpstreamCache(),
       settings: {
         repoFor,
         wallos,

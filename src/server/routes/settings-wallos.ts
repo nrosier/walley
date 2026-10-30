@@ -1,6 +1,7 @@
 import type { FastifyError, FastifyPluginAsync } from 'fastify';
 import { deriveUserKey } from '../crypto/keys.js';
 import { encryptSecret } from '../crypto/secrets.js';
+import type { UpstreamCache } from '../cache/upstream-cache.js';
 import type { UserRepo } from '../db/repo.js';
 import type { WallosClient, WallosOverride } from '../integrations/wallos/client.js';
 import { sendFailure } from './integrations.js';
@@ -15,6 +16,8 @@ export interface SettingsWallosDeps {
 
 export interface SettingsWallosOptions {
   readonly deps: SettingsWallosDeps;
+  /** Dropped when the saved Wallos URL or key changes. */
+  readonly cache?: UpstreamCache;
 }
 
 const MAX_KEY_LENGTH = 1000;
@@ -78,7 +81,10 @@ export const settingsWallosRoutes: FastifyPluginAsync<SettingsWallosOptions> = a
         repo.upsertConfig({ wallosUrl, wallosApiKeyEnc: encryptSecret(apiKey, key) });
       }
     } catch {
-      return reply.code(500).send({ error: 'internal_error' });
+      return await reply.code(500).send({ error: 'internal_error' });
+    } finally {
+      // The saved URL or key decides which Wallos the cache describes.
+      opts.cache?.invalidate(request.auth.userId);
     }
     const saved = repo.getConfig();
     return reply.code(200).send({

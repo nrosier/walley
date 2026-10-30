@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { CurrencyConversionError } from '../../lib/currency-convert.js';
 import { FrequencyMappingError } from '../../lib/frequency-mapper.js';
+import { afterWrite, type UpstreamCache } from '../cache/upstream-cache.js';
 import { ActualSessionError } from '../integrations/actual/session.js';
 import { ActualWriteError, type PayeeChoice } from '../integrations/actual/write.js';
 import {
@@ -25,6 +26,8 @@ import { checkRecreate, repointAfterRecreate, type OrphanRow, type RecreateTarge
 
 export interface IntegrationRoutesOptions {
   readonly deps: CreateDeps;
+  /** Dropped after every create, so the next sync check reads the new item. */
+  readonly cache?: UpstreamCache;
 }
 
 const MAX_ID_LENGTH = 200;
@@ -182,15 +185,20 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
         matchId === undefined
           ? undefined
           : await checkRecreate(deps, request.auth.userId, matchId, 'actual', body['wallosSubscriptionId']);
-      const result = await createActualScheduleFromWallos(deps, request.auth.userId, {
-        wallosSubscriptionId: body['wallosSubscriptionId'],
-        accountId: body['accountId'],
-        payee,
-        ...(categoryId === undefined ? {} : { categoryId }),
-        ...(name === undefined ? {} : { name }),
-        ...(amount === undefined ? {} : { amount }),
-        ...(startDate === undefined ? {} : { startDate }),
-      });
+      const userId = request.auth.userId;
+      const wallosSubscriptionId = body['wallosSubscriptionId'];
+      const accountId = body['accountId'];
+      const result = await afterWrite(opts.cache, userId, () =>
+        createActualScheduleFromWallos(deps, userId, {
+          wallosSubscriptionId,
+          accountId,
+          payee,
+          ...(categoryId === undefined ? {} : { categoryId }),
+          ...(name === undefined ? {} : { name }),
+          ...(amount === undefined ? {} : { amount }),
+          ...(startDate === undefined ? {} : { startDate }),
+        }),
+      );
       const linked =
         row === undefined
           ? await linkAfterCreate(
@@ -240,15 +248,19 @@ export const integrationRoutes: FastifyPluginAsync<IntegrationRoutesOptions> = a
         matchId === undefined
           ? undefined
           : await checkRecreate(deps, request.auth.userId, matchId, 'wallos', body['scheduleId']);
-      const result = await createWallosSubscriptionFromActualSchedule(deps, request.auth.userId, {
-        scheduleId: body['scheduleId'],
-        ...(paymentMethodId === undefined ? {} : { paymentMethodId }),
-        ...(categoryId === undefined ? {} : { categoryId }),
-        ...(title === undefined ? {} : { title }),
-        ...(price === undefined ? {} : { price }),
-        ...(billingCycle === undefined ? {} : { billingCycle }),
-        ...(startDate === undefined ? {} : { startDate }),
-      });
+      const userId = request.auth.userId;
+      const scheduleId = body['scheduleId'];
+      const result = await afterWrite(opts.cache, userId, () =>
+        createWallosSubscriptionFromActualSchedule(deps, userId, {
+          scheduleId,
+          ...(paymentMethodId === undefined ? {} : { paymentMethodId }),
+          ...(categoryId === undefined ? {} : { categoryId }),
+          ...(title === undefined ? {} : { title }),
+          ...(price === undefined ? {} : { price }),
+          ...(billingCycle === undefined ? {} : { billingCycle }),
+          ...(startDate === undefined ? {} : { startDate }),
+        }),
+      );
       const linked =
         row === undefined
           ? await linkAfterCreate(

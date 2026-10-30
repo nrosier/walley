@@ -248,7 +248,7 @@ function focusAfter(side: Side, id: string | null) {
   });
 }
 
-/** Sync Dashboard page. Runs the check once when it loads (only if nothing has run yet); Run Sync Check re-runs it. */
+/** Sync Dashboard page. Runs the check once when it loads (only if nothing has run yet, and it may use the server cache); Run Sync Check re-runs it and bypasses the cache. */
 export function SyncDashboard() {
   const { t, errorText } = useT(syncDashboardMessages);
   const sync = useSyncCheck();
@@ -344,7 +344,7 @@ export function SyncDashboard() {
         setReviewing(sync.result?.mismatches.find((m) => m.matchId === id) ?? null);
       }}
       onQueryChange={setQuery}
-      onRun={() => void sync.run()}
+      onRun={() => void sync.run({ refresh: true })}
       onRetryRow={failed === null ? undefined : () => {
         act(failed.side, failed.id, failed.action);
       }}

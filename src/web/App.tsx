@@ -82,7 +82,7 @@ function Shell({ route }: { route: ShellRoute }) {
 
   const onRefresh = useCallback(() => {
     if (route === 'sync') {
-      void syncStore.run();
+      void syncStore.run({ refresh: true });
     } else {
       setPageKey((k) => k + 1);
     }
