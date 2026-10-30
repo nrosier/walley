@@ -119,7 +119,7 @@ function PasswordForm() {
         <input type="password" name="confirmPassword" autoComplete="new-password" required value={confirm} onChange={(e) => { setConfirm(e.target.value); }} className={inputClass} />
       </label>
       <div aria-live="polite" role="status">
-        {error !== null ? <p className="text-sm text-warning">{error}</p> : null}
+        {error !== null ? <p className="text-sm text-danger">{error}</p> : null}
         {notice !== null ? <p className="text-sm text-success">{notice}</p> : null}
       </div>
       <button type="submit" disabled={busy} className={buttonClass}>{t('password.submit')}</button>
@@ -170,7 +170,7 @@ function RegistrationToggle() {
     <div data-testid="registration-toggle" className="space-y-2 border-t pt-3">
       <h3 className="text-sm font-medium">{t('registration.heading')}</h3>
       <p className="text-sm text-muted">{t('registration.help')}</p>
-      {loadFailed ? <p role="alert" className="text-sm text-warning">{t('registration.loadError')}</p> : null}
+      {loadFailed ? <p role="alert" className="text-sm text-danger">{t('registration.loadError')}</p> : null}
       {state !== null ? (
         <>
           <SegmentedControl
@@ -186,7 +186,7 @@ function RegistrationToggle() {
         </>
       ) : null}
       <div aria-live="polite" role="status">
-        {error !== null ? <p className="text-sm text-warning">{error}</p> : null}
+        {error !== null ? <p className="text-sm text-danger">{error}</p> : null}
         {saved ? <p className="text-sm text-success">{t('registration.saved')}</p> : null}
       </div>
     </div>
@@ -270,6 +270,6 @@ export function AccountSettings() {
     };
   }, []);
   if (state.status === 'loading') return <AccountCard><p className="text-sm text-muted">{t('loading')}</p></AccountCard>;
-  if (state.status === 'error') return <AccountCard><p role="alert" className="text-sm text-warning">{state.expired === true ? t('sessionExpired') : t('loadError')}</p></AccountCard>;
+  if (state.status === 'error') return <AccountCard><p role="alert" className="text-sm text-danger">{state.expired === true ? t('sessionExpired') : t('loadError')}</p></AccountCard>;
   return <AccountSettingsView account={state.account} />;
 }

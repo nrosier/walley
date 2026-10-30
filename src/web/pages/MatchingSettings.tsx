@@ -129,7 +129,7 @@ export function MatchingSettingsView(props: MatchingSettingsViewProps) {
               min={MIN_TOLERANCE_PERCENT}
               max={MAX_TOLERANCE_PERCENT}
               step={1}
-              className={`${FIELD} w-24 ${props.invalid ? 'border-warning' : 'border-input-border'}`}
+              className={`${FIELD} w-24 ${props.invalid ? 'border-danger-line' : 'border-input-border'}`}
               value={props.text}
               aria-invalid={props.invalid}
               aria-describedby={props.invalid ? `${errorId} ${hintId}` : hintId}
@@ -152,7 +152,7 @@ export function MatchingSettingsView(props: MatchingSettingsViewProps) {
             {t('hint')}
           </p>
           {props.invalid ? (
-            <p id={errorId} className="text-xs text-warning">
+            <p id={errorId} className="text-xs text-danger">
               {t('range', { min: MIN_TOLERANCE_PERCENT, max: MAX_TOLERANCE_PERCENT })}
             </p>
           ) : null}

@@ -14,6 +14,7 @@ import actualSrc from './CreateActualModal.tsx?raw';
 import wallosSrc from './CreateWallosModal.tsx?raw';
 import apiSrc from '@/lib/create.api.ts?raw';
 import frameSrc from './CreateModalFrame.tsx?raw';
+import rateFieldSrc from './RateField.tsx?raw';
 import shellSrc from '../ui/dialog-shell.tsx?raw';
 import dashboardSrc from '../../pages/SyncDashboard.tsx?raw';
 
@@ -82,6 +83,10 @@ describe('RateField in CreateActualForm', () => {
     expect(html).toContain('value="0.95"');
     expect(html).toContain('Clear');
     expect(render(<CreateActualForm prefill={foreign} wallosId="w1" />, 'nl')).toContain('Koers (USD naar EUR)');
+  });
+  it('shows rate errors with the danger token, not amber', () => {
+    expect(rateFieldSrc).toMatch(/role="alert" className="text-xs text-danger"/);
+    expect(rateFieldSrc).not.toContain('text-warning');
   });
   it('shows the empty state without a Wallos rate and no Clear without an override', () => {
     const html = render(<CreateActualForm prefill={{ ...foreign, wallosRate: null, overrideRate: null }} wallosId="w1" />);

@@ -188,7 +188,7 @@ export function ActualSettingsView(props: ActualSettingsViewProps) {
       <p
         role="status"
         aria-live="polite"
-        className={`min-h-4 text-xs ${status.kind === 'error' ? 'text-warning' : status.kind === 'ok' ? 'text-success' : ''}`}
+        className={`min-h-4 text-xs ${status.kind === 'error' ? 'text-danger' : status.kind === 'ok' ? 'text-success' : ''}`}
       >
         {statusText}
       </p>

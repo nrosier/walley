@@ -93,7 +93,7 @@ function Shell({ route }: { route: ShellRoute }) {
   }
   if (session.status === 'error') {
     return (
-      <p role="alert" className="p-3 text-sm text-warning">
+      <p role="alert" className="p-3 text-sm text-danger">
         {t('sessionFailed')}
       </p>
     );
@@ -109,7 +109,7 @@ function Shell({ route }: { route: ShellRoute }) {
       onLogout={onLogout}
     >
       {logoutFailed ? (
-        <p role="alert" className="mb-3 text-sm text-warning">
+        <p role="alert" className="mb-3 text-sm text-danger">
           {t('logoutFailed')}
         </p>
       ) : null}

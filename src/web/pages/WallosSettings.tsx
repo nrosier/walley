@@ -19,7 +19,7 @@ export type TestState =
 
 /** A status line for the live region. Tone picks the theme colour. */
 export interface Notice {
-  tone: 'success' | 'warning';
+  tone: 'success' | 'error';
   text: string;
 }
 
@@ -83,7 +83,7 @@ export function WallosSettingsView(props: WallosSettingsViewProps) {
     test.kind === 'ok'
       ? { tone: 'success', text: t('status.testOk') }
       : test.kind === 'error'
-        ? { tone: 'warning', text: errorText(test.code) }
+        ? { tone: 'error', text: errorText(test.code) }
         : null;
   return (
     <SettingsCard
@@ -154,7 +154,7 @@ export function WallosSettingsView(props: WallosSettingsViewProps) {
 }
 
 function noticeClass(notice: Notice): string {
-  return notice.tone === 'success' ? 'text-success' : 'text-warning';
+  return notice.tone === 'success' ? 'text-success' : 'text-danger';
 }
 
 export function WallosSettings() {
@@ -177,7 +177,7 @@ export function WallosSettings() {
         setHasKey(loaded.hasKey);
       })
       .catch(() => {
-        if (!controller.signal.aborted) setSaveNotice({ tone: 'warning', text: t('status.loadFailed') });
+        if (!controller.signal.aborted) setSaveNotice({ tone: 'error', text: t('status.loadFailed') });
       });
     return () => {
       controller.abort();
@@ -207,7 +207,7 @@ export function WallosSettings() {
       .catch((error: unknown) => {
         const code = error instanceof ApiError ? error.code : '';
         setSaveNotice({
-          tone: 'warning',
+          tone: 'error',
           text: code === 'invalid_url' ? errorText(code) : t('status.saveFailed'),
         });
       })

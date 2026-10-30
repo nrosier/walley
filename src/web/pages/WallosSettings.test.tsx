@@ -58,7 +58,8 @@ describe('WallosSettingsView', () => {
     expect(ok).toContain('text-success');
     const err = render('en', { ...base, test: { kind: 'error', code: 'wallos_auth_failed' } });
     expect(err).toContain('Wallos rejected the API key. Check the key and try again.');
-    expect(err).toContain('text-warning');
+    expect(err).toContain('text-danger');
+    expect(err).not.toContain('text-warning');
   });
 
   it('status region is a polite live region', () => {
