@@ -1,6 +1,6 @@
 services:
   walley:
-    image: ghcr.io/nrosier/walley:0.2.0
+    image: ghcr.io/nrosier/walley:0.2.1
     container_name: walley
     platform: linux/amd64
     restart: unless-stopped
