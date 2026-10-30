@@ -41,9 +41,10 @@ const render = (state: SyncStoreState, extra: Partial<SyncDashboardViewProps> = 
 const ready = (): SyncStoreState => ({ status: 'ready', result: sample(), errorCode: null });
 
 describe('SyncDashboard states', () => {
-  it('idle: prompts to run the check and does not run it', () => {
+  it('idle with no result (before the load-time check starts): shows the loading skeleton, not a prompt to run the check', () => {
     const html = render({ status: 'idle', result: null, errorCode: null });
-    expect(html).toContain('Run a sync check to see unlinked items.');
+    expect(html).not.toContain('Run a sync check');
+    expect(html).toContain('Checking Wallos and Actual Budget...');
   });
   it('loading: shows status text and a disabled Run button', () => {
     const html = render({ status: 'loading', result: null, errorCode: null });

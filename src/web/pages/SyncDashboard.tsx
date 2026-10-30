@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { UnlinkDialog } from '@/components/matches/UnlinkDialog';
 import { DiffModal } from '@/components/matches/DiffModal';
 import { diffModalMessages, isOverwriteErrorCode } from '@/components/matches/DiffModal.messages';
@@ -99,9 +99,9 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
 
   let body;
   if (result === null) {
-    if (state.status === 'loading') body = <Skeleton label={t('states.loading')} />;
-    else if (state.status === 'error') body = null;
-    else body = <p className="text-sm text-muted">{t('states.idle')}</p>;
+    // Idle is only the moment before the load-time check starts, so it shows the same skeleton as loading.
+    if (state.status === 'error') body = null;
+    else body = <Skeleton label={t('states.loading')} />;
   } else {
     const filtering = props.query.trim() !== '';
     const emptyText = filtering ? t('states.noMatches') : t('states.empty');
@@ -248,10 +248,15 @@ function focusAfter(side: Side, id: string | null) {
   });
 }
 
-/** Sync Dashboard page. It never runs the check on mount; the user or Manual Refresh does. */
+/** Sync Dashboard page. Runs the check once when it loads (only if nothing has run yet); Run Sync Check re-runs it. */
 export function SyncDashboard() {
   const { t, errorText } = useT(syncDashboardMessages);
   const sync = useSyncCheck();
+  useEffect(() => {
+    // A failed load stays failed: no retry on mount. An in-flight check is joined by run() anyway.
+    const { status, result } = syncStore.getState();
+    if (status === 'idle' && result === null) void syncStore.run();
+  }, []);
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [failed, setFailed] = useState<{ id: string; side: Side; action: RowAction; text: string } | null>(null);
