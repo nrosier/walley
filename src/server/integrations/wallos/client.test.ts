@@ -140,6 +140,24 @@ describe('createWallosClient', () => {
     ]);
   });
 
+  it('drops disabled items (inactive 1 or true) and keeps enabled ones', async () => {
+    const stub = stubFetch(() =>
+      ok([
+        { id: 1, inactive: 1 },
+        { id: 2, inactive: true },
+        { id: 3, inactive: 0 },
+        { id: 4, inactive: false },
+        { id: 5 },
+      ]),
+    );
+    const client = createWallosClient(repoFor, APP_SECRET, { fetch: stub.fetch });
+    expect(await client.listSubscriptions(a.userId)).toEqual([
+      { id: 3, inactive: 0 },
+      { id: 4, inactive: false },
+      { id: 5 },
+    ]);
+  });
+
   it.each([
     ['a bare array', [{ id: 1 }]],
     ['a missing success flag', { subscriptions: [] }],

@@ -129,6 +129,13 @@ function buildEndpoint(stored: string, path: string): URL {
   return url;
 }
 
+/** True when Wallos marks the raw item disabled (`inactive` 1 or true). Absent or 0/false is enabled. */
+function isDisabledRaw(raw: unknown): boolean {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return false;
+  const inactive = (raw as Record<string, unknown>)['inactive'];
+  return inactive === 1 || inactive === true;
+}
+
 /** Copies only the documented fields; anything else Wallos sends is dropped. */
 function mapSubscription(raw: unknown): WallosSubscription | undefined {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
@@ -288,6 +295,8 @@ export function createWallosClient(
       }
       const subscriptions: WallosSubscription[] = [];
       for (const item of envelope.subscriptions as unknown[]) {
+        // Disabled (inactive) items are dropped here on purpose: they never reach sync, matching or create.
+        if (isDisabledRaw(item)) continue;
         const mapped = mapSubscription(item);
         if (mapped === undefined) throw new WallosHttpError(status);
         subscriptions.push(mapped);
