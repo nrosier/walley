@@ -3,7 +3,6 @@ const en = {
   nav: {
     label: 'Main',
     sync: 'Sync Dashboard',
-    matches: 'Matches',
     settings: 'Settings',
   },
   refresh: 'Refresh',
@@ -34,7 +33,6 @@ const nl: typeof en = {
   nav: {
     label: 'Hoofdmenu',
     sync: 'Synchronisatie',
-    matches: 'Koppelingen',
     settings: 'Instellingen',
   },
   refresh: 'Vernieuwen',

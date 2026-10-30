@@ -5,7 +5,6 @@ import type { Route } from './route';
 
 const ROUTE_KEY = {
   sync: 'routes.sync',
-  matches: 'routes.matches',
   settings: 'routes.settings',
   login: 'routes.login',
   'verify-email': 'routes.verifyEmail',

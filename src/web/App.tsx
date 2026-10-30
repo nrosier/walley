@@ -9,7 +9,6 @@ import { checkSession, type SessionUser } from '@/lib/session';
 import { applyTheme, readTheme, toggleTheme, writeTheme, type Theme } from '@/lib/theme';
 import { ThemeControlContext } from '@/lib/theme-context';
 import { LoginPage } from '@/pages/LoginPage';
-import { Matches } from '@/pages/Matches';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { SyncDashboard } from '@/pages/SyncDashboard';
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage';
@@ -20,8 +19,7 @@ type Session = { status: 'checking' } | { status: 'error' } | { status: 'ready';
 
 function Page({ route }: { route: ShellRoute }) {
   if (route === 'settings') return <SettingsPage />;
-  if (route === 'sync') return <SyncDashboard />;
-  return <Matches />;
+  return <SyncDashboard />;
 }
 
 /** Calls POST /api/auth/logout. Resolves true on success and false when the request failed. */

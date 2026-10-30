@@ -67,7 +67,7 @@ describe('AppFooter', () => {
   });
 
   it('keeps the footer on every route', () => {
-    for (const route of ['sync', 'matches', 'settings'] as const) {
+    for (const route of ['sync', 'settings'] as const) {
       const { unmount } = render(
         <I18nProvider initialLocale="en">
           <AppShell route={route} theme="dark" email="a@example.test" onRefresh={noop} onToggleTheme={noop} onLogout={noop}>

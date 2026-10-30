@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { documentTitle } from './document-title';
 import { parseRoute, type Route } from './route';
 
-const ROUTES: Route[] = ['sync', 'matches', 'settings', 'login', 'verify-email'];
+const ROUTES: Route[] = ['sync', 'settings', 'login', 'verify-email'];
 
 describe('documentTitle', () => {
   it('names the route and the app', () => {
-    expect(documentTitle('matches', 'en')).toBe('Matches - Walley');
     expect(documentTitle('sync', 'en')).toBe('Sync Dashboard - Walley');
-    expect(documentTitle('matches', 'nl')).toBe('Koppelingen - Walley');
+    expect(documentTitle('settings', 'en')).toBe('Settings - Walley');
+    expect(documentTitle('sync', 'nl')).toBe('Synchronisatie - Walley');
   });
   it('gives every route a distinct title in both languages', () => {
     for (const locale of ['en', 'nl'] as const) {

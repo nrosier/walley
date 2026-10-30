@@ -6,7 +6,7 @@ import { applyResolve, driftedFields, performResolve } from '@/lib/resolve-misma
 import type { SyncCheckResult, SyncMismatch, SyncMismatchFields } from '../../../lib/sync-check-types';
 import src from './DiffModal.tsx?raw';
 import shellSrc from '../ui/dialog-shell.tsx?raw';
-import matchesSrc from '../../pages/Matches.tsx?raw';
+import pairListSrc from '../dashboard/PairList.tsx?raw';
 import { DiffModal } from './DiffModal';
 import { diffModalMessages, isOverwriteErrorCode, OVERWRITE_ERROR_CODES } from './DiffModal.messages';
 
@@ -233,8 +233,8 @@ describe('Matches and diff modal checklist (issue 113)', () => {
     expect(close).toContain('[data-review-for=');
     expect(close).toContain('event.preventDefault()');
     expect(close).toContain('review.focus()');
-    // Matches renders the hook the modal looks for, on Mismatch rows only.
-    expect(matchesSrc).toContain('data-review-for={row.matchId}');
-    expect(matchesSrc).toContain("row.status === 'MISMATCH_DETECTED' && onReview !== undefined");
+    // The Sync Dashboard renders the hook the modal looks for, on Mismatch rows only.
+    expect(pairListSrc).toContain('data-review-for={review.matchId}');
+    expect(pairListSrc).toContain("r.link.status === 'MISMATCH_DETECTED' && props.onReview !== undefined");
   });
 });
