@@ -4,10 +4,13 @@ import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
 import type { PairKind, PairRow } from '@/lib/pair-rows';
 import type { RowModel, Side } from '@/lib/sync-check';
+import type { SyncLinked } from '../../../lib/sync-check-types';
+import { diffModalMessages } from '../matches/DiffModal.messages';
 import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
 import { StatusBadge } from '../StatusBadge';
 import { Badge } from '../ui/badge';
 import { Disclosure } from '../ui/disclosure';
+import { MoreActionsMenu } from '../ui/more-actions-menu';
 import { ItemRow } from './ItemRow';
 
 export interface PairListProps {
@@ -31,6 +34,8 @@ export interface PairListProps {
   onIgnore?: (side: Side, itemId: string) => void;
   onRestore?: (side: Side, matchId: string, itemId: string) => void;
   onRetry?: () => void;
+  /** Unlink a LINKED, non-orphan pair (opens the confirmation dialog). Offered once per pair, on its first cell. */
+  onUnlink?: (row: SyncLinked) => void;
 }
 
 /** A linked pair's side: name, amount and the pair's status badge. No actions, so linked state cannot change here. */
@@ -40,14 +45,20 @@ function LinkedCell({
   badge,
   baseCurrency,
   differs,
+  unlink,
+  onUnlink,
 }: {
   row: RowModel;
   side: Side;
   badge: NonNullable<PairRow['badge']>;
   baseCurrency: string;
   differs: boolean;
+  /** The pair this cell belongs to when Unlink is offered; null hides the menu. */
+  unlink: SyncLinked | null;
+  onUnlink?: (row: SyncLinked) => void;
 }) {
   const { t, locale } = useT(syncDashboardMessages);
+  const unlinkLabel = useT(diffModalMessages).t('unlink');
   return (
     <div data-row-id={row.id} data-side={side} data-linked="" tabIndex={-1} className="flex h-full items-center gap-x-3 px-3 py-1.5 text-sm">
       <span className="min-w-0 flex-1 truncate font-medium" title={row.name}>
@@ -67,6 +78,13 @@ function LinkedCell({
         )}
         {differs ? <span className="sr-only"> {t('differs')}</span> : null}
       </span>
+      {unlink !== null && onUnlink !== undefined ? (
+        <MoreActionsMenu
+          name={row.name}
+          className="-my-1"
+          items={[{ id: 'unlink', label: unlinkLabel, destructive: true, onSelect: () => { onUnlink(unlink); } }]}
+        />
+      ) : null}
     </div>
   );
 }
@@ -97,7 +115,15 @@ export function PairList(props: PairListProps) {
     if (r.kind === 'linked' && r.badge !== null) {
       return (
         <div key={side} className={base}>
-          <LinkedCell row={cell} side={side} badge={r.badge} baseCurrency={props.baseCurrency} differs={r.differs} />
+          <LinkedCell
+            row={cell}
+            side={side}
+            badge={r.badge}
+            baseCurrency={props.baseCurrency}
+            differs={r.differs}
+            unlink={side === (r.wallos !== null ? 'wallos' : 'actual') && r.link !== null && r.link.status === 'LINKED' && r.link.orphan === null ? r.link : null}
+            onUnlink={props.onUnlink}
+          />
         </div>
       );
     }

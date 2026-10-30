@@ -1,4 +1,6 @@
 import { useCallback, useState } from 'react';
+import { UnlinkDialog } from '@/components/matches/UnlinkDialog';
+import { unlinkDialogMessages } from '@/components/matches/UnlinkDialog.messages';
 import { NoticeToast } from '@/components/dashboard/NoticeToast';
 import { IgnoredSection } from '@/components/dashboard/ItemRow';
 import { PairList } from '@/components/dashboard/PairList';
@@ -23,6 +25,8 @@ import {
   type Side,
   type SyncStoreState,
 } from '@/lib/sync-check';
+import { performResolve } from '@/lib/resolve-mismatch';
+import type { SyncLinked } from '../../lib/sync-check-types';
 import { syncDashboardMessages } from './SyncDashboard.messages';
 
 export interface SyncDashboardViewProps {
@@ -34,6 +38,8 @@ export interface SyncDashboardViewProps {
   errorRowId?: string | null;
   /** Resolved text of the last failed row action. */
   rowError?: string | null;
+  /** Resolved text of the last failed unlink. */
+  unlinkErrorMessage?: string | null;
   onQueryChange?: (query: string) => void;
   onRun?: () => void;
   onLink?: (wallosId: string, actualScheduleId: string, side: Side) => void;
@@ -41,6 +47,8 @@ export interface SyncDashboardViewProps {
   onRestore?: (side: Side, matchId: string, itemId: string) => void;
   /** Repeats the failed row action. */
   onRetryRow?: () => void;
+  /** Opens the Unlink confirmation for a LINKED pair. */
+  onUnlink?: (row: SyncLinked) => void;
 }
 
 function Skeleton({ label }: { label: string }) {
@@ -138,6 +146,7 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
           onIgnore={props.onIgnore}
           onRestore={props.onRestore}
           onRetry={props.onRetryRow}
+          onUnlink={props.onUnlink}
         />
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <IgnoredSection
@@ -203,6 +212,11 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
           {settingsLink}
         </div>
       ) : null}
+      {props.unlinkErrorMessage != null ? (
+        <p role="alert" className="mb-2 text-xs text-danger">
+          {props.unlinkErrorMessage}
+        </p>
+      ) : null}
       {body}
       <HealthStatus />
     </section>
@@ -224,6 +238,22 @@ export function SyncDashboard() {
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [failed, setFailed] = useState<{ id: string; side: Side; action: RowAction; text: string } | null>(null);
+  const [unlinking, setUnlinking] = useState<SyncLinked | null>(null);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const unlinkT = useT(unlinkDialogMessages).t;
+
+  /** Unlink a pair after the confirmation. The server deletes only Walley's match row; the check then lists both items as unlinked. */
+  const unlink = (row: SyncLinked) => {
+    const name = row.wallosName ?? row.actualName ?? row.matchId;
+    setUnlinkError(null);
+    void performResolve(() => syncStore.getState().result, syncStore.setResult, row.matchId, 'unlink', syncStore.requestRun).then((outcome) => {
+      if (outcome.ok) return;
+      const stale = outcome.code === 'invalid_state' || outcome.code === 'match_not_found';
+      setUnlinkError(`${unlinkT('failed', { name })} ${stale ? unlinkT('stale') : errorText(outcome.code)}`);
+      // The pair changed elsewhere: show the current state.
+      if (stale) void syncStore.requestRun();
+    });
+  };
 
   const act = useCallback(
     (side: Side, id: string, action: RowAction) => {
@@ -258,6 +288,8 @@ export function SyncDashboard() {
       busyId={busyId}
       errorRowId={failed?.id ?? null}
       rowError={failed?.text ?? null}
+      unlinkErrorMessage={unlinkError}
+      onUnlink={(row) => { setUnlinking(row); }}
       onQueryChange={setQuery}
       onRun={() => void sync.run()}
       onRetryRow={failed === null ? undefined : () => {
@@ -272,6 +304,14 @@ export function SyncDashboard() {
       onRestore={(side, matchId, id) => {
         act(side, id, { kind: 'restore', matchId });
       }}
+    />
+    <UnlinkDialog
+      row={unlinking}
+      onConfirm={(row) => {
+        setUnlinking(null);
+        unlink(row);
+      }}
+      onCancel={() => { setUnlinking(null); }}
     />
     <NoticeToast />
     </>

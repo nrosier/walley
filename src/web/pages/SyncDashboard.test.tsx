@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import { sample } from '@/lib/sync-check.test';
 import type { SyncStoreState } from '@/lib/sync-check';
-import type { SyncCheckResult } from '../../lib/sync-check-types';
+import type { SyncCheckResult, SyncLinked } from '../../lib/sync-check-types';
 import dashboardSrc from './SyncDashboard.tsx?raw';
 import storeSrc from '@/lib/sync-check.ts?raw';
 import apiSrc from '@/lib/matches.api.ts?raw';
@@ -410,5 +410,55 @@ describe('Sync Dashboard counts line and differing cue (retire-matches-tab)', ()
   it('differs in nl is "wijkt af"', () => {
     const html = render({ status: 'ready', result: linkedFixture(), errorCode: null }, {}, 'nl');
     expect(html).toContain('> wijkt af</span>');
+  });
+});
+
+describe('Sync Dashboard unlink on linked pairs (retire-matches-tab)', () => {
+  const withStatus = (status: 'LINKED' | 'MISMATCH_DETECTED', orphan: 'orphaned_wallos' | null = null): SyncCheckResult => {
+    const base = linkedFixture();
+    const first = base.linked[0];
+    if (first === undefined) throw new Error('fixture has no linked row');
+    const row: SyncLinked = { ...first, status, orphan };
+    return { ...base, linked: [row] };
+  };
+  it('the More actions menu with Unlink appears for a LINKED non-orphan pair', () => {
+    const html = render({ status: 'ready', result: withStatus('LINKED'), errorCode: null }, { onUnlink: () => undefined });
+    expect(html).toContain('aria-label="More actions for Spotify"');
+    expect(html.match(/aria-label="More actions for Spotify"/g)).toHaveLength(1);
+    expect(cellOf(html, 'wallos', 'lw1')).toContain('More actions for Spotify');
+  });
+  it('no Unlink menu for a mismatch pair, an orphaned pair, or when no handler is passed', () => {
+    const mismatch = render({ status: 'ready', result: withStatus('MISMATCH_DETECTED'), errorCode: null }, { onUnlink: () => undefined });
+    expect(mismatch).not.toContain('More actions for Spotify');
+    const orphan = render({ status: 'ready', result: withStatus('LINKED', 'orphaned_wallos'), errorCode: null }, { onUnlink: () => undefined });
+    expect(orphan).not.toContain('More actions for Spotify');
+    const noHandler = render({ status: 'ready', result: withStatus('LINKED'), errorCode: null });
+    expect(noHandler).not.toContain('More actions for Spotify');
+  });
+  it('the Unlink dialog is mounted from SyncDashboard and confirm goes through performResolve with the match id', () => {
+    expect(dashboardSrc).toContain("import { UnlinkDialog } from '@/components/matches/UnlinkDialog';");
+    expect(dashboardSrc).toContain("performResolve(() => syncStore.getState().result, syncStore.setResult, row.matchId, 'unlink', syncStore.requestRun)");
+    expect(dashboardSrc).toContain('<UnlinkDialog');
+  });
+  it('a failed unlink shows the error text, and the stale path reuses the unlink failure wording', () => {
+    expect(dashboardSrc).toContain('unlinkErrorMessage');
+    const html = render({ status: 'ready', result: withStatus('LINKED'), errorCode: null }, { unlinkErrorMessage: 'Could not unlink Spotify. Kapot.' });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('Could not unlink Spotify. Kapot.');
+  });
+  it('a LINKED pair is unlinked through the existing performResolve path (matches the Matches page)', async () => {
+    const { performResolve } = await import('@/lib/resolve-mismatch');
+    const { createSyncStore } = await import('@/lib/sync-check');
+    const calls: string[] = [];
+    const f = (async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`);
+      if (url.endsWith('/resolve')) return Response.json({ status: 'UNLINKED' });
+      return Response.json({ checkedAt: '', baseCurrency: 'EUR', unlinkedWallos: [], unlinkedActual: [], candidates: [], mismatches: [], unmappable: [], orphaned: [], linked: [], ignored: [] });
+    }) as unknown as typeof fetch;
+    const store = createSyncStore(f);
+    store.setResult(linkedFixture());
+    const out = await performResolve(() => store.getState().result, store.setResult, 'm1', 'unlink', store.requestRun, f);
+    expect(out).toEqual({ ok: true });
+    expect(calls.some((c) => c.endsWith('/api/matches/m1/resolve'))).toBe(true);
   });
 });
