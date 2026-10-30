@@ -26,7 +26,6 @@ const en = {
   counts: '{shown} of {total} pairs, {differing} with differences',
   differs: 'differs',
   states: {
-    idle: 'Run a sync check to see unlinked items.',
     loading: 'Checking Wallos and Actual Budget...',
     empty: 'Nothing to link here.',
     noMatches: 'No items match your search.',
@@ -114,7 +113,6 @@ const nl: typeof en = {
   counts: '{shown} van {total} paren, {differing} met verschillen',
   differs: 'wijkt af',
   states: {
-    idle: 'Start een synchronisatiecontrole om ongekoppelde items te zien.',
     loading: 'Wallos en Actual Budget worden gecontroleerd...',
     empty: 'Hier valt niets te koppelen.',
     noMatches: 'Geen items komen overeen met uw zoekopdracht.',
