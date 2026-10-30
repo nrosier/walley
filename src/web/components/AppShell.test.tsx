@@ -117,8 +117,8 @@ describe('AppShell', () => {
     const html = render('matches');
     const shared = ['focus-visible:outline-2', 'focus-visible:outline-offset-2', 'focus-visible:outline-ring'];
     const tags = html.match(/<(?:a|button)\b[^>]*>/g) ?? [];
-    // skip link, logo, 3 tabs, Refresh, theme toggle, Account menu
-    expect(tags).toHaveLength(8);
+    // skip link, logo, 3 tabs, Refresh, theme toggle, Account menu, footer About
+    expect(tags).toHaveLength(9);
     for (const tag of tags) {
       for (const cls of shared) expect(tag, tag).toContain(cls);
       // No competing ring, auto outline or animated outline width/offset on these controls.
