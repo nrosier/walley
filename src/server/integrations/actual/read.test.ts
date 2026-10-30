@@ -81,6 +81,15 @@ describe('readSchedules', () => {
     expect(result[0]?.payee).toBe('payee-netflix');
   });
 
+  it('drops completed schedules and keeps active and missing-flag ones', async () => {
+    const active = { ...scheduleFixture[0] };
+    const completed = { ...scheduleFixture[0], id: 'sched-done', completed: true };
+    const noFlag = { id: 'sched-no-flag', name: 'Spotify', rule: 'rule-2', next_date: '2026-11-05' };
+    const { api } = fakeApi({ getSchedules: vi.fn(async () => [completed, active, noFlag]) });
+    const result = await readSchedules(api);
+    expect(result.map((s) => s.id)).toEqual(['sched-netflix', 'sched-no-flag']);
+  });
+
   it('keeps the schedule amount as integer cents', async () => {
     const { api } = fakeApi();
     const [schedule] = await readSchedules(api);

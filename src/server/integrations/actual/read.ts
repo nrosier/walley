@@ -13,9 +13,14 @@ import type { ActualApi } from './session.js';
  * (e.g. -1250 for EUR 12.50); no float conversion happens here.
  */
 
-/** Schedules, including the underlying rule, next date and amount in integer cents. */
-export function readSchedules(api: ActualApi): Promise<APIScheduleEntity[]> {
-  return api.getSchedules();
+/**
+ * Schedules, including the underlying rule, next date and amount in integer cents. Schedules with
+ * `completed === true` are dropped on purpose (owner decision: hidden everywhere, like disabled
+ * Wallos subscriptions). A missing `completed` field is kept.
+ */
+export async function readSchedules(api: ActualApi): Promise<APIScheduleEntity[]> {
+  const schedules = await api.getSchedules();
+  return schedules.filter((schedule) => schedule.completed !== true);
 }
 
 /** Accounts with balance_current (integer cents, may be null), off-budget and closed flags. */
