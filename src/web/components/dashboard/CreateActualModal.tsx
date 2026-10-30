@@ -1,17 +1,124 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState, type KeyboardEvent } from 'react';
+import { Popover } from 'radix-ui';
 import { useT } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { createActualSchedule, prefillActualSchedule, type ActualSchedulePrefill, type CreateActualScheduleResult } from '@/lib/create.api';
 import { createNoticeKinds, noticeStore } from '@/lib/notices';
 import { syncStore } from '@/lib/sync-check';
 import { Alert } from '../ui/alert';
-import { OptionCards } from '../ui/option-cards';
 import { CreateFooter } from './CreateFooter';
 import { CreateModalFrame } from './CreateModalFrame';
 import { RateField } from './RateField';
 import { createModalMessages } from './CreateModal.messages';
 import { everyKey, FIELD_CLASS } from './create-modal-shared';
-import { actualDisabledReason, actualEdits, actualFieldsReason, actualFieldValues, buildActualBody, NEW_PAYEE, submitCreate, type ActualFormFields } from './create-submit';
+import { actualDisabledReason, actualEdits, actualFieldsReason, actualFieldValues, buildActualBody, filterPayees, NEW_PAYEE, submitCreate, type ActualFormFields } from './create-submit';
+
+interface PayeePickerProps {
+  payees: ActualSchedulePrefill['payees'];
+  value: string;
+  onValueChange: (value: string) => void;
+}
+
+/**
+ * Payee choice: a button that opens a searchable list. The search box takes focus on open; arrows move the highlight,
+ * Enter selects, Escape closes and Radix returns focus to the button. "Create new payee" is always the first option.
+ */
+function PayeePicker({ payees, value, onValueChange }: PayeePickerProps) {
+  const { t } = useT(createModalMessages);
+  const baseId = useId();
+  const labelId = `${baseId}-label`;
+  const valueId = `${baseId}-value`;
+  const listId = `${baseId}-list`;
+  const optionId = (i: number) => `${baseId}-option-${String(i)}`;
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
+  const newLabel = t('actual.payeeNew');
+  const matches = filterPayees(payees, query);
+  const options = [{ id: NEW_PAYEE, name: newLabel }, ...matches];
+  const selectedName = payees.find((p) => p.id === value)?.name ?? newLabel;
+
+  const choose = (id: string): void => {
+    onValueChange(id);
+    setOpen(false);
+  };
+  const handleOpenChange = (next: boolean): void => {
+    setOpen(next);
+    setQuery('');
+    // Highlight the current choice on open; NEW_PAYEE is index 0, payees follow it.
+    setActive(next ? payees.findIndex((p) => p.id === value) + 1 : 0);
+  };
+  const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActive((i) => Math.min(i + 1, options.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const option = options[active];
+      if (option !== undefined) choose(option.id);
+    }
+  };
+
+  return (
+    <div className="grid gap-1">
+      <span id={labelId} className="font-medium">{t('actual.payee')}</span>
+      <Popover.Root open={open} onOpenChange={handleOpenChange}>
+        <Popover.Trigger
+          aria-labelledby={`${labelId} ${valueId}`}
+          className={`${FIELD_CLASS} flex items-center justify-between text-left`}
+        >
+          <span id={valueId} className="min-w-0 truncate">{selectedName}</span>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            align="start"
+            sideOffset={4}
+            className="z-50 grid w-(--radix-popover-trigger-width) max-w-[90vw] gap-2 rounded-md border bg-card p-2 text-sm shadow-overlay"
+          >
+            <input
+              type="text"
+              autoFocus
+              role="combobox"
+              aria-label={t('actual.payeeSearch')}
+              aria-expanded
+              aria-controls={listId}
+              aria-activedescendant={optionId(active)}
+              autoComplete="off"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActive(0);
+              }}
+              onKeyDown={onSearchKeyDown}
+              placeholder={t('actual.payeeSearch')}
+              className={FIELD_CLASS}
+            />
+            <div id={listId} role="listbox" aria-labelledby={labelId} className="grid max-h-56 gap-0.5 overflow-y-auto">
+              {options.map((option, i) => (
+                <div
+                  key={option.id}
+                  id={optionId(i)}
+                  role="option"
+                  aria-selected={option.id === value}
+                  data-active={i === active ? '' : undefined}
+                  onMouseEnter={() => { setActive(i); }}
+                  onClick={() => { choose(option.id); }}
+                  className="min-w-0 cursor-pointer break-words rounded-sm px-2 py-1.5 data-[active]:bg-hover"
+                >
+                  {option.name}
+                </div>
+              ))}
+            </div>
+            {matches.length === 0 ? <p className="px-1 text-xs text-muted">{t('actual.payeeNoMatch')}</p> : null}
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+    </div>
+  );
+}
 
 export interface CreateActualFormProps {
   prefill: ActualSchedulePrefill;
@@ -130,15 +237,7 @@ export function CreateActualForm({ prefill, wallosId, matchId, fetchImpl, onRate
       {prefill.sourceCurrency !== prefill.baseCurrency ? (
         <RateField prefill={prefill} wallosId={wallosId} fetchImpl={fetchImpl} onChanged={onRateChanged} />
       ) : null}
-      <div className="grid gap-1">
-        <span className="font-medium">{t('actual.payee')}</span>
-        <OptionCards
-          aria-label={t('actual.payee')}
-          value={payee}
-          onValueChange={setPayee}
-          options={[{ value: NEW_PAYEE, label: t('actual.payeeNew') }, ...prefill.payees.map((p) => ({ value: p.id, label: p.name }))]}
-        />
-      </div>
+      <PayeePicker payees={prefill.payees} value={payee} onValueChange={setPayee} />
       {payee === NEW_PAYEE ? (
         <label htmlFor={ids.newPayee} className="grid gap-1">
           {t('actual.payeeNewName')}
