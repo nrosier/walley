@@ -4,6 +4,7 @@ import { nameScore } from '../../../lib/name-match.js';
 import {
   buildCurrencyMap,
   decodeWallosName,
+  legacyWallosNameFields,
   mapWallosSubscription,
   resolveCurrencyCode,
   WallosMappingError,
@@ -381,5 +382,12 @@ describe('Wallos name entity decoding', () => {
     expect(nameScore(mapped.name, 'Ray & Jules')).toBeGreaterThan(
       nameScore('Ray &amp; Jules', 'Ray & Jules'),
     );
+  });
+});
+
+describe('legacy Wallos name fields (pre-decode 0.2.0 hash input)', () => {
+  it('keeps the raw escaped name and every other field as they are', () => {
+    const current = { name: 'Ray & Jules', amount: { kind: 'single' as const, cents: -1299 }, frequency: 'monthly', currency: 'EUR', startDate: null };
+    expect(legacyWallosNameFields(current, 'Ray &amp; Jules')).toEqual({ ...current, name: 'Ray &amp; Jules' });
   });
 });

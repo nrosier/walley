@@ -123,3 +123,60 @@ describe("detectMismatches", () => {
     expect(r?.nextStatus).toBe("MISMATCH_DETECTED");
   });
 });
+
+describe("detectMismatches entity re-baseline (0.2.0 raw-name hash)", () => {
+  const escaped: MatchFieldsInput = { ...wallosItem, name: "Ray &amp; Jules" };
+  const decoded: MatchFieldsInput = { ...wallosItem, name: "Ray & Jules" };
+  const legacyOf = (current: MatchFieldsInput, raw: string): MatchFieldsInput => ({ ...current, name: raw });
+  const runLegacy = (
+    rows: MismatchSavedRow[],
+    w: MatchFieldsInput,
+    legacy: MatchFieldsInput,
+    a: MatchFieldsInput = actualItem,
+  ) => detectMismatches(rows, new Map([["w1", w]]), new Map([["a1", a]]), new Map([["w1", legacy]]));
+
+  it("keeps a pair LINKED when only the entity decode changed the name, and advances the Wallos baseline", () => {
+    const stored = h(escaped);
+    const [r] = runLegacy(
+      [row({ lastKnownWallosHash: stored })],
+      decoded,
+      legacyOf(decoded, "Ray &amp; Jules"),
+    ).results;
+    expect(r).toMatchObject({
+      nextStatus: "LINKED",
+      wallosRebaselined: true,
+      wallosDrift: false,
+      actualDrift: false,
+      wallosHash: h(decoded),
+      currentWallosHash: h(decoded),
+    });
+  });
+
+  it("still flags drift when the stored hash matches neither the current nor the legacy hash", () => {
+    const [r] = runLegacy(
+      [row({ lastKnownWallosHash: h({ ...wallosItem, name: "Something Else" }) })],
+      decoded,
+      legacyOf(decoded, "Ray &amp; Jules"),
+    ).results;
+    expect(r).toMatchObject({
+      nextStatus: "MISMATCH_DETECTED",
+      wallosRebaselined: false,
+      wallosDrift: true,
+    });
+  });
+
+  it("still flags drift when the entity-encoded name and a real amount change happened together", () => {
+    const changed: MatchFieldsInput = { ...decoded, amount: { kind: "single", cents: -1499 } };
+    const [r] = runLegacy(
+      [row({ lastKnownWallosHash: h(escaped) })],
+      changed,
+      legacyOf(changed, "Ray &amp; Jules"),
+    ).results;
+    expect(r).toMatchObject({
+      nextStatus: "MISMATCH_DETECTED",
+      wallosRebaselined: false,
+      wallosDrift: true,
+      wallosHash: h(escaped),
+    });
+  });
+});

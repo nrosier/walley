@@ -27,6 +27,8 @@ export interface MismatchResult {
   currentActualHash: string;
   /** True when at least one stored hash was null and was set from the current value. */
   baseline: boolean;
+  /** True when the stored Wallos hash was the pre-entity-decode (0.2.0) hash: re-baselined, not drift. */
+  wallosRebaselined: boolean;
   wallosDrift: boolean;
   actualDrift: boolean;
 }
@@ -60,11 +62,15 @@ export interface DetectMismatchesResult {
  * - Drift that is gone: a MISMATCH_DETECTED row whose current hashes equal the stored ones again
  *   (the values went back to what was last synced) returns to LINKED. Status always reflects
  *   drift at this sync, never past drift.
+ * - Entity re-baseline: when the stored Wallos hash differs from the current one but equals the
+ *   legacy hash (`legacyByWallosId`, the 0.2.0 raw-name hash), the change is only the HTML entity
+ *   decode. The Wallos side is not drift and its baseline advances to the current hash.
  */
 export function detectMismatches(
   savedRows: readonly MismatchSavedRow[],
   currentByWallosId: ReadonlyMap<string, MatchFieldsInput>,
   currentByActualId: ReadonlyMap<string, MatchFieldsInput>,
+  legacyByWallosId: ReadonlyMap<string, MatchFieldsInput> = new Map(),
 ): DetectMismatchesResult {
   const results: MismatchResult[] = [];
   const unmappable: UnmappablePair[] = [];
@@ -92,10 +98,20 @@ export function detectMismatches(
       continue;
     }
 
-    const storedWallos = row.lastKnownWallosHash ?? currentWallosHash;
+    let storedWallos = row.lastKnownWallosHash ?? currentWallosHash;
     const storedActual = row.lastKnownActualHash ?? currentActualHash;
-    const wallosDrift = storedWallos !== currentWallosHash;
+    let wallosDrift = storedWallos !== currentWallosHash;
     const actualDrift = storedActual !== currentActualHash;
+    let wallosRebaselined = false;
+    if (wallosDrift) {
+      const legacy = legacyByWallosId.get(row.wallosId);
+      if (legacy !== undefined && storedWallos === hashMatchFields(legacy)) {
+        // Only the HTML entity decode changed the name: advance the baseline silently.
+        wallosRebaselined = true;
+        wallosDrift = false;
+        storedWallos = currentWallosHash;
+      }
+    }
     const drift = wallosDrift || actualDrift;
 
     results.push({
@@ -108,6 +124,7 @@ export function detectMismatches(
       currentWallosHash,
       currentActualHash,
       baseline: row.lastKnownWallosHash === null || row.lastKnownActualHash === null,
+      wallosRebaselined,
       wallosDrift,
       actualDrift,
     });

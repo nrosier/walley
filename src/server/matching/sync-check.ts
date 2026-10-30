@@ -30,6 +30,7 @@ import { prepareActualScheduleInput } from '../integrations/prepare.js';
 import {
   buildCurrencyMap,
   decodeWallosName,
+  legacyWallosNameFields,
   mapWallosSubscription,
   WallosMappingError,
 } from '../integrations/wallos/map.js';
@@ -56,6 +57,8 @@ export type {
 
 export interface Side extends SyncItem {
   readonly fields: MatchFieldsInput | null;
+  /** Wallos sides only: the fields as 0.2.0 hashed them (raw, still-escaped name). See legacyWallosNameFields. */
+  readonly legacyFields?: MatchFieldsInput | null;
   /**
    * Wallos sides only: the next_payment date used as the hash start date because Wallos has no
    * start_date and no anchor was stored yet. A caller that creates the match row stores it as the
@@ -204,6 +207,14 @@ export async function readCurrentSides(
         }
       }
       const prepared = prepareActualScheduleInput(source, currencies, baseCode, overrides.get(id));
+      const fields: MatchFieldsInput = {
+        name: mapped.name,
+        amount: { kind: 'single', cents: prepared.amountCents },
+        frequency: prepared.recurrence.frequency,
+        ...(prepared.recurrence.interval === undefined ? {} : { interval: prepared.recurrence.interval }),
+        currency: baseCode,
+        startDate: prepared.startDate,
+      };
       side = {
         anchorDate,
         id,
@@ -211,14 +222,8 @@ export async function readCurrentSides(
         amountCents: prepared.amountCents,
         isRange: false,
         reason: null,
-        fields: {
-          name: mapped.name,
-          amount: { kind: 'single', cents: prepared.amountCents },
-          frequency: prepared.recurrence.frequency,
-          ...(prepared.recurrence.interval === undefined ? {} : { interval: prepared.recurrence.interval }),
-          currency: baseCode,
-          startDate: prepared.startDate,
-        },
+        fields,
+        legacyFields: legacyWallosNameFields(fields, raw.name ?? ''),
       };
     } catch (error: unknown) {
       if (!(error instanceof WallosMappingError || error instanceof CurrencyConversionError)) throw error;
@@ -314,7 +319,9 @@ export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise
   // #38: only hashable sides are compared; the rest keep status and stored hashes.
   const wallosFields = fieldInputsOf(wallosSides);
   const actualFields = fieldInputsOf(actualSides);
-  const drift = detectMismatches(rows, wallosFields, actualFields);
+  const legacyWallosFields = new Map<string, MatchFieldsInput>();
+  for (const [id, s] of wallosSides) if (s.legacyFields) legacyWallosFields.set(id, s.legacyFields);
+  const drift = detectMismatches(rows, wallosFields, actualFields, legacyWallosFields);
   const rowByPair = new Map(rows.map((r) => [`${r.wallosId ?? ''}\u0000${r.actualScheduleId ?? ''}`, r]));
   const mismatches: SyncMismatch[] = [];
   for (const r of drift.results) {
