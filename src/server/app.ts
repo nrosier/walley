@@ -28,6 +28,7 @@ import { overridesRoutes } from './routes/overrides.js';
 import { settingsMatchingRoutes } from './routes/settings-matching.js';
 import { settingsWallosRoutes, type SettingsWallosDeps } from './routes/settings-wallos.js';
 import { syncRoutes } from './routes/sync.js';
+import type { UpstreamCache } from './cache/upstream-cache.js';
 
 export interface AuthOptions {
   readonly mode: AuthMode;
@@ -70,6 +71,11 @@ export interface BuildAppOptions {
   };
   /** Addresses or CIDR ranges of the reverse proxies whose X-Forwarded-For is trusted. Default false. */
   readonly trustProxy?: string[] | false;
+  /**
+   * Per-user cache of Wallos and Actual reads, used by the sync check and cleared by every route
+   * that writes to Wallos or Actual or changes the connection settings. Absent: no caching.
+   */
+  readonly cache?: UpstreamCache;
 }
 
 declare module 'fastify' {
@@ -205,6 +211,7 @@ function registerAuth(
   auth: AuthOptions,
   integrations: CreateDeps | undefined,
   settings: BuildAppOptions['settings'],
+  cache: UpstreamCache | undefined,
 ): void {
   const clock = auth.now ?? Date.now;
   void app.register(fastifyCookie);
@@ -249,7 +256,11 @@ function registerAuth(
       adminEmails,
     });
     if (settings !== undefined) {
-      void app.register(settingsWallosRoutes, { prefix: '/api', deps: settings });
+      void app.register(settingsWallosRoutes, {
+        prefix: '/api',
+        deps: settings,
+        ...(cache === undefined ? {} : { cache }),
+      });
       void app.register(settingsMatchingRoutes, { prefix: '/api', deps: { repoFor: settings.repoFor } });
       void app.register(overridesRoutes, { prefix: '/api', deps: { repoFor: settings.repoFor, now: clock } });
       if (settings.actual !== undefined) {
@@ -261,14 +272,20 @@ function registerAuth(
             withActualServer: settings.actual.withActualServer,
             withActual: settings.actual.withActual,
           },
+          ...(cache === undefined ? {} : { cache }),
         });
       }
     }
     if (integrations !== undefined) {
-      void app.register(integrationRoutes, { prefix: '/api', deps: integrations });
+      void app.register(integrationRoutes, {
+        prefix: '/api',
+        deps: integrations,
+        ...(cache === undefined ? {} : { cache }),
+      });
       void app.register(matchesRoutes, {
         prefix: '/api',
         deps: { wallos: integrations.wallos, repoFor: integrations.repoFor, withActual: integrations.withActual },
+        ...(cache === undefined ? {} : { cache }),
       });
       void app.register(syncRoutes, {
         prefix: '/api',
@@ -277,6 +294,7 @@ function registerAuth(
           repoFor: integrations.repoFor,
           withActual: integrations.withActual,
           now: clock,
+          ...(cache === undefined ? {} : { cache }),
         },
       });
     }
@@ -318,7 +336,7 @@ export function buildApp(opts?: BuildAppOptions): FastifyInstance {
       // Fixed text: never print config values.
       throw new Error('Local registration needs a mailer. Startup is aborted.');
     }
-    registerAuth(app, db, auth, opts?.integrations, opts?.settings);
+    registerAuth(app, db, auth, opts?.integrations, opts?.settings, opts?.cache);
   }
   // Queued behind the session hook, which registerAuth adds inside its own `after`.
   app.after(() => {

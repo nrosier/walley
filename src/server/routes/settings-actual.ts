@@ -1,6 +1,7 @@
 import type { FastifyError, FastifyPluginAsync, FastifyReply } from 'fastify';
 import { deriveUserKey } from '../crypto/keys.js';
 import { encryptSecret } from '../crypto/secrets.js';
+import type { UpstreamCache } from '../cache/upstream-cache.js';
 import type { UserConfigInput, UserRepo } from '../db/repo.js';
 import { listBudgets, readBaseCurrency } from '../integrations/actual/read.js';
 import {
@@ -30,6 +31,8 @@ export interface SettingsActualDeps {
 
 export interface SettingsActualOptions {
   readonly deps: SettingsActualDeps;
+  /** Dropped when the saved Actual server, password, sync key or budget changes. */
+  readonly cache?: UpstreamCache;
 }
 
 const MAX_SECRET_LENGTH = 1000;
@@ -142,7 +145,10 @@ export const settingsActualRoutes: FastifyPluginAsync<SettingsActualOptions> = a
       }
       repo.upsertConfig(update);
     } catch {
-      return reply.code(500).send({ error: 'internal_error' });
+      return await reply.code(500).send({ error: 'internal_error' });
+    } finally {
+      // The saved server, password, sync key or budget decides which budget the cache describes.
+      opts.cache?.invalidate(userId);
     }
     return reply.code(200).send(view(repo));
   });

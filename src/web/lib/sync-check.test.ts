@@ -246,6 +246,71 @@ describe('sync store', () => {
   });
 });
 
+describe('sync store refresh flag', () => {
+  const gated = () => {
+    const resolvers: ((r: Response) => void)[] = [];
+    const f = vi.fn(() => new Promise<Response>((resolve) => { resolvers.push(resolve); }));
+    return {
+      f,
+      settle: (i: number, r: Response) => { resolvers[i]?.(r); },
+    };
+  };
+  const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+  const result = (name: string): SyncCheckResult => ({ ...sample(), checkedAt: name });
+  const bodyOf = (f: { mock: { calls: unknown[][] } }, n: number): unknown =>
+    JSON.parse(((f.mock.calls[n] as unknown as [string, RequestInit])[1].body as string));
+
+  it('run() sends an empty body, so the server may use its cache', async () => {
+    const f = vi.fn(async () => json(200, sample()));
+    const store = createSyncStore(f);
+    await store.run();
+    expect(bodyOf(f, 0)).toEqual({});
+  });
+
+  it('run({ refresh: true }) sends refresh true', async () => {
+    const f = vi.fn(async () => json(200, sample()));
+    const store = createSyncStore(f);
+    await store.run({ refresh: true });
+    expect(bodyOf(f, 0)).toEqual({ refresh: true });
+  });
+
+  it('a refresh during a cached check queues one refreshing check after it', async () => {
+    const g = gated();
+    const store = createSyncStore(g.f);
+    const first = store.run();
+    await tick();
+    const refreshed = store.run({ refresh: true });
+    g.settle(0, json(200, result('stale')));
+    await tick();
+    g.settle(1, json(200, result('fresh')));
+    await Promise.all([first, refreshed]);
+    expect(g.f).toHaveBeenCalledTimes(2);
+    expect(bodyOf(g.f, 0)).toEqual({});
+    expect(bodyOf(g.f, 1)).toEqual({ refresh: true });
+    expect(store.getState().result?.checkedAt).toBe('fresh');
+  });
+
+  it('a refresh during a refreshing check joins it', async () => {
+    const g = gated();
+    const store = createSyncStore(g.f);
+    const first = store.run({ refresh: true });
+    await tick();
+    const second = store.run({ refresh: true });
+    g.settle(0, json(200, result('fresh')));
+    await Promise.all([first, second]);
+    expect(g.f).toHaveBeenCalledTimes(1);
+  });
+
+  it('a plain run after a refresh does not keep refreshing', async () => {
+    const f = vi.fn(async () => json(200, sample()));
+    const store = createSyncStore(f);
+    await store.run({ refresh: true });
+    await store.run();
+    expect(bodyOf(f, 0)).toEqual({ refresh: true });
+    expect(bodyOf(f, 1)).toEqual({});
+  });
+});
+
 describe('row actions update the shared store without a refetch (#48, #49)', () => {
   const setup = () => {
     const stub = vi.fn(async () => json(201, { id: 'm1', status: 'LINKED' }));

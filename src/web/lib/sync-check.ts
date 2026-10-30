@@ -12,9 +12,16 @@ import { ignoreItem, linkPair, restoreMatch } from './matches.api';
 
 export type Side = 'wallos' | 'actual';
 
-/** POST /api/sync/check. Throws ApiError or a network error. */
-export function runSyncCheck(fetchImpl?: typeof fetch): Promise<SyncCheckResult> {
-  return apiRequest<SyncCheckResult>('/api/sync/check', { method: 'POST', body: {}, fetchImpl });
+/**
+ * POST /api/sync/check. `refresh: true` asks the server to skip its five minute cache; the body
+ * stays `{}` otherwise. Throws ApiError or a network error.
+ */
+export function runSyncCheck(fetchImpl?: typeof fetch, refresh = false): Promise<SyncCheckResult> {
+  return apiRequest<SyncCheckResult>('/api/sync/check', {
+    method: 'POST',
+    body: refresh ? { refresh: true } : {},
+    fetchImpl,
+  });
 }
 
 // ---- store: the one place that holds the last result ----
@@ -28,7 +35,11 @@ export interface SyncStoreState {
 export interface SyncStore {
   getState: () => SyncStoreState;
   subscribe: (listener: () => void) => () => void;
-  run: () => Promise<void>;
+  /**
+   * Run a check, or join the one in flight. `refresh: true` (the Refresh buttons) bypasses the
+   * server cache; if the in-flight check did not, one trailing refreshing check runs after it.
+   */
+  run: (options?: { readonly refresh?: boolean }) => Promise<void>;
   /**
    * Ask for a fresh check after a change. Idle: starts one. Loading: the in-flight result is
    * discarded and exactly one trailing check runs when it settles, however many calls arrive.
@@ -51,14 +62,20 @@ export function createSyncStore(fetchImpl?: typeof fetch): SyncStore {
   let rerun = false;
   const wantsRerun = () => rerun;
   let inflight = null as Promise<void> | null;
+  // True when the next check to start must bypass the server cache; cleared as that check starts.
+  let refreshNext = false;
+  let inflightRefreshes = false;
   const loop = async (): Promise<void> => {
     try {
       do {
         rerun = false;
+        const refresh = refreshNext;
+        refreshNext = false;
+        inflightRefreshes = refresh;
         const id = ++runId;
         set({ ...state, status: 'loading', errorCode: null });
         try {
-          const result = await runSyncCheck(fetchImpl);
+          const result = await runSyncCheck(fetchImpl, refresh);
           if (id === runId) set({ status: 'ready', result, errorCode: null });
           else if (!wantsRerun()) set({ ...state, status: 'ready', errorCode: null }); // discarded, nothing queued
         } catch (error: unknown) {
@@ -93,7 +110,19 @@ export function createSyncStore(fetchImpl?: typeof fetch): SyncStore {
       if (inflight !== null) runId += 1;
       set({ status: inflight !== null ? 'loading' : 'ready', result, errorCode: null });
     },
-    run: () => inflight ?? start(),
+    run: (options) => {
+      const refresh = options?.refresh === true;
+      if (inflight === null) {
+        refreshNext = refresh;
+        return start();
+      }
+      if (refresh && !inflightRefreshes) {
+        refreshNext = true;
+        rerun = true;
+        runId += 1; // the in-flight result predates the refresh
+      }
+      return inflight;
+    },
     requestRun: () => {
       if (inflight !== null) {
         rerun = true;

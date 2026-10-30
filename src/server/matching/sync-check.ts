@@ -25,6 +25,7 @@ import type {
 } from '../../lib/sync-check-types.js';
 import type { MatchPatch } from '../db/repo.js';
 import { CreateFlowError, type CreateDeps } from '../integrations/create.js';
+import type { WallosClient } from '../integrations/wallos/client.js';
 import { readBaseCurrency, readSchedules } from '../integrations/actual/read.js';
 import { prepareActualScheduleInput } from '../integrations/prepare.js';
 import {
@@ -34,12 +35,23 @@ import {
   mapWallosSubscription,
   WallosMappingError,
 } from '../integrations/wallos/map.js';
+import type { UpstreamCache } from '../cache/upstream-cache.js';
 import { classifySavedPairs } from './engine.js';
 import { detectMismatches } from './mismatch.js';
 
 export interface SyncCheckDeps extends Pick<CreateDeps, 'wallos' | 'repoFor' | 'withActual'> {
   /** Clock in ms since the epoch. */
   readonly now: () => number;
+  /** Per-user cache of upstream reads (five minutes). Absent: every read is live. */
+  readonly cache?: UpstreamCache;
+}
+
+/** Options for a read. Only the sync check passes a cache; every write path reads live. */
+export interface CurrentSidesOptions {
+  /** When set, Wallos and Actual reads go through this cache. Writes never pass it. */
+  readonly cache?: UpstreamCache;
+  /** With `cache`: ignore cached data and store the fresh read in its place. */
+  readonly refresh?: boolean;
 }
 
 export type {
@@ -158,9 +170,57 @@ function mismatchFieldsOf(f: MatchFieldsInput): SyncMismatchFields {
  * ignore_diff so both hash exactly the same values. The only write is the H14 anchor: a match row
  * whose Wallos item has no start_date and no anchor yet gets its first next_payment stored.
  */
+type ActualRead = { readonly schedules: Awaited<ReturnType<typeof readSchedules>>; readonly baseCode: string | null };
+
+/**
+ * Reads Wallos (subscriptions, then currencies) and then Actual (one session: schedules and base
+ * currency), in the same order as before the cache existed. With a cache, a live entry is used
+ * as is; a refresh or a miss reads live and stores the result. A cold Actual read still opens the
+ * budget once.
+ */
+async function readUpstream(
+  deps: Pick<SyncCheckDeps, 'wallos' | 'withActual'>,
+  userId: string,
+  options: CurrentSidesOptions,
+): Promise<{
+  readonly subscriptions: Awaited<ReturnType<WallosClient['listSubscriptions']>>;
+  readonly currencies: Awaited<ReturnType<WallosClient['listCurrencies']>>;
+  readonly actual: ActualRead;
+}> {
+  const cache = options.cache;
+  if (cache === undefined) {
+    const subscriptions = await deps.wallos.listSubscriptions(userId);
+    const currencies = await deps.wallos.listCurrencies(userId);
+    const actual = await deps.withActual(userId, async (api) => ({
+      schedules: await readSchedules(api),
+      baseCode: await readBaseCurrency(api),
+    }));
+    return { subscriptions, currencies, actual };
+  }
+  const refresh = options.refresh === true;
+  const subscriptions = await cache.getOrFetch(userId, 'wallos-subscriptions', () => deps.wallos.listSubscriptions(userId), { refresh });
+  const currencies = await cache.getOrFetch(userId, 'wallos-currencies', () => deps.wallos.listCurrencies(userId), { refresh });
+  const cachedSchedules = refresh ? undefined : (cache.peek(userId, 'actual-schedules') as ActualRead['schedules'] | undefined);
+  const cachedBase = refresh ? undefined : (cache.peek(userId, 'actual-budget-meta') as string | null | undefined);
+  let actual: ActualRead;
+  if (cachedSchedules !== undefined && cachedBase !== undefined) {
+    actual = { schedules: cachedSchedules, baseCode: cachedBase };
+  } else {
+    const readAt = cache.generation(userId);
+    actual = await deps.withActual(userId, async (api) => ({
+      schedules: await readSchedules(api),
+      baseCode: await readBaseCurrency(api),
+    }));
+    cache.put(userId, 'actual-schedules', actual.schedules, readAt);
+    cache.put(userId, 'actual-budget-meta', actual.baseCode, readAt);
+  }
+  return { subscriptions, currencies, actual };
+}
+
 export async function readCurrentSides(
   deps: Pick<SyncCheckDeps, 'wallos' | 'repoFor' | 'withActual'>,
   userId: string,
+  options: CurrentSidesOptions = {},
 ): Promise<CurrentSides> {
   const repo = deps.repoFor(userId);
   const anchorRows = new Map<string, { id: string; anchor: string | null }>();
@@ -171,14 +231,7 @@ export async function readCurrentSides(
     deps.repoFor(userId).listSubscriptionOverrides().map((o) => [o.wallosSubscriptionId, o.rate]),
   );
 
-  const [subscriptions, currencies] = await Promise.all([
-    deps.wallos.listSubscriptions(userId),
-    deps.wallos.listCurrencies(userId),
-  ]);
-  const actual = await deps.withActual(userId, async (api) => ({
-    schedules: await readSchedules(api),
-    baseCode: await readBaseCurrency(api),
-  }));
+  const { subscriptions, currencies, actual } = await readUpstream(deps, userId, options);
   if (actual.baseCode === null) throw new CreateFlowError('base_currency_missing');
   const baseCode = actual.baseCode.trim().toUpperCase();
 
@@ -303,11 +356,23 @@ function relinkCandidateIdsOf(
   return [];
 }
 
-export async function runSyncCheck(deps: SyncCheckDeps, userId: string): Promise<SyncCheckResult> {
+export interface RunSyncCheckOptions {
+  /** True bypasses the cache and stores a fresh read. False (default) uses cached upstream data. */
+  readonly refresh?: boolean;
+}
+
+export async function runSyncCheck(
+  deps: SyncCheckDeps,
+  userId: string,
+  options: RunSyncCheckOptions = {},
+): Promise<SyncCheckResult> {
   const repo = deps.repoFor(userId);
   const tolerance = repo.getConfig()?.tolerancePercent ?? DEFAULT_TOLERANCE_PERCENT;
   const rows = repo.listMatches();
-  const { wallosSides, actualSides, baseCode } = await readCurrentSides(deps, userId);
+  const { wallosSides, actualSides, baseCode } = await readCurrentSides(deps, userId, {
+    ...(deps.cache === undefined ? {} : { cache: deps.cache }),
+    refresh: options.refresh === true,
+  });
 
   // #35: saved pairs are classified on every run; nothing about them needs user action.
   const classified = classifySavedPairs(

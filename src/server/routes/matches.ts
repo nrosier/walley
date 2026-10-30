@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import type { CreateDeps } from '../integrations/create.js';
 import { DEFAULT_TOLERANCE_PERCENT } from '../../lib/amount-match.js';
+import type { UpstreamCache } from '../cache/upstream-cache.js';
 import { hashMatchFields } from '../matching/hash.js';
 import { OverwriteReadbackError, overwriteActual, overwriteWallos } from '../matching/overwrite.js';
 import { isCandidate, readCurrentSides } from '../matching/sync-check.js';
@@ -8,6 +9,8 @@ import { sendFailure } from './integrations.js';
 
 export interface MatchesRoutesOptions {
   readonly deps: Pick<CreateDeps, 'wallos' | 'repoFor' | 'withActual'>;
+  /** Dropped after every write to Wallos or Actual, and after a link, relink or unlink that changes the pair. */
+  readonly cache?: UpstreamCache;
 }
 
 const MAX_ID_LENGTH = 200;
@@ -116,9 +119,12 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
       return await reply.code(200).send({ status: 'UNLINKED' });
     } catch (error: unknown) {
       if (error instanceof OverwriteReadbackError) {
-        return reply.code(502).send({ error: 'overwrite_unverified' });
+        return await reply.code(502).send({ error: 'overwrite_unverified' });
       }
-      return sendFailure(reply, error);
+      return await Promise.resolve(sendFailure(reply, error));
+    } finally {
+      // Also after a failure: the remote side may have changed part way, or the pair did.
+      opts.cache?.invalidate(request.auth.userId);
     }
   });
 
@@ -168,7 +174,10 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
       }
       return await reply.code(201).send({ id: row.id, status: 'LINKED' });
     } catch (error: unknown) {
-      return sendFailure(reply, error);
+      return await Promise.resolve(sendFailure(reply, error));
+    } finally {
+      // Also after a failure: the remote side may have changed part way, or the pair did.
+      opts.cache?.invalidate(request.auth.userId);
     }
   });
 
@@ -237,7 +246,10 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
       }
       return await reply.code(200).send({ id: match.id, status: 'LINKED' });
     } catch (error: unknown) {
-      return sendFailure(reply, error);
+      return await Promise.resolve(sendFailure(reply, error));
+    } finally {
+      // Also after a failure: the remote side may have changed part way, or the pair did.
+      opts.cache?.invalidate(request.auth.userId);
     }
   });
 
@@ -271,6 +283,9 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
       return await reply.code(201).send({ id: row.id, status });
     } catch (error: unknown) {
       return await Promise.resolve(sendFailure(reply, error));
+    } finally {
+      // Also after a failure: the remote side may have changed part way, or the pair did.
+      opts.cache?.invalidate(request.auth.userId);
     }
   });
 
@@ -295,6 +310,9 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
       return await reply.code(204).send();
     } catch (error: unknown) {
       return await Promise.resolve(sendFailure(reply, error));
+    } finally {
+      // Also after a failure: the remote side may have changed part way, or the pair did.
+      opts.cache?.invalidate(request.auth.userId);
     }
   });
 };
