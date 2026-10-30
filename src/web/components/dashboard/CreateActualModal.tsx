@@ -23,7 +23,7 @@ interface PayeePickerProps {
  * Payee choice: a button that opens a searchable list. The search box takes focus on open; arrows move the highlight,
  * Enter selects, Escape closes and Radix returns focus to the button. "Create new payee" is always the first option.
  */
-function PayeePicker({ payees, value, onValueChange }: PayeePickerProps) {
+export function PayeePicker({ payees, value, onValueChange }: PayeePickerProps) {
   const { t } = useT(createModalMessages);
   const baseId = useId();
   const labelId = `${baseId}-label`;
