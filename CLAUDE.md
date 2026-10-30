@@ -112,17 +112,19 @@ Walley is a multi-user web application with a Node.js backend and React frontend
 
 ### Navbar / Header
 - App title ("Walley") in Actual Budget bold styling.
-- Tab Navigation (`Sync Dashboard`, `Matches`, `Settings`).
+- Tab Navigation (`Sync Dashboard`, `Settings`).
 - Action controls: Manual Refresh button, Theme Toggle (Light/Dark), User Account / Logout button.
 
-### 1. Sync Dashboard (Dual-Pane View)
-- Controls: Search filter, "Show Ignored Items" toggle, "Run Sync Check" trigger.
+### 1. Sync Dashboard (Dual-Pane View, the single place for linked pairs)
+- Controls: Search filter, "Run Sync Check" trigger.
 - **Left Column:** Unlinked Wallos Subscriptions (`[Link]`, `[Create in AB]`, `[Ignore]`).
 - **Right Column:** Unlinked Actual Budget Schedules (`[Link]`, `[Create in Wallos]`, `[Ignore]`).
+- **Linked pairs:** confirmed synced pairs scoped to the current user, one grid row per pair, with status badges (`Synced`, `Mismatch`, `Orphaned`). Mismatch pairs get `[Review]`, which opens the diff modal; Synced pairs get an `Unlink` action; orphaned pairs get `Recreate` and `Link`.
+- Ignored items sit in a collapsed section per side, with a single-click `[Restore / Unignore]` action.
+- Desktop (768px and up): the column titles stay pinned to the top while rows scroll. Below 768px a pane switch shows one side at a time.
 
-### 2. Matches & Linked Subscriptions View
-- Table of confirmed synced pairs scoped to current user with status badges (`Synced`, `Mismatch`).
-- Toggle to display ignored items with a single-click `[Restore / Unignore]` action.
+### 2. Linked Subscriptions (no separate page)
+- `/matches` is removed. Unknown paths, including `/matches`, go to the Sync Dashboard.
 
 ### 3. Pre-fill Creation Modals
 - **Create Actual Schedule from Wallos:** Pre-fills converted amount, mapped frequency/rrule, payee dropdown (selectable or create new), category dropdown.

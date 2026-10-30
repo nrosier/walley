@@ -370,9 +370,3 @@ export async function restoreAndRecheck(
   if (outcome.ok) void store.requestRun();
   return outcome;
 }
-
-/** Start a check when there is no result yet and none is running. */
-export function checkIfEmpty(store: SyncStore): void {
-  const { result, status } = store.getState();
-  if (result === null && status !== 'loading') void store.requestRun();
-}

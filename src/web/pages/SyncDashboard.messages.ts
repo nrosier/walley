@@ -40,6 +40,13 @@ const en = {
     stale: 'Stale',
     staleNote: 'These results are from the last successful check and may be out of date.',
   },
+  review: 'Review',
+  reviewLabel: 'Review differences: {name}',
+  orphan: {
+    recreateWallos: 'Recreate in Wallos',
+    recreateActual: 'Recreate in Actual Budget',
+    link: 'Link to another item',
+  },
   row: {
     range: 'range',
     rangeHint: 'Amount is the midpoint of a range',
@@ -120,6 +127,13 @@ const nl: typeof en = {
     checkSettings: 'Instellingen controleren',
     stale: 'Verouderd',
     staleNote: 'Deze resultaten komen van de laatste geslaagde controle en zijn mogelijk verouderd.',
+  },
+  review: 'Bekijken',
+  reviewLabel: 'Verschillen bekijken: {name}',
+  orphan: {
+    recreateWallos: 'Opnieuw aanmaken in Wallos',
+    recreateActual: 'Opnieuw aanmaken in Actual Budget',
+    link: 'Koppelen aan een ander item',
   },
   row: {
     range: 'bereik',

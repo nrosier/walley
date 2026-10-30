@@ -1,11 +1,10 @@
 import { useSyncExternalStore, type MouseEvent } from 'react';
 
-export type Route = 'sync' | 'matches' | 'settings' | 'login' | 'verify-email';
-export type TabRoute = 'sync' | 'matches' | 'settings';
+export type Route = 'sync' | 'settings' | 'login' | 'verify-email';
+export type TabRoute = 'sync' | 'settings';
 
 export const TABS: readonly { route: TabRoute; path: string }[] = [
   { route: 'sync', path: '/sync' },
-  { route: 'matches', path: '/matches' },
   { route: 'settings', path: '/settings' },
 ];
 
@@ -13,8 +12,6 @@ export const TABS: readonly { route: TabRoute; path: string }[] = [
 export function parseRoute(pathname: string): Route {
   const clean = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   switch (clean) {
-    case '/matches':
-      return 'matches';
     case '/settings':
       return 'settings';
     case '/login':

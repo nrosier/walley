@@ -26,11 +26,12 @@ const render = (route: Route, opts: { theme?: 'dark' | 'light'; locale?: Locale;
 
 describe('AppShell', () => {
   it('renders title, path tabs and header actions', () => {
-    const html = render('matches');
+    const html = render('sync');
     expect(html).toContain('Walley');
-    for (const label of ['Sync Dashboard', 'Matches', 'Settings']) expect(html).toContain(label);
+    for (const label of ['Sync Dashboard', 'Settings']) expect(html).toContain(label);
     expect(html).toContain('href="/sync"');
-    expect(html).toContain('href="/matches"');
+    expect(html).not.toContain('href="/matches"');
+    expect(html).not.toContain('>Matches<');
     expect(html).toContain('href="/settings"');
     expect(html).not.toContain('href="#/');
     expect(html).toContain('aria-label="Refresh"');
@@ -38,9 +39,9 @@ describe('AppShell', () => {
     expect(html).toContain('body');
   });
   it('marks only the active tab with aria-current', () => {
-    const html = render('matches');
+    const html = render('settings');
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
-    expect(html).toMatch(/aria-current="page"[^>]*>.*?<span[^>]*>Matches<\/span>/);
+    expect(html).toMatch(/aria-current="page"[^>]*>.*?<span[^>]*>Settings<\/span>/);
   });
   it('offers dark when light is active', () => {
     expect(render('sync', { theme: 'light' })).toContain('Switch to dark theme');
@@ -59,7 +60,7 @@ describe('AppShell', () => {
   });
   it('translates to Dutch', () => {
     const html = render('settings', { locale: 'nl', open: true });
-    for (const label of ['Synchronisatie', 'Koppelingen', 'Instellingen', 'Vernieuwen', 'Uitloggen']) expect(html).toContain(label);
+    for (const label of ['Synchronisatie', 'Instellingen', 'Vernieuwen', 'Uitloggen']) expect(html).toContain(label);
   });
   it('puts the skip link first, targeting the main content', () => {
     const html = render('sync');
@@ -70,7 +71,7 @@ describe('AppShell', () => {
     expect(render('sync', { locale: 'nl' })).toContain('Naar hoofdinhoud springen');
   });
   it('links the title to /sync from every route', () => {
-    for (const route of ['sync', 'matches', 'settings'] as const) {
+    for (const route of ['sync', 'settings'] as const) {
       expect(render(route)).toMatch(/<a href="\/sync"[^>]*aria-label="Walley, go to Sync Dashboard"[^>]*>Walley<\/a>/);
     }
   });
@@ -79,7 +80,7 @@ describe('AppShell', () => {
     expect(html).toContain('flex-wrap');
     expect(html).toContain('w-full');
     expect(html).toContain('min-h-(--control-h)');
-    expect(html).toMatch(/<span class="sr-only md:not-sr-only">Matches<\/span>/);
+    expect(html).toMatch(/<span class="sr-only md:not-sr-only">Settings<\/span>/);
   });
   it('Below 768px the header wraps, tabs form a second row, and nothing clips; title links to /sync', () => {
     const html = render('sync');
@@ -91,21 +92,22 @@ describe('AppShell', () => {
     for (const cls of ['order-last', 'w-full', 'md:order-none', 'md:w-auto', 'md:flex-1']) expect(nav).toContain(cls);
     expect(nav).not.toMatch(/overflow-(hidden|x-auto|x-scroll)/);
     // Tabs share the row and keep a name when icon-only; the email is hidden below md instead of clipping.
-    expect(html.match(/class="[^"]*\bflex-1\b[^"]*"[^>]*>(?:<svg|<span)/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+    // Two tabs (Sync Dashboard, Settings) since the Matches tab was removed.
+    expect(html.match(/class="[^"]*\bflex-1\b[^"]*"[^>]*>(?:<svg|<span)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(html).toMatch(/<span class="sr-only md:not-sr-only">Sync Dashboard<\/span>/);
     expect(html).toMatch(/<span class="hidden max-w-48 truncate md:inline">a@example.test<\/span>/);
     // Title links to /sync from every route and is a 44px target on narrow screens.
-    for (const route of ['sync', 'matches', 'settings'] as const) {
+    for (const route of ['sync', 'settings'] as const) {
       expect(render(route)).toMatch(/<a href="\/sync"[^>]*class="[^"]*min-h-\(--control-h\)[^"]*"[^>]*>Walley<\/a>/);
     }
   });
-  it('Each route sets its own <title> (for example "Matches - Walley"); skip link is first focusable', () => {
-    const titles = (['sync', 'matches', 'settings'] as const).map((r) => documentTitle(r, 'en'));
-    expect(titles).toEqual(['Sync Dashboard - Walley', 'Matches - Walley', 'Settings - Walley']);
+  it('Each route sets its own <title> (for example "Settings - Walley"); skip link is first focusable', () => {
+    const titles = (['sync', 'settings'] as const).map((r) => documentTitle(r, 'en'));
+    expect(titles).toEqual(['Sync Dashboard - Walley', 'Settings - Walley']);
     expect(documentTitle('settings', 'nl')).toBe('Instellingen - Walley');
     // App sets the title for every route (including login and verify-email) before choosing what to render.
     expect(appSrc).toMatch(/const route = useRoute\(\);\s*useDocumentTitle\(route\);/);
-    for (const route of ['sync', 'matches', 'settings'] as const) {
+    for (const route of ['sync', 'settings'] as const) {
       const html = render(route);
       // The first focusable element in the shell is the skip link; no positive tabindex jumps ahead of it.
       const first = /<(?:a|button|input|select|textarea)\b[^>]*>|<[^>]*\btabindex="[^"]*"[^>]*>/.exec(html)?.[0] ?? '';
@@ -114,11 +116,11 @@ describe('AppShell', () => {
     }
   });
   it('issue 113: skip link, logo, tabs and header buttons carry the shared 2px/2px solid focus treatment', () => {
-    const html = render('matches');
+    const html = render('settings');
     const shared = ['focus-visible:outline-2', 'focus-visible:outline-offset-2', 'focus-visible:outline-ring'];
     const tags = html.match(/<(?:a|button)\b[^>]*>/g) ?? [];
-    // skip link, logo, 3 tabs, Refresh, theme toggle, Account menu, footer About
-    expect(tags).toHaveLength(9);
+    // skip link, logo, 2 tabs (the Matches tab is gone with /matches), Refresh, theme toggle, Account menu, footer About
+    expect(tags).toHaveLength(8);
     for (const tag of tags) {
       for (const cls of shared) expect(tag, tag).toContain(cls);
       // No competing ring, auto outline or animated outline width/offset on these controls.

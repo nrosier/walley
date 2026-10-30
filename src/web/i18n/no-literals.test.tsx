@@ -10,7 +10,6 @@ import { DiffModal } from '@/components/matches/DiffModal';
 import { diffModalMessages } from '@/components/matches/DiffModal.messages';
 import type { SyncMismatch } from '../../lib/sync-check-types';
 import { sample } from '@/lib/sync-check.test';
-import { MatchesView } from '@/pages/Matches';
 import { SyncDashboardView } from '@/pages/SyncDashboard';
 import { LoginForm } from '@/pages/LoginPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -71,7 +70,6 @@ const views: Record<string, ReactElement> = {
   'sync dashboard': (
     <SyncDashboardView state={{ status: 'ready', result, errorCode: null }} query="" />
   ),
-  matches: <MatchesView result={{ ...result, linked: [] }} showIgnored={false} />,
   'create actual form': (
     <CreateActualForm
       wallosId="w1"
@@ -101,7 +99,6 @@ const views: Record<string, ReactElement> = {
 /** Main heading and primary button of each new view: present in en, absent in nl. */
 const headings: Record<string, string[]> = {
   'sync dashboard': ['>Sync Dashboard<', '>Run Sync Check<'],
-  matches: ['>Matches<', '>Show ignored items<'],
   'create actual form': ['>Create<'],
   'create wallos form': ['>Create<'],
 };

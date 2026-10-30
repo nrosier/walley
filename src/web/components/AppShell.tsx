@@ -1,6 +1,6 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
 import { DropdownMenu } from 'radix-ui';
-import { ArrowLeftRight, ChevronDown, Link2, LogOut, Moon, RefreshCw, Settings, Sun, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, LogOut, Moon, RefreshCw, Settings, Sun, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
 import { navigate, TABS, type Route, type TabRoute } from '@/lib/route';
@@ -20,7 +20,7 @@ export interface AppShellProps {
   children?: ReactNode;
 }
 
-const TAB_ICONS: Record<TabRoute, LucideIcon> = { sync: ArrowLeftRight, matches: Link2, settings: Settings };
+const TAB_ICONS: Record<TabRoute, LucideIcon> = { sync: ArrowLeftRight, settings: Settings };
 
 /** 44px tap targets on narrow or coarse-pointer screens (--control-h), 32px otherwise. */
 const TARGET = 'min-h-(--control-h)';
