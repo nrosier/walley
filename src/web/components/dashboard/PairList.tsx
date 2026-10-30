@@ -225,7 +225,8 @@ export function PairList(props: PairListProps) {
   };
   return (
     <div data-pairs="" tabIndex={-1} className="min-w-0 outline-none">
-      <div className="grid grid-cols-1 md:grid-cols-2">
+      {/* Desktop only: the column titles stay at the top while the rows scroll. Below 768px the pane switch replaces this. */}
+      <div data-column-header="" className="grid grid-cols-1 bg-card md:sticky md:top-0 md:z-20 md:grid-cols-2">
         <h2 id="col-wallos" className={`px-3 py-1.5 text-sm font-semibold ${hide('wallos')}`}>
           {props.wallosTitle} <span className="font-mono text-xs font-normal text-muted">{props.wallosCount}</span>
         </h2>

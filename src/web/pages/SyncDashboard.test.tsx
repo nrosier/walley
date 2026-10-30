@@ -595,3 +595,22 @@ describe('Review and the diff modal on the Sync Dashboard', () => {
     expect(calls.some((c) => c.endsWith('/api/matches/m1/resolve'))).toBe(true);
   });
 });
+
+describe('Sync Dashboard desktop sticky column header', () => {
+  // Class assertions only: jsdom is not a layout engine, so the sticky position itself is not tested here.
+  it('the column header row is sticky at md and up only, with a z-index above the rows', () => {
+    const html = render(ready());
+    const header = html.slice(html.indexOf('data-column-header=""'), html.indexOf('id="col-wallos"'));
+    expect(header).toContain('md:sticky');
+    expect(header).toContain('md:top-0');
+    expect(header).toContain('md:z-20');
+    expect(header).toContain('bg-card');
+    expect(header).not.toMatch(/(^|\s)sticky(\s|")/);
+  });
+
+  it('the dashboard adds no overflow wrapper around the pairs, so the header sticks to the page', () => {
+    expect(pairListSrc).not.toMatch(/overflow-(x-)?(auto|scroll|hidden)/);
+    expect(pairListSrc).not.toMatch(/max-md:max-h-/);
+    expect(dashboardPageSrc).not.toMatch(/overflow-(x-)?(auto|scroll|hidden)/);
+  });
+});
