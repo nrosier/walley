@@ -286,7 +286,7 @@ export function MatchesView({
         {checking ? t('checking') : null}
       </div>
       {checkErrorMessage != null && !checking ? (
-        <p role="alert" className="mb-2 flex flex-wrap items-center gap-2 text-xs text-warning">
+        <p role="alert" className="mb-2 flex flex-wrap items-center gap-2 text-xs text-danger">
           <span>{checkErrorMessage}</span>
           <Button type="button" size="xs" variant="outline" onClick={() => onRetryCheck?.()}>
             {t('retry')}
@@ -294,7 +294,7 @@ export function MatchesView({
         </p>
       ) : null}
       {unlinkErrorMessage != null ? (
-        <p role="alert" className="mb-2 text-xs text-warning">
+        <p role="alert" className="mb-2 text-xs text-danger">
           {unlinkErrorMessage}
         </p>
       ) : null}
@@ -344,7 +344,7 @@ export function MatchesView({
                           ]}
                         />
                         {errorId === row.matchId && errorMessage != null ? (
-                          <p role="alert" className="mt-1 text-xs text-warning">
+                          <p role="alert" className="mt-1 text-xs text-danger">
                             {errorMessage}
                           </p>
                         ) : null}

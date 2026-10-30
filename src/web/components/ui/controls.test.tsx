@@ -81,6 +81,13 @@ describe('Alert', () => {
     expect(html).toContain('aria-live="assertive"');
     expect(html).toContain('Error: ');
     expect(html).toContain('Could not save');
+    expect(html).toContain('text-danger');
+    expect(html).not.toContain('text-warning');
+  });
+  it('uses the amber warning token for warnings, not for errors', () => {
+    const html = render(<Alert variant="warning">Not configured</Alert>);
+    expect(html).toContain('text-warning');
+    expect(html).not.toContain('text-danger');
   });
   it('uses role=status and a polite live region for info and success', () => {
     for (const variant of ['info', 'success'] as const) {

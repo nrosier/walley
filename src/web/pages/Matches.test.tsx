@@ -297,6 +297,7 @@ describe('Matches auto re-check', () => {
     const html = render({ checkErrorMessage: 'Saved. Sync status could not be refreshed: x' });
     expect(html).toContain('Saved. Sync status could not be refreshed: x');
     expect(html).toContain('>Retry</button>');
+    expect(html).toContain('text-danger');
     expect(html).toContain('data-match-row');
   });
 

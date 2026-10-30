@@ -75,6 +75,9 @@ describe('MatchingSettings view', () => {
     const html = renderView({ text: '70', invalid: true });
     expect(html).toContain('Enter a value from 0 to 50.');
     expect(tagOf(html, /<input[^>]*type="number"[^>]*>/)).toContain('aria-invalid="true"');
+    expect(html).toContain('text-danger');
+    expect(tagOf(html, /<input[^>]*type="number"[^>]*>/)).toContain('border-danger-line');
+    expect(html).not.toContain('text-warning');
   });
 
   it('shows Saving, Saved and an error text in the status line', () => {

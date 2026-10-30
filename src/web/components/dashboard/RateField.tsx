@@ -71,7 +71,7 @@ export function RateField({ prefill, wallosId, fetchImpl, onChanged }: RateField
         {help}
       </span>
       {errorCode !== null ? (
-        <p id={errorId} role="alert" className="text-xs text-warning">{errorText(errorCode)}</p>
+        <p id={errorId} role="alert" className="text-xs text-danger">{errorText(errorCode)}</p>
       ) : null}
     </div>
   );

@@ -116,7 +116,8 @@ describe('ActualSettings', () => {
     expect(error).toMatchObject({ code: 'password_required' });
     const html = render({ status: { kind: 'error', code: 'password_required' } });
     expect(html).toContain('Enter the password again');
-    expect(html).toContain('text-warning');
+    expect(html).toContain('text-danger');
+    expect(html).not.toContain('text-warning');
     expect(render({ status: { kind: 'error', code: 'actual_unavailable' } })).toContain('Could not reach Actual Budget');
   });
 

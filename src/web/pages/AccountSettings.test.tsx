@@ -6,6 +6,7 @@ import { PASSWORD_MAX_CODE_POINTS, PASSWORD_MIN_CODE_POINTS } from '../../lib/pa
 import { appMessages } from '../App.messages';
 import { requestLogout } from '../App';
 import { AccountSettingsView, changePassword, loadAccount, saveRegistration, type AccountInfo } from './AccountSettings';
+import accountSource from './AccountSettings.tsx?raw';
 
 const render = (account: AccountInfo, locale: Locale = 'en') =>
   renderToStaticMarkup(
@@ -77,6 +78,15 @@ describe('AccountSettings oidc mode', () => {
     expect(html).toContain('sub-123');
     expect(html).toMatch(/class="font-mono"/);
     expect(html).not.toContain('type="password"');
+  });
+});
+
+describe('AccountSettings error tone', () => {
+  it('error and load-failure lines use the danger token; only the ceiling notice stays amber', () => {
+    const errorLines = accountSource.match(/<p [^>]*>\{(?:error\}|state\.expired|t\('registration\.loadError'\))/g) ?? [];
+    expect(errorLines.length).toBe(4);
+    for (const line of errorLines) expect(line).toContain('text-danger');
+    expect(accountSource).toMatch(/text-warning">\{t\('registration\.ceilingOff'\)\}/);
   });
 });
 

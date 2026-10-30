@@ -172,6 +172,7 @@ describe('SyncDashboard states', () => {
   it('not configured: names the missing side with a Check settings link and no Retry', () => {
     const html = render({ status: 'error', result: null, errorCode: 'wallos_not_configured' });
     expect(html).toContain('Wallos is not set up yet.');
+    expect(html).toContain('data-variant="warning"');
     expect(html).toContain('href="/settings"');
     expect(html).toContain('Check settings');
     expect(html).not.toContain('>Retry<');
@@ -179,6 +180,8 @@ describe('SyncDashboard states', () => {
   it('sync failure names the side, offers Retry and Check settings, and keeps the last result marked Stale', () => {
     const html = render({ status: 'error', result: sample(), errorCode: 'actual_unavailable' });
     expect(html).toContain('The sync check failed on the Actual Budget side.');
+    expect(html).toContain('data-variant="error"');
+    expect(html).toContain('text-danger');
     expect(html).toContain('>Retry<');
     expect(html).toContain('Check settings');
     expect(html).toContain('>Stale<');
