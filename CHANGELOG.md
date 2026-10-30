@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Nothing yet.
 
+## [0.2.1] - 2026-10-30
+
+### Fixed
+
+- Wallos subscription names with HTML entities such as & are shown and matched by their real name.
+- Linked pairs whose Wallos name contains an entity show one mismatch after the update; resolve it with Ignore Diff or Overwrite Actual.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added
