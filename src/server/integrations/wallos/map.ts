@@ -5,6 +5,7 @@ import {
   type ActualRecurrence,
   type WallosInterval,
 } from '../../../lib/frequency-mapper.js';
+import type { MatchFieldsInput } from '../../../lib/match-fields.js';
 import type { WallosCurrency, WallosSubscription } from './types.js';
 
 /**
@@ -188,6 +189,15 @@ const WALLOS_NAME_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#039|#39|#x27);/g;
  */
 export function decodeWallosName(name: string): string {
   return name.replace(WALLOS_NAME_ENTITY_PATTERN, (entity) => WALLOS_NAME_ENTITIES.get(entity) ?? entity);
+}
+
+/**
+ * The comparable fields as release 0.2.0 hashed them: the same fields with the name taken RAW,
+ * still HTML-escaped as Wallos returned it. Used only to recognise a stored hash from before the
+ * entity decode (src/server/matching/mismatch.ts) so that pair is re-baselined, not flagged.
+ */
+export function legacyWallosNameFields(fields: MatchFieldsInput, rawName: string): MatchFieldsInput {
+  return { ...fields, name: rawName };
 }
 
 /**
