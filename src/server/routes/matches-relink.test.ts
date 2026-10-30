@@ -189,6 +189,20 @@ describe('POST /api/matches/:id/relink', () => {
     t.noWrites();
   });
 
+  it('a linked pair whose Wallos item is disabled is orphaned_wallos; relink is refused and writes nothing', async () => {
+    // The real client drops inactive items (inactive 1 or true), so the disabled item 7 is absent from the list.
+    const t = setup();
+    const id = await linkedPair(t);
+    dropWallos(t);
+    expect((await t.syncCheck(t.sa)).linked[0]?.orphan).toBe('orphaned_wallos');
+    // Relink to an id that is not on the Wallos side (the disabled item is gone from the list): refused, row unchanged.
+    const res = await injectAs(t.app, t.sa, relink(id, '999'));
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'item_not_found' });
+    expect(t.repoA.getMatch(id)).toMatchObject({ wallosId: '7', actualScheduleId: 'sch-a', status: 'LINKED' });
+    t.noWrites();
+  });
+
   it('repoints an orphaned Actual side', async () => {
     const t = setup();
     const id = await linkedPair(t);
