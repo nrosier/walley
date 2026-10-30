@@ -1,10 +1,11 @@
-import type { MouseEvent, ReactNode } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { DropdownMenu } from 'radix-ui';
 import { ArrowLeftRight, ChevronDown, Link2, LogOut, Moon, RefreshCw, Settings, Sun, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/i18n';
 import { navigate, TABS, type Route, type TabRoute } from '@/lib/route';
 import type { Theme } from '@/lib/theme';
+import { AboutDialog } from './AboutDialog';
 import { appShellMessages } from './AppShell.messages';
 
 export interface AppShellProps {
@@ -36,6 +37,7 @@ function onTabClick(event: MouseEvent<HTMLAnchorElement>, path: string) {
 
 export function AppShell({ route, theme, email, onRefresh, onToggleTheme, onLogout, menuDefaultOpen, children }: AppShellProps) {
   const { t } = useT(appShellMessages);
+  const [aboutOpen, setAboutOpen] = useState(false);
   return (
     <div className="min-h-screen">
       <a
@@ -120,6 +122,20 @@ export function AppShell({ route, theme, email, onRefresh, onToggleTheme, onLogo
         </div>
       </header>
       <main id="main" tabIndex={-1} className="p-3 outline-none">{children}</main>
+      <footer className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t bg-card px-3 py-1.5 text-xs text-muted">
+        <span>{t('footer.text', { version: __APP_VERSION__ })}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={`ml-auto h-auto ${TARGET} text-xs text-muted hover:text-foreground`}
+          onClick={() => {
+            setAboutOpen(true);
+          }}
+        >
+          {t('footer.about')}
+        </Button>
+      </footer>
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </div>
   );
 }

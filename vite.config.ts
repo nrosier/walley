@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
+
+const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8')) as { version: string };
 
 export default defineConfig(({ mode }) => {
   const raw = loadEnv(mode, process.cwd(), '').PORT ?? process.env.PORT;
@@ -10,6 +13,9 @@ export default defineConfig(({ mode }) => {
   return {
     root: fileURLToPath(new URL('./src/web', import.meta.url)),
     plugins: [react(), tailwindcss()],
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src/web', import.meta.url)),

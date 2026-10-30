@@ -15,6 +15,18 @@ const en = {
   logout: 'Log out',
   skipLink: 'Skip to main content',
   homeLink: 'Walley, go to Sync Dashboard',
+  footer: {
+    text: 'Walley v{version} · Copyright (c) 2026 Nick Rosier · MIT',
+    about: 'About',
+  },
+  about: {
+    title: 'About Walley',
+    description: 'Syncs and matches recurring subscriptions between Wallos and Actual Budget.',
+    version: 'Version {version}',
+    copyright: 'Copyright (c) 2026 Nick Rosier',
+    license: 'License: MIT',
+    repository: 'Project page on GitHub',
+  },
 };
 
 const nl: typeof en = {
@@ -34,6 +46,18 @@ const nl: typeof en = {
   logout: 'Uitloggen',
   skipLink: 'Naar hoofdinhoud springen',
   homeLink: 'Walley, naar Synchronisatie',
+  footer: {
+    text: 'Walley v{version} · Copyright (c) 2026 Nick Rosier · MIT',
+    about: 'Over',
+  },
+  about: {
+    title: 'Over Walley',
+    description: 'Synchroniseert en koppelt terugkerende abonnementen tussen Wallos en Actual Budget.',
+    version: 'Versie {version}',
+    copyright: 'Copyright (c) 2026 Nick Rosier',
+    license: 'Licentie: MIT',
+    repository: 'Projectpagina op GitHub',
+  },
 };
 
 export const appShellMessages = { en, nl };
