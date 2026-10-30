@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Nothing yet.
 
+## [0.2.3] - 2026-10-30
+
+### Changed
+
+- Payee search in the Create Actual Budget modal is covered by rendered tests for filtering, no-match, selection and keyboard use.
+
 ## [0.2.2] - 2026-10-30
 
 ### Added
