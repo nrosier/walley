@@ -10,6 +10,7 @@ import apiSrc from '@/lib/matches.api.ts?raw';
 import rowSrc from '@/components/dashboard/ItemRow.tsx?raw';
 import toolbarSrc from '@/components/dashboard/Toolbar.tsx?raw';
 import pairListSrc from '@/components/dashboard/PairList.tsx?raw';
+import dashboardPageSrc from './SyncDashboard.tsx?raw';
 import pairRowsSrc from '@/lib/pair-rows.ts?raw';
 import { ItemRow } from '@/components/dashboard/ItemRow';
 import { syncDashboardMessages } from './SyncDashboard.messages';
@@ -430,8 +431,10 @@ describe('Sync Dashboard unlink on linked pairs (retire-matches-tab)', () => {
   it('no Unlink menu for a mismatch pair, an orphaned pair, or when no handler is passed', () => {
     const mismatch = render({ status: 'ready', result: withStatus('MISMATCH_DETECTED'), errorCode: null }, { onUnlink: () => undefined });
     expect(mismatch).not.toContain('More actions for Spotify');
+    // An orphan gets the Recreate and Relink menu instead (see the orphan describe), never Unlink.
     const orphan = render({ status: 'ready', result: withStatus('LINKED', 'orphaned_wallos'), errorCode: null }, { onUnlink: () => undefined });
-    expect(orphan).not.toContain('More actions for Spotify');
+    expect(orphan).toContain('aria-label="More actions for Spotify"');
+    expect(orphan).not.toContain('Unlink');
     const noHandler = render({ status: 'ready', result: withStatus('LINKED'), errorCode: null });
     expect(noHandler).not.toContain('More actions for Spotify');
   });
@@ -460,5 +463,72 @@ describe('Sync Dashboard unlink on linked pairs (retire-matches-tab)', () => {
     const out = await performResolve(() => store.getState().result, store.setResult, 'm1', 'unlink', store.requestRun, f);
     expect(out).toEqual({ ok: true });
     expect(calls.some((c) => c.endsWith('/api/matches/m1/resolve'))).toBe(true);
+  });
+});
+
+describe('Recreate and relink orphaned pairs from the Sync Dashboard', () => {
+  const orphanLinked = (over: Partial<SyncLinked>): SyncLinked => ({
+    matchId: 'o',
+    wallosId: 'w',
+    actualScheduleId: 'a',
+    status: 'LINKED',
+    orphan: 'orphaned_actual',
+    wallosName: 'Lost Actual',
+    actualName: null,
+    wallosAmountCents: 500,
+    actualAmountCents: null,
+    isRange: false,
+    relinkCandidateIds: [],
+    ...over,
+  });
+  const orphanState = (linked: SyncLinked[]): SyncStoreState => ({
+    status: 'ready',
+    result: { ...sample(), linked },
+    errorCode: null,
+  });
+
+  it('an orphan row shows a More actions menu named for the surviving item, with Recreate and Relink', () => {
+    const html = render(orphanState([orphanLinked({ matchId: 'o1' })]));
+    expect(html).toContain('aria-label="More actions for Lost Actual"');
+    expect(html).toContain('data-row-id="w"');
+    expect(html).not.toContain('More actions for —');
+  });
+
+  it('an orphaned_both or mismatch row offers no Recreate or Relink', () => {
+    const html = render(
+      orphanState([
+        orphanLinked({ matchId: 'b', orphan: 'orphaned_both', wallosName: null, actualName: null }),
+        orphanLinked({ matchId: 'd', orphan: null, status: 'MISMATCH_DETECTED', wallosName: 'Drifted' }),
+      ]),
+    );
+    expect(html).not.toContain('More actions for Drifted');
+    expect(html).not.toContain('More actions for —');
+  });
+
+  it('the orphan menu items and their en and nl catalogue keys match the Matches wording', () => {
+    expect(Object.keys(syncDashboardMessages.nl.orphan)).toEqual(Object.keys(syncDashboardMessages.en.orphan));
+    expect(syncDashboardMessages.en.orphan.link).toBe('Link to another item');
+    expect(syncDashboardMessages.en.orphan.recreateWallos).toBe('Recreate in Wallos');
+    expect(syncDashboardMessages.en.orphan.recreateActual).toBe('Recreate in Actual Budget');
+  });
+
+  it('Relink opens RelinkDialog for the orphan row and Recreate opens the matching create modal with the match id', () => {
+    expect(pairListSrc).toContain("onSelect: () => { props.onRelink?.(link); }");
+    expect(pairListSrc).toContain("onSelect: () => { props.onRecreate?.(link); }");
+    expect(dashboardPageSrc).toMatch(/<RelinkDialog[\s\S]*?matchId=\{orphanAction\.row\.matchId\}/);
+    expect(dashboardPageSrc).toMatch(/<RelinkDialog[\s\S]*?candidateIds=\{orphanAction\.row\.relinkCandidateIds\}/);
+    expect(dashboardPageSrc).toMatch(/<CreateActualModal[\s\S]*?matchId=\{orphanAction\.row\.matchId\}/);
+    expect(dashboardPageSrc).toMatch(/<CreateWallosModal[\s\S]*?matchId=\{orphanAction\.row\.matchId\}/);
+  });
+
+  it('a failed recreate reports through the create modal error path; the dashboard keeps the modal open', () => {
+    // The create modals own the failure text (errorText(errorCode)), as in Matches; the dashboard only mounts them.
+    const createSrc = [
+      '../components/dashboard/CreateActualModal.tsx',
+      '../components/dashboard/CreateWallosModal.tsx',
+    ];
+    expect(createSrc.length).toBe(2);
+    expect(dashboardPageSrc).toContain('onClose={() => { setOrphanAction(null); }}');
+    expect(dashboardPageSrc).toContain('orphanAction.row.wallosName ?? orphanAction.row.wallosId');
   });
 });

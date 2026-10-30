@@ -10,7 +10,7 @@ import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
 import { StatusBadge } from '../StatusBadge';
 import { Badge } from '../ui/badge';
 import { Disclosure } from '../ui/disclosure';
-import { MoreActionsMenu } from '../ui/more-actions-menu';
+import { MoreActionsMenu, type MoreActionsItem } from '../ui/more-actions-menu';
 import { ItemRow } from './ItemRow';
 
 export interface PairListProps {
@@ -36,29 +36,30 @@ export interface PairListProps {
   onRetry?: () => void;
   /** Unlink a LINKED, non-orphan pair (opens the confirmation dialog). Offered once per pair, on its first cell. */
   onUnlink?: (row: SyncLinked) => void;
+  /** Recreate the missing side of a single-side orphan (opens the create modal). Offered on the surviving side's cell. */
+  onRecreate?: (row: SyncLinked) => void;
+  /** Link a single-side orphan to another unlinked item (opens the relink dialog). Offered on the surviving side's cell. */
+  onRelink?: (row: SyncLinked) => void;
 }
 
-/** A linked pair's side: name, amount and the pair's status badge. No actions, so linked state cannot change here. */
+/** A linked pair's side: name, amount, the pair's status badge and, when offered, its actions menu. */
 function LinkedCell({
   row,
   side,
   badge,
   baseCurrency,
   differs,
-  unlink,
-  onUnlink,
+  actions,
 }: {
   row: RowModel;
   side: Side;
   badge: NonNullable<PairRow['badge']>;
   baseCurrency: string;
   differs: boolean;
-  /** The pair this cell belongs to when Unlink is offered; null hides the menu. */
-  unlink: SyncLinked | null;
-  onUnlink?: (row: SyncLinked) => void;
+  /** The menu items for this pair's surviving cell; null hides the menu. */
+  actions: MoreActionsItem[] | null;
 }) {
   const { t, locale } = useT(syncDashboardMessages);
-  const unlinkLabel = useT(diffModalMessages).t('unlink');
   return (
     <div data-row-id={row.id} data-side={side} data-linked="" tabIndex={-1} className="flex h-full items-center gap-x-3 px-3 py-1.5 text-sm">
       <span className="min-w-0 flex-1 truncate font-medium" title={row.name}>
@@ -78,13 +79,7 @@ function LinkedCell({
         )}
         {differs ? <span className="sr-only"> {t('differs')}</span> : null}
       </span>
-      {unlink !== null && onUnlink !== undefined ? (
-        <MoreActionsMenu
-          name={row.name}
-          className="-my-1"
-          items={[{ id: 'unlink', label: unlinkLabel, destructive: true, onSelect: () => { onUnlink(unlink); } }]}
-        />
-      ) : null}
+      {actions !== null ? <MoreActionsMenu name={row.name} className="-my-1" items={actions} /> : null}
     </div>
   );
 }
@@ -104,15 +99,34 @@ const GROUP_KINDS: readonly PairKind[] = ['linked', 'suggested', 'wallos', 'actu
  */
 export function PairList(props: PairListProps) {
   const { t } = useT(syncDashboardMessages);
+  const unlinkLabel = useT(diffModalMessages).t('unlink');
   const [folded, setFolded] = useState<ReadonlySet<PairKind>>(() => new Set());
   const createLabel = (side: Side) => (side === 'wallos' ? t('row.createInActual') : t('row.createInWallos'));
   const hide = (side: Side) => (props.pane === side ? '' : 'max-md:hidden');
   const hasCell = (side: Side) => props.rows.some((r) => (side === 'wallos' ? r.wallos : r.actual) !== null);
+  const linkedActions = (link: SyncLinked): MoreActionsItem[] | null => {
+    if (link.orphan === 'orphaned_wallos' || link.orphan === 'orphaned_actual') {
+      return [
+        {
+          id: 'recreate',
+          label: t(link.orphan === 'orphaned_wallos' ? 'orphan.recreateWallos' : 'orphan.recreateActual'),
+          onSelect: () => { props.onRecreate?.(link); },
+        },
+        { id: 'relink', label: t('orphan.link'), onSelect: () => { props.onRelink?.(link); } },
+      ];
+    }
+    if (link.status === 'LINKED' && link.orphan === null && props.onUnlink !== undefined) {
+      return [{ id: 'unlink', label: unlinkLabel, destructive: true, onSelect: () => { props.onUnlink?.(link); } }];
+    }
+    return null;
+  };
   const cellOf = (r: PairRow, side: Side) => {
     const cell = side === 'wallos' ? r.wallos : r.actual;
     const base = `min-w-0 ${hide(side)} ${side === 'actual' ? 'md:border-l' : ''}`;
     if (cell === null) return <Placeholder key={side} side={side} className={`${base} max-md:hidden`} />;
     if (r.kind === 'linked' && r.badge !== null) {
+      // One menu per pair, on its first cell: the surviving side for an orphan, the Wallos cell otherwise.
+      const menuHere = side === (r.wallos !== null ? 'wallos' : 'actual');
       return (
         <div key={side} className={base}>
           <LinkedCell
@@ -121,8 +135,7 @@ export function PairList(props: PairListProps) {
             badge={r.badge}
             baseCurrency={props.baseCurrency}
             differs={r.differs}
-            unlink={side === (r.wallos !== null ? 'wallos' : 'actual') && r.link !== null && r.link.status === 'LINKED' && r.link.orphan === null ? r.link : null}
-            onUnlink={props.onUnlink}
+            actions={menuHere && r.link !== null ? linkedActions(r.link) : null}
           />
         </div>
       );

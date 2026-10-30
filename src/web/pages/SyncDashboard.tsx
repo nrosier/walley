@@ -1,5 +1,8 @@
 import { useCallback, useState } from 'react';
 import { UnlinkDialog } from '@/components/matches/UnlinkDialog';
+import { RelinkDialog } from '@/components/matches/RelinkDialog';
+import { CreateActualModal } from '@/components/dashboard/CreateActualModal';
+import { CreateWallosModal } from '@/components/dashboard/CreateWallosModal';
 import { unlinkDialogMessages } from '@/components/matches/UnlinkDialog.messages';
 import { NoticeToast } from '@/components/dashboard/NoticeToast';
 import { IgnoredSection } from '@/components/dashboard/ItemRow';
@@ -49,7 +52,13 @@ export interface SyncDashboardViewProps {
   onRetryRow?: () => void;
   /** Opens the Unlink confirmation for a LINKED pair. */
   onUnlink?: (row: SyncLinked) => void;
+  /** Opens the create modal that recreates the missing side of a single-side orphan. */
+  onRecreate?: (row: SyncLinked) => void;
+  /** Opens the relink dialog for a single-side orphan. */
+  onRelink?: (row: SyncLinked) => void;
 }
+
+const DASH = '—';
 
 function Skeleton({ label }: { label: string }) {
   return (
@@ -147,6 +156,8 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
           onRestore={props.onRestore}
           onRetry={props.onRetryRow}
           onUnlink={props.onUnlink}
+          onRecreate={props.onRecreate}
+          onRelink={props.onRelink}
         />
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <IgnoredSection
@@ -240,6 +251,7 @@ export function SyncDashboard() {
   const [failed, setFailed] = useState<{ id: string; side: Side; action: RowAction; text: string } | null>(null);
   const [unlinking, setUnlinking] = useState<SyncLinked | null>(null);
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const [orphanAction, setOrphanAction] = useState<{ kind: 'recreate' | 'relink'; row: SyncLinked } | null>(null);
   const unlinkT = useT(unlinkDialogMessages).t;
 
   /** Unlink a pair after the confirmation. The server deletes only Walley's match row; the check then lists both items as unlinked. */
@@ -290,6 +302,8 @@ export function SyncDashboard() {
       rowError={failed?.text ?? null}
       unlinkErrorMessage={unlinkError}
       onUnlink={(row) => { setUnlinking(row); }}
+      onRecreate={(row) => { setOrphanAction({ kind: 'recreate', row }); }}
+      onRelink={(row) => { setOrphanAction({ kind: 'relink', row }); }}
       onQueryChange={setQuery}
       onRun={() => void sync.run()}
       onRetryRow={failed === null ? undefined : () => {
@@ -313,6 +327,34 @@ export function SyncDashboard() {
       }}
       onCancel={() => { setUnlinking(null); }}
     />
+    {orphanAction?.kind === 'recreate' && orphanAction.row.orphan === 'orphaned_actual' ? (
+      <CreateActualModal
+        wallosId={orphanAction.row.wallosId}
+        wallosName={orphanAction.row.wallosName ?? orphanAction.row.wallosId}
+        matchId={orphanAction.row.matchId}
+        onClose={() => { setOrphanAction(null); }}
+      />
+    ) : null}
+    {orphanAction?.kind === 'recreate' && orphanAction.row.orphan === 'orphaned_wallos' ? (
+      <CreateWallosModal
+        scheduleId={orphanAction.row.actualScheduleId}
+        scheduleName={orphanAction.row.actualName ?? orphanAction.row.actualScheduleId}
+        matchId={orphanAction.row.matchId}
+        onClose={() => { setOrphanAction(null); }}
+      />
+    ) : null}
+    {orphanAction?.kind === 'relink' && (orphanAction.row.orphan === 'orphaned_wallos' || orphanAction.row.orphan === 'orphaned_actual') ? (
+      <RelinkDialog
+        matchId={orphanAction.row.matchId}
+        name={(orphanAction.row.orphan === 'orphaned_actual' ? orphanAction.row.wallosName : orphanAction.row.actualName) ?? DASH}
+        missingSide={orphanAction.row.orphan === 'orphaned_actual' ? 'actual' : 'wallos'}
+        items={(orphanAction.row.orphan === 'orphaned_actual' ? sync.result?.unlinkedActual : sync.result?.unlinkedWallos) ?? []}
+        candidateIds={orphanAction.row.relinkCandidateIds}
+        baseCurrency={sync.result?.baseCurrency ?? ''}
+        onClose={() => { setOrphanAction(null); }}
+        onLinked={() => { void syncStore.requestRun(); }}
+      />
+    ) : null}
     <NoticeToast />
     </>
   );
