@@ -9,6 +9,7 @@ import { checkSession, type SessionUser } from '@/lib/session';
 import { applyTheme, readTheme, toggleTheme, writeTheme, type Theme } from '@/lib/theme';
 import { ThemeControlContext } from '@/lib/theme-context';
 import { LoginPage } from '@/pages/LoginPage';
+import { NotFound } from '@/pages/NotFound';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { SyncDashboard } from '@/pages/SyncDashboard';
 import { VerifyEmailPage } from '@/pages/VerifyEmailPage';
@@ -19,6 +20,7 @@ type Session = { status: 'checking' } | { status: 'error' } | { status: 'ready';
 
 function Page({ route }: { route: ShellRoute }) {
   if (route === 'settings') return <SettingsPage />;
+  if (route === 'notFound') return <NotFound />;
   return <SyncDashboard />;
 }
 

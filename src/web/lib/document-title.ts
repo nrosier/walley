@@ -8,6 +8,7 @@ const ROUTE_KEY = {
   settings: 'routes.settings',
   login: 'routes.login',
   'verify-email': 'routes.verifyEmail',
+  notFound: 'routes.notFound',
 } as const satisfies Record<Route, string>;
 
 /** The document title for a route in a locale, for example "Matches - Walley". */

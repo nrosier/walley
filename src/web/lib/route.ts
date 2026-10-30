@@ -1,6 +1,6 @@
 import { useSyncExternalStore, type MouseEvent } from 'react';
 
-export type Route = 'sync' | 'settings' | 'login' | 'verify-email';
+export type Route = 'sync' | 'settings' | 'login' | 'verify-email' | 'notFound';
 export type TabRoute = 'sync' | 'settings';
 
 export const TABS: readonly { route: TabRoute; path: string }[] = [
@@ -8,10 +8,14 @@ export const TABS: readonly { route: TabRoute; path: string }[] = [
   { route: 'settings', path: '/settings' },
 ];
 
-/** Maps a location pathname to a route. `/` and unknown paths go to the Sync Dashboard. */
+/** Maps a location pathname to a route. `/` (and an empty path) goes to the Sync Dashboard; other unknown paths are `notFound`. */
 export function parseRoute(pathname: string): Route {
   const clean = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   switch (clean) {
+    case '':
+    case '/':
+    case '/sync':
+      return 'sync';
     case '/settings':
       return 'settings';
     case '/login':
@@ -19,7 +23,7 @@ export function parseRoute(pathname: string): Route {
     case '/verify-email':
       return 'verify-email';
     default:
-      return 'sync';
+      return 'notFound';
   }
 }
 
