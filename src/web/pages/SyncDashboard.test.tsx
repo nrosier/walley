@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import { sample } from '@/lib/sync-check.test';
 import type { SyncStoreState } from '@/lib/sync-check';
@@ -17,6 +17,8 @@ import { syncDashboardMessages } from './SyncDashboard.messages';
 import { createT } from '@/i18n/translate';
 import { failedSide } from '@/lib/sync-failure';
 import { SyncDashboardView, type SyncDashboardViewProps } from './SyncDashboard';
+import { createSyncStore } from '@/lib/sync-check';
+import { performResolve } from '@/lib/resolve-mismatch';
 
 const restoreLabel = (locale: Locale) => createT(syncDashboardMessages, locale)('row.restoreNamed', { name: 'Amazon Prime' });
 
@@ -530,5 +532,66 @@ describe('Recreate and relink orphaned pairs from the Sync Dashboard', () => {
     expect(createSrc.length).toBe(2);
     expect(dashboardPageSrc).toContain('onClose={() => { setOrphanAction(null); }}');
     expect(dashboardPageSrc).toContain('orphanAction.row.wallosName ?? orphanAction.row.wallosId');
+  });
+});
+
+describe('Review and the diff modal on the Sync Dashboard', () => {
+  const mismatchLinked = (matchId: string, over: Partial<SyncLinked> = {}): SyncLinked => ({
+    matchId,
+    wallosId: 'mw',
+    actualScheduleId: 'ma',
+    status: 'MISMATCH_DETECTED',
+    orphan: null,
+    wallosName: 'Gym',
+    actualName: 'Gym',
+    wallosAmountCents: -1000,
+    actualAmountCents: -1100,
+    isRange: false,
+    relinkCandidateIds: [],
+    ...over,
+  });
+  const withLinked = (linked: SyncLinked[]): SyncStoreState => ({
+    status: 'ready',
+    result: { ...sample(), linked },
+    errorCode: null,
+  });
+
+  it('Review appears only on MISMATCH_DETECTED rows, named for the pair', () => {
+    const html = render(
+      withLinked([mismatchLinked('m1'), mismatchLinked('s1', { status: 'LINKED', wallosName: 'Synced', actualName: 'Synced', wallosAmountCents: 500, actualAmountCents: 500 })]),
+      { onReview: () => undefined },
+    );
+    expect(html.match(/data-review-for="/g)).toHaveLength(1);
+    expect(html).toContain('data-review-for="m1"');
+    expect(html).toContain('aria-label="Review differences: Gym"');
+    expect(html).not.toContain('data-review-for="s1"');
+    expect(html).not.toContain('Review differences: Synced');
+  });
+
+  it('the Review button is wired to the dashboard onReview and keeps the view render free of modal state', () => {
+    expect(pairListSrc).toContain('onClick={() => { review.onReview(review.matchId); }}');
+    expect(dashboardPageSrc).toContain('setReviewing(sync.result?.mismatches.find((m) => m.matchId === id) ?? null);');
+    expect(dashboardPageSrc).toMatch(/<DiffModal[\s\S]*?mismatch=\{reviewing\}/);
+  });
+
+  it('the DiffModal is mounted with the same resolve wiring as Matches, and Ignore diff resolves the row match id', () => {
+    expect(dashboardPageSrc).toContain("onIgnoreDiff={(id) => { resolve(id, 'ignore_diff'); }}");
+    expect(dashboardPageSrc).toContain('onOverwrite={resolve}');
+    expect(dashboardPageSrc).toContain("onUnlink={(id) => { resolve(id, 'unlink'); }}");
+    expect(dashboardPageSrc).toContain("performResolve(() => syncStore.getState().result, syncStore.setResult, matchId, action, syncStore.requestRun)");
+  });
+
+  it('ignore-diff sends the resolve for the row match id through performResolve', async () => {
+    const calls: string[] = [];
+    const f = vi.fn(async (url: string) => {
+      calls.push(url);
+      if (url.endsWith('/resolve')) return new Response(null, { status: 204 });
+      return Response.json(sample());
+    });
+    const store = createSyncStore(f as unknown as typeof fetch);
+    store.setResult({ ...sample(), mismatches: [] , linked: [mismatchLinked('m1')] });
+    const out = await performResolve(() => store.getState().result, store.setResult, 'm1', 'ignore_diff', store.requestRun, f as unknown as typeof fetch);
+    expect(out).toEqual({ ok: true });
+    expect(calls.some((c) => c.endsWith('/api/matches/m1/resolve'))).toBe(true);
   });
 });

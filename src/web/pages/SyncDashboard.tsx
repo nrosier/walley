@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react';
 import { UnlinkDialog } from '@/components/matches/UnlinkDialog';
+import { DiffModal } from '@/components/matches/DiffModal';
+import { diffModalMessages, isOverwriteErrorCode } from '@/components/matches/DiffModal.messages';
 import { RelinkDialog } from '@/components/matches/RelinkDialog';
 import { CreateActualModal } from '@/components/dashboard/CreateActualModal';
 import { CreateWallosModal } from '@/components/dashboard/CreateWallosModal';
@@ -29,7 +31,8 @@ import {
   type SyncStoreState,
 } from '@/lib/sync-check';
 import { performResolve } from '@/lib/resolve-mismatch';
-import type { SyncLinked } from '../../lib/sync-check-types';
+import type { ResolveAction } from '@/lib/matches.api';
+import type { SyncLinked, SyncMismatch } from '../../lib/sync-check-types';
 import { syncDashboardMessages } from './SyncDashboard.messages';
 
 export interface SyncDashboardViewProps {
@@ -56,6 +59,8 @@ export interface SyncDashboardViewProps {
   onRecreate?: (row: SyncLinked) => void;
   /** Opens the relink dialog for a single-side orphan. */
   onRelink?: (row: SyncLinked) => void;
+  /** Opens the diff modal for a mismatch pair by its match id. */
+  onReview?: (matchId: string) => void;
 }
 
 const DASH = '—';
@@ -158,6 +163,7 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
           onUnlink={props.onUnlink}
           onRecreate={props.onRecreate}
           onRelink={props.onRelink}
+          onReview={props.onReview}
         />
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <IgnoredSection
@@ -252,7 +258,31 @@ export function SyncDashboard() {
   const [unlinking, setUnlinking] = useState<SyncLinked | null>(null);
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
   const [orphanAction, setOrphanAction] = useState<{ kind: 'recreate' | 'relink'; row: SyncLinked } | null>(null);
+  // The mismatch under review is held here, not looked up in the result: the optimistic resolve removes it
+  // from the result at once, and the modal must stay open ("Working...") until the server answers.
+  const [reviewing, setReviewing] = useState<SyncMismatch | null>(null);
+  const [working, setWorking] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const modalT = useT(diffModalMessages).t;
   const unlinkT = useT(unlinkDialogMessages).t;
+
+  const resolve = (matchId: string, action: ResolveAction) => {
+    const name = reviewing?.wallosName ?? matchId;
+    setWorking(true);
+    setResolveError(null);
+    void performResolve(() => syncStore.getState().result, syncStore.setResult, matchId, action, syncStore.requestRun).then((outcome) => {
+      setWorking(false);
+      if (outcome.ok) {
+        setReviewing(null);
+        return;
+      }
+      const reason =
+        action.startsWith('overwrite_') && isOverwriteErrorCode(outcome.code)
+          ? modalT(`overwriteErrors.${outcome.code}`)
+          : errorText(outcome.code);
+      setResolveError(`${modalT('failed', { name })} ${reason}`);
+    });
+  };
 
   /** Unlink a pair after the confirmation. The server deletes only Walley's match row; the check then lists both items as unlinked. */
   const unlink = (row: SyncLinked) => {
@@ -304,6 +334,10 @@ export function SyncDashboard() {
       onUnlink={(row) => { setUnlinking(row); }}
       onRecreate={(row) => { setOrphanAction({ kind: 'recreate', row }); }}
       onRelink={(row) => { setOrphanAction({ kind: 'relink', row }); }}
+      onReview={(id) => {
+        setResolveError(null);
+        setReviewing(sync.result?.mismatches.find((m) => m.matchId === id) ?? null);
+      }}
       onQueryChange={setQuery}
       onRun={() => void sync.run()}
       onRetryRow={failed === null ? undefined : () => {
@@ -355,6 +389,16 @@ export function SyncDashboard() {
         onLinked={() => { void syncStore.requestRun(); }}
       />
     ) : null}
+    <DiffModal
+      mismatch={reviewing}
+      baseCurrency={sync.result?.baseCurrency ?? ''}
+      working={working}
+      error={resolveError}
+      onClose={() => { setReviewing(null); }}
+      onIgnoreDiff={(id) => { resolve(id, 'ignore_diff'); }}
+      onOverwrite={resolve}
+      onUnlink={(id) => { resolve(id, 'unlink'); }}
+    />
     <NoticeToast />
     </>
   );

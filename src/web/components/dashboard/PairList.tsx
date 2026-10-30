@@ -9,6 +9,7 @@ import { diffModalMessages } from '../matches/DiffModal.messages';
 import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
 import { StatusBadge } from '../StatusBadge';
 import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
 import { Disclosure } from '../ui/disclosure';
 import { MoreActionsMenu, type MoreActionsItem } from '../ui/more-actions-menu';
 import { ItemRow } from './ItemRow';
@@ -40,6 +41,8 @@ export interface PairListProps {
   onRecreate?: (row: SyncLinked) => void;
   /** Link a single-side orphan to another unlinked item (opens the relink dialog). Offered on the surviving side's cell. */
   onRelink?: (row: SyncLinked) => void;
+  /** Opens the diff modal for a MISMATCH_DETECTED pair by its match id. Offered on the pair's Wallos cell. */
+  onReview?: (matchId: string) => void;
 }
 
 /** A linked pair's side: name, amount, the pair's status badge and, when offered, its actions menu. */
@@ -50,6 +53,7 @@ function LinkedCell({
   baseCurrency,
   differs,
   actions,
+  review,
 }: {
   row: RowModel;
   side: Side;
@@ -58,6 +62,8 @@ function LinkedCell({
   differs: boolean;
   /** The menu items for this pair's surviving cell; null hides the menu. */
   actions: MoreActionsItem[] | null;
+  /** The Review button for a mismatch pair's cell; null hides it. */
+  review: { matchId: string; onReview: (matchId: string) => void } | null;
 }) {
   const { t, locale } = useT(syncDashboardMessages);
   return (
@@ -71,6 +77,19 @@ function LinkedCell({
         </Badge>
       ) : null}
       <StatusBadge kind={badge} />
+      {review !== null ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="min-h-(--control-h)"
+          data-review-for={review.matchId}
+          aria-label={t('reviewLabel', { name: row.name })}
+          onClick={() => { review.onReview(review.matchId); }}
+        >
+          {t('review')}
+        </Button>
+      ) : null}
       <span className="text-right">
         {row.amountCents === null ? (
           <span className="text-muted">{t('row.noAmount')}</span>
@@ -136,6 +155,11 @@ export function PairList(props: PairListProps) {
             baseCurrency={props.baseCurrency}
             differs={r.differs}
             actions={menuHere && r.link !== null ? linkedActions(r.link) : null}
+            review={
+              menuHere && r.link !== null && r.link.status === 'MISMATCH_DETECTED' && props.onReview !== undefined
+                ? { matchId: r.link.matchId, onReview: props.onReview }
+                : null
+            }
           />
         </div>
       );
