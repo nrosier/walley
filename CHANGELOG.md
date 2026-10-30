@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Nothing yet.
 
+## [0.2.0] - 2026-10-30
+
+### Added
+
+- Favicon for the web app.
+
+### Changed
+
+- Disabled Wallos subscriptions are no longer shown or matched, so they cannot be linked or created in Actual Budget.
+- Completed Actual Budget schedules are no longer shown or matched, so they cannot be linked or created in Wallos.
+- Linked pairs whose Wallos item is now disabled, or whose Actual schedule is now completed, appear as orphaned.
+- Warnings are shown in amber, and errors in red.
+- The Docker image publishes `0.x.y`, `0.x` and `latest` tags for each release.
+
 ## [0.1.0] - 2026-10-30
 
 ### Added
