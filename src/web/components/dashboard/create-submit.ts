@@ -5,6 +5,13 @@ import { billingCycleFor, type CycleUnit } from './create-modal-shared';
 
 export const NEW_PAYEE = '__new__';
 
+/** Payees whose name contains the query, case-insensitively; an empty query keeps every payee in its order. */
+export function filterPayees<T extends { name: string }>(payees: readonly T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (q === '') return [...payees];
+  return payees.filter((p) => p.name.toLowerCase().includes(q));
+}
+
 /** Actual Submit needs an account and no request in flight. */
 export function actualSubmitDisabled(account: string, pending: boolean): boolean {
   return account === '' || pending;

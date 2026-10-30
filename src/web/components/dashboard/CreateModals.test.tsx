@@ -6,7 +6,7 @@ import { commonMessages } from '@/i18n/common.messages';
 import { buildWallosBody, createActualSchedule, createWallosSubscription, prefillActualSchedule, prefillWallosSubscription, type ActualSchedulePrefill, type WallosSubscriptionPrefill } from '@/lib/create.api';
 import { clearOverride, saveOverride } from '@/lib/overrides.api';
 import { CreateActualForm } from './CreateActualModal';
-import { actualDisabledReason, actualEdits, actualFieldsReason, actualFieldValues, actualSubmitDisabled, buildActualBody, centsToDecimal, performCreate, submitCreate, wallosDisabledReason, wallosEdits, wallosSubmitDisabled } from './create-submit';
+import { actualDisabledReason, actualEdits, actualFieldsReason, actualFieldValues, actualSubmitDisabled, buildActualBody, centsToDecimal, filterPayees, NEW_PAYEE, performCreate, submitCreate, wallosDisabledReason, wallosEdits, wallosSubmitDisabled } from './create-submit';
 import { createNoticeKinds, createNoticeStore } from '@/lib/notices';
 import { NoticeToastView } from './NoticeToast';
 import { CreateWallosForm } from './CreateWallosModal';
@@ -50,15 +50,16 @@ const jsonFetch = (body: unknown) =>
   vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify(body), { status: 200 })));
 
 describe('CreateActualForm', () => {
-  it('renders the pre-fill, payee option cards, two dropdowns and a Submit that is disabled until an account is chosen', () => {
+  it('renders the pre-fill, a payee popover trigger, two dropdowns and a Submit that is disabled until an account is chosen', () => {
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" />);
     expect(html).toMatch(/<input[^>]*value="Netflix"/);
     expect(html).toMatch(/<input[^>]*inputMode="decimal"[^>]*class="[^"]*font-mono"[^>]*value="12\.99"/);
     expect(html).toContain('Every month');
     expect(html.match(/<select/g)).toHaveLength(2);
-    expect(html).toContain('role="radiogroup" aria-label="Payee"');
-    expect(html.match(/type="radio"/g)).toHaveLength(1 + actual.payees.length);
-    expect(html).toContain('NETFLIX.COM');
+    // The payee is a popover trigger showing the current choice (Create new payee by default), not a radio list.
+    expect(html).not.toContain('type="radio"');
+    expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>[^<]*<span[^>]*>Create new payee<\/span><\/button>/);
+    expect(html).not.toContain('NETFLIX.COM');
     expect(html).toContain('Checking');
     expect(html).toContain('Fun');
     expect(html).not.toContain('Held:');
@@ -68,6 +69,50 @@ describe('CreateActualForm', () => {
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" />, 'nl');
     expect(html).toContain('Elke maand');
     expect(html).toContain('Rekening');
+  });
+});
+
+describe('payee search in CreateActualForm (issue #146)', () => {
+  const payees = [
+    { id: 'p1', name: 'NETFLIX.COM' },
+    { id: 'p2', name: 'Spotify AB' },
+    { id: 'p3', name: 'netflix Kids' },
+  ];
+  it('filters payees by name, case-insensitively, and keeps order', () => {
+    expect(filterPayees(payees, 'netflix').map((p) => p.id)).toEqual(['p1', 'p3']);
+    expect(filterPayees(payees, 'SPOT').map((p) => p.id)).toEqual(['p2']);
+    expect(filterPayees(payees, '  ab ').map((p) => p.id)).toEqual(['p2']);
+  });
+  it('an empty or blank query keeps every payee', () => {
+    expect(filterPayees(payees, '').map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+    expect(filterPayees(payees, '   ').map((p) => p.id)).toEqual(['p1', 'p2', 'p3']);
+  });
+  it('a query with no match returns an empty list, while the form still offers Create new payee', () => {
+    expect(filterPayees(payees, 'zzz')).toEqual([]);
+    expect(actualSrc).toMatch(/const options = \[\{ id: NEW_PAYEE, name: newLabel \}, \.\.\.matches\]/);
+    expect(actualSrc).toMatch(/matches\.length === 0 \? <p[^>]*>\{t\('actual\.payeeNoMatch'\)\}/);
+  });
+  it('selecting an existing payee submits kind existing with its id', () => {
+    expect(buildActualBody('w1', 'a1', 'p2', '', '', undefined)).toMatchObject({ payee: { kind: 'existing', id: 'p2' } });
+    expect(actualSrc).toMatch(/const choose = \(id: string\): void => \{\s*onValueChange\(id\);\s*setOpen\(false\);/);
+  });
+  it('selecting Create new payee with a typed name submits kind new with that name', () => {
+    expect(buildActualBody('w1', 'a1', NEW_PAYEE, 'Kiosk', '', undefined)).toMatchObject({ payee: { kind: 'new', name: 'Kiosk' } });
+  });
+  it('keyboard: search takes focus on open, arrows move, Enter selects, Escape closes via Radix', () => {
+    expect(actualSrc).toMatch(/aria-activedescendant=\{optionId\(active\)\}/);
+    expect(actualSrc).toMatch(/e\.key === 'ArrowDown'/);
+    expect(actualSrc).toMatch(/e\.key === 'ArrowUp'/);
+    expect(actualSrc).toMatch(/e\.key === 'Enter'/);
+    // Escape is handled by Radix Popover (closes and returns focus to the trigger); the component must not swallow it.
+    expect(actualSrc).toMatch(/import \{ Popover \} from 'radix-ui'/);
+    expect(actualSrc).not.toMatch(/key === 'Escape'/);
+    expect(actualSrc).toMatch(/autoFocus\s*\n\s*role="combobox"/);
+  });
+  it('the payee search and no-match strings render in en and nl', () => {
+    expect(actualSrc).toContain("t('actual.payeeSearch')");
+    expect(actualSrc).toContain("t('actual.payeeNoMatch')");
+    expect(render(<CreateActualForm prefill={actual} wallosId="w1" />, 'nl')).toContain('Begunstigde');
   });
 });
 
@@ -366,7 +411,8 @@ describe('create modal layout (Actual fields editable, #135; Wallos fields edita
     expect(html).not.toMatch(/<(input|select)[^>]*aria-label="Frequency"/);
     expect(html).not.toContain('Pre-filled values are shown read-only.');
     // Payee, account and category stay editable choices, from the caller's own pre-fill lists.
-    expect(html).toContain('role="radiogroup" aria-label="Payee"');
+    expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"[^>]*>/);
+    expect(html).not.toContain('role="radiogroup"');
     expect(html.match(/<select/g)).toHaveLength(2);
     expect(actualSrc).not.toContain("t('readOnlyNote')");
   });
