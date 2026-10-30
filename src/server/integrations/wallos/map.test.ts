@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { nameScore } from '../../../lib/name-match.js';
 import {
   buildCurrencyMap,
+  decodeWallosName,
   mapWallosSubscription,
   resolveCurrencyCode,
   WallosMappingError,
@@ -341,5 +343,43 @@ describe('currency code lookup', () => {
       expect.objectContaining({ code: 'unknown_currency', field: 'currency_id' }),
     );
     expect(() => resolveCurrencyCode(map, '99')).toThrow(WallosMappingError);
+  });
+});
+
+describe('Wallos name entity decoding', () => {
+  it('decodes &amp; so the mapped name is the real name', () => {
+    const mapped = mapWallosSubscription({ ...FIXTURE_ACTIVE, name: 'Ray &amp; Jules' });
+    expect(mapped.name).toBe('Ray & Jules');
+  });
+
+  it('decodes &#039;, &#39; and &#x27; to an apostrophe', () => {
+    expect(decodeWallosName('Jill&#039;s Box')).toBe("Jill's Box");
+    expect(decodeWallosName('Jill&#39;s Box')).toBe("Jill's Box");
+    expect(decodeWallosName('Jill&#x27;s Box')).toBe("Jill's Box");
+  });
+
+  it('decodes &lt;, &gt; and &quot;', () => {
+    expect(decodeWallosName('a &lt;b&gt; &quot;c&quot;')).toBe('a <b> "c"');
+  });
+
+  it('keeps an unknown entity as-is', () => {
+    expect(decodeWallosName('Brand &copy; Co')).toBe('Brand &copy; Co');
+  });
+
+  it('leaves a plain name unchanged', () => {
+    expect(decodeWallosName('Example Subscription')).toBe('Example Subscription');
+    expect(mapWallosSubscription(FIXTURE_ACTIVE).name).toBe('Example Subscription');
+  });
+
+  it('decodes one level only, so &amp;amp; becomes &amp;', () => {
+    expect(decodeWallosName('Ray &amp;amp; Jules')).toBe('Ray &amp; Jules');
+  });
+
+  it('scores decoded Wallos Ray & Jules as an exact match of Actual Ray & Jules', () => {
+    const mapped = mapWallosSubscription({ ...FIXTURE_ACTIVE, name: 'Ray &amp; Jules' });
+    expect(nameScore(mapped.name, 'Ray & Jules')).toBe(nameScore('Ray & Jules', 'Ray & Jules'));
+    expect(nameScore(mapped.name, 'Ray & Jules')).toBeGreaterThan(
+      nameScore('Ray &amp; Jules', 'Ray & Jules'),
+    );
   });
 });

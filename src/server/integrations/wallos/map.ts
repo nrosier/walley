@@ -170,6 +170,26 @@ function parseActive(value: number | boolean): boolean {
   throw new WallosMappingError('invalid_value', 'inactive', 'inactive must be 0, 1, true or false');
 }
 
+const WALLOS_NAME_ENTITIES: ReadonlyMap<string, string> = new Map([
+  ['&amp;', '&'],
+  ['&lt;', '<'],
+  ['&gt;', '>'],
+  ['&quot;', '"'],
+  ['&#039;', "'"],
+  ['&#39;', "'"],
+  ['&#x27;', "'"],
+]);
+const WALLOS_NAME_ENTITY_PATTERN = /&(?:amp|lt|gt|quot|#039|#39|#x27);/g;
+
+/**
+ * Decodes the HTML entities Wallos's get_subscriptions.php adds to a name (`Ray &amp; Jules`
+ * becomes `Ray & Jules`). Only the fixed set above is decoded, in one pass, so `&amp;amp;`
+ * becomes `&amp;`. Any other `&...;` text is kept as-is. Pure.
+ */
+export function decodeWallosName(name: string): string {
+  return name.replace(WALLOS_NAME_ENTITY_PATTERN, (entity) => WALLOS_NAME_ENTITIES.get(entity) ?? entity);
+}
+
 /**
  * Maps one documented Wallos subscription to the internal model. Pure: no I/O, no credentials.
  * Throws WallosMappingError for any field it cannot map. It never substitutes a default.
@@ -182,7 +202,8 @@ export function mapWallosSubscription(
   raw: WallosSubscription,
   currencies?: WallosCurrencyMap,
 ): MappedWallosSubscription {
-  const name = requirePresent(raw, 'name');
+  // Wallos HTML-escapes names on read; decode here so every consumer sees the real name.
+  const name = decodeWallosName(requirePresent(raw, 'name'));
   if (name.trim() === '') {
     throw new WallosMappingError('invalid_value', 'name', 'name must not be empty');
   }

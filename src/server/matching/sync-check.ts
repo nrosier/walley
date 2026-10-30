@@ -27,7 +27,12 @@ import type { MatchPatch } from '../db/repo.js';
 import { CreateFlowError, type CreateDeps } from '../integrations/create.js';
 import { readBaseCurrency, readSchedules } from '../integrations/actual/read.js';
 import { prepareActualScheduleInput } from '../integrations/prepare.js';
-import { buildCurrencyMap, mapWallosSubscription, WallosMappingError } from '../integrations/wallos/map.js';
+import {
+  buildCurrencyMap,
+  decodeWallosName,
+  mapWallosSubscription,
+  WallosMappingError,
+} from '../integrations/wallos/map.js';
 import { classifySavedPairs } from './engine.js';
 import { detectMismatches } from './mismatch.js';
 
@@ -217,7 +222,7 @@ export async function readCurrentSides(
       };
     } catch (error: unknown) {
       if (!(error instanceof WallosMappingError || error instanceof CurrencyConversionError)) throw error;
-      const name = typeof raw.name === 'string' ? raw.name : '';
+      const name = typeof raw.name === 'string' ? decodeWallosName(raw.name) : '';
       side = {
         id,
         name,
