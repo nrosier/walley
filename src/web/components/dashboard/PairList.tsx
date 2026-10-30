@@ -4,10 +4,13 @@ import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
 import type { PairKind, PairRow } from '@/lib/pair-rows';
 import type { RowModel, Side } from '@/lib/sync-check';
+import type { SyncLinked } from '../../../lib/sync-check-types';
+import { diffModalMessages } from '../matches/DiffModal.messages';
 import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
 import { StatusBadge } from '../StatusBadge';
 import { Badge } from '../ui/badge';
 import { Disclosure } from '../ui/disclosure';
+import { MoreActionsMenu } from '../ui/more-actions-menu';
 import { ItemRow } from './ItemRow';
 
 export interface PairListProps {
@@ -22,6 +25,8 @@ export interface PairListProps {
   actualTitle: string;
   wallosCount: number;
   actualCount: number;
+  /** Linked pairs before the search filter; the counts line reads "N of M pairs". */
+  linkedTotal: number;
   busyId?: string | null;
   errorRowId?: string | null;
   errorText?: string | null;
@@ -29,11 +34,31 @@ export interface PairListProps {
   onIgnore?: (side: Side, itemId: string) => void;
   onRestore?: (side: Side, matchId: string, itemId: string) => void;
   onRetry?: () => void;
+  /** Unlink a LINKED, non-orphan pair (opens the confirmation dialog). Offered once per pair, on its first cell. */
+  onUnlink?: (row: SyncLinked) => void;
 }
 
 /** A linked pair's side: name, amount and the pair's status badge. No actions, so linked state cannot change here. */
-function LinkedCell({ row, side, badge, baseCurrency }: { row: RowModel; side: Side; badge: NonNullable<PairRow['badge']>; baseCurrency: string }) {
+function LinkedCell({
+  row,
+  side,
+  badge,
+  baseCurrency,
+  differs,
+  unlink,
+  onUnlink,
+}: {
+  row: RowModel;
+  side: Side;
+  badge: NonNullable<PairRow['badge']>;
+  baseCurrency: string;
+  differs: boolean;
+  /** The pair this cell belongs to when Unlink is offered; null hides the menu. */
+  unlink: SyncLinked | null;
+  onUnlink?: (row: SyncLinked) => void;
+}) {
   const { t, locale } = useT(syncDashboardMessages);
+  const unlinkLabel = useT(diffModalMessages).t('unlink');
   return (
     <div data-row-id={row.id} data-side={side} data-linked="" tabIndex={-1} className="flex h-full items-center gap-x-3 px-3 py-1.5 text-sm">
       <span className="min-w-0 flex-1 truncate font-medium" title={row.name}>
@@ -49,9 +74,17 @@ function LinkedCell({ row, side, badge, baseCurrency }: { row: RowModel; side: S
         {row.amountCents === null ? (
           <span className="text-muted">{t('row.noAmount')}</span>
         ) : (
-          <span className="font-mono">{formatMoney(row.amountCents, baseCurrency, locale)}</span>
+          <span className={`font-mono ${differs ? 'font-bold' : ''}`}>{formatMoney(row.amountCents, baseCurrency, locale)}</span>
         )}
+        {differs ? <span className="sr-only"> {t('differs')}</span> : null}
       </span>
+      {unlink !== null && onUnlink !== undefined ? (
+        <MoreActionsMenu
+          name={row.name}
+          className="-my-1"
+          items={[{ id: 'unlink', label: unlinkLabel, destructive: true, onSelect: () => { onUnlink(unlink); } }]}
+        />
+      ) : null}
     </div>
   );
 }
@@ -82,7 +115,15 @@ export function PairList(props: PairListProps) {
     if (r.kind === 'linked' && r.badge !== null) {
       return (
         <div key={side} className={base}>
-          <LinkedCell row={cell} side={side} badge={r.badge} baseCurrency={props.baseCurrency} />
+          <LinkedCell
+            row={cell}
+            side={side}
+            badge={r.badge}
+            baseCurrency={props.baseCurrency}
+            differs={r.differs}
+            unlink={side === (r.wallos !== null ? 'wallos' : 'actual') && r.link !== null && r.link.status === 'LINKED' && r.link.orphan === null ? r.link : null}
+            onUnlink={props.onUnlink}
+          />
         </div>
       );
     }
@@ -106,6 +147,8 @@ export function PairList(props: PairListProps) {
       </div>
     );
   };
+  const linkedRows = props.rows.filter((r) => r.kind === 'linked');
+  const differingCount = linkedRows.filter((r) => r.differs).length;
   const rowOf = (r: PairRow) => {
     const cell = props.pane === 'wallos' ? r.wallos : r.actual;
     return (
@@ -157,6 +200,11 @@ export function PairList(props: PairListProps) {
         <p className="rounded-lg border bg-card px-3 py-1.5 text-sm text-muted">{props.emptyText}</p>
       ) : (
         <div className="flex flex-col gap-3">
+          {linkedRows.length > 0 ? (
+            <p className="text-xs text-muted" role="status">
+              {t('counts', { shown: linkedRows.length, total: props.linkedTotal, differing: differingCount })}
+            </p>
+          ) : null}
           {GROUP_KINDS.map(groupOf)}
           {hasCell(props.pane) ? null : <p className="px-3 py-1.5 text-sm text-muted md:hidden">{props.emptyText}</p>}
         </div>

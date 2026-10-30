@@ -23,6 +23,8 @@ const en = {
     actual: 'Actual only ({count})',
   },
   ignoredTitle: 'Ignored items ({count})',
+  counts: '{shown} of {total} pairs, {differing} with differences',
+  differs: 'differs',
   states: {
     idle: 'Run a sync check to see unlinked items.',
     loading: 'Checking Wallos and Actual Budget...',
@@ -102,6 +104,8 @@ const nl: typeof en = {
     actual: 'Alleen in Actual ({count})',
   },
   ignoredTitle: 'Genegeerde items ({count})',
+  counts: '{shown} van {total} paren, {differing} met verschillen',
+  differs: 'wijkt af',
   states: {
     idle: 'Start een synchronisatiecontrole om ongekoppelde items te zien.',
     loading: 'Wallos en Actual Budget worden gecontroleerd...',
