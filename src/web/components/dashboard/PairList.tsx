@@ -22,6 +22,8 @@ export interface PairListProps {
   actualTitle: string;
   wallosCount: number;
   actualCount: number;
+  /** Linked pairs before the search filter; the counts line reads "N of M pairs". */
+  linkedTotal: number;
   busyId?: string | null;
   errorRowId?: string | null;
   errorText?: string | null;
@@ -32,7 +34,19 @@ export interface PairListProps {
 }
 
 /** A linked pair's side: name, amount and the pair's status badge. No actions, so linked state cannot change here. */
-function LinkedCell({ row, side, badge, baseCurrency }: { row: RowModel; side: Side; badge: NonNullable<PairRow['badge']>; baseCurrency: string }) {
+function LinkedCell({
+  row,
+  side,
+  badge,
+  baseCurrency,
+  differs,
+}: {
+  row: RowModel;
+  side: Side;
+  badge: NonNullable<PairRow['badge']>;
+  baseCurrency: string;
+  differs: boolean;
+}) {
   const { t, locale } = useT(syncDashboardMessages);
   return (
     <div data-row-id={row.id} data-side={side} data-linked="" tabIndex={-1} className="flex h-full items-center gap-x-3 px-3 py-1.5 text-sm">
@@ -49,8 +63,9 @@ function LinkedCell({ row, side, badge, baseCurrency }: { row: RowModel; side: S
         {row.amountCents === null ? (
           <span className="text-muted">{t('row.noAmount')}</span>
         ) : (
-          <span className="font-mono">{formatMoney(row.amountCents, baseCurrency, locale)}</span>
+          <span className={`font-mono ${differs ? 'font-bold' : ''}`}>{formatMoney(row.amountCents, baseCurrency, locale)}</span>
         )}
+        {differs ? <span className="sr-only"> {t('differs')}</span> : null}
       </span>
     </div>
   );
@@ -82,7 +97,7 @@ export function PairList(props: PairListProps) {
     if (r.kind === 'linked' && r.badge !== null) {
       return (
         <div key={side} className={base}>
-          <LinkedCell row={cell} side={side} badge={r.badge} baseCurrency={props.baseCurrency} />
+          <LinkedCell row={cell} side={side} badge={r.badge} baseCurrency={props.baseCurrency} differs={r.differs} />
         </div>
       );
     }
@@ -106,6 +121,8 @@ export function PairList(props: PairListProps) {
       </div>
     );
   };
+  const linkedRows = props.rows.filter((r) => r.kind === 'linked');
+  const differingCount = linkedRows.filter((r) => r.differs).length;
   const rowOf = (r: PairRow) => {
     const cell = props.pane === 'wallos' ? r.wallos : r.actual;
     return (
@@ -157,6 +174,11 @@ export function PairList(props: PairListProps) {
         <p className="rounded-lg border bg-card px-3 py-1.5 text-sm text-muted">{props.emptyText}</p>
       ) : (
         <div className="flex flex-col gap-3">
+          {linkedRows.length > 0 ? (
+            <p className="text-xs text-muted" role="status">
+              {t('counts', { shown: linkedRows.length, total: props.linkedTotal, differing: differingCount })}
+            </p>
+          ) : null}
           {GROUP_KINDS.map(groupOf)}
           {hasCell(props.pane) ? null : <p className="px-3 py-1.5 text-sm text-muted md:hidden">{props.emptyText}</p>}
         </div>

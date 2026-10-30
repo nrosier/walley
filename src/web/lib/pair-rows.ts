@@ -15,6 +15,8 @@ export interface PairRow {
   readonly badge: PairBadgeKind | null;
   /** The candidate a suggested row pairs; null on every other row. */
   readonly candidate: SyncCandidate | null;
+  /** A linked row whose two known amounts differ (the cue and the counts line); false on every other row. */
+  readonly differs: boolean;
 }
 
 /**
@@ -42,6 +44,8 @@ export function buildPairRows(result: SyncCheckResult, query: string): PairRow[]
       actual,
       badge: pairBadge({ status: l.status, orphan: l.orphan }),
       candidate: null,
+      differs:
+        wallos !== null && actual !== null && wallos.amountCents !== null && actual.amountCents !== null && wallos.amountCents !== actual.amountCents,
     });
   }
 
@@ -56,15 +60,15 @@ export function buildPairRows(result: SyncCheckResult, query: string): PairRow[]
     if (w === undefined || a === undefined || usedWallos.has(w.id) || usedActual.has(a.id)) continue;
     usedWallos.add(w.id);
     usedActual.add(a.id);
-    suggested.push({ key: `suggested:${w.id}|${a.id}`, kind: 'suggested', wallos: fromItem(w), actual: fromItem(a), badge: null, candidate: c });
+    suggested.push({ key: `suggested:${w.id}|${a.id}`, kind: 'suggested', wallos: fromItem(w), actual: fromItem(a), badge: null, candidate: c, differs: false });
   }
 
   const wallosOnly: PairRow[] = result.unlinkedWallos
     .filter((i) => !usedWallos.has(i.id))
-    .map((i) => ({ key: `wallos:${i.id}`, kind: 'wallos', wallos: fromItem(i), actual: null, badge: null, candidate: null }));
+    .map((i) => ({ key: `wallos:${i.id}`, kind: 'wallos', wallos: fromItem(i), actual: null, badge: null, candidate: null, differs: false }));
   const actualOnly: PairRow[] = result.unlinkedActual
     .filter((i) => !usedActual.has(i.id))
-    .map((i) => ({ key: `actual:${i.id}`, kind: 'actual', wallos: null, actual: fromItem(i), badge: null, candidate: null }));
+    .map((i) => ({ key: `actual:${i.id}`, kind: 'actual', wallos: null, actual: fromItem(i), badge: null, candidate: null, differs: false }));
 
   const q = query.trim().toLowerCase();
   const matches = (r: RowModel | null) => r !== null && r.name.toLowerCase().includes(q);

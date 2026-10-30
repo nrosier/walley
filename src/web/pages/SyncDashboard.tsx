@@ -130,6 +130,7 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
           actualTitle={t('columns.actual')}
           wallosCount={wallosCount}
           actualCount={actualCount}
+          linkedTotal={result.linked.length}
           busyId={props.busyId}
           errorRowId={props.errorRowId}
           errorText={props.rowError}

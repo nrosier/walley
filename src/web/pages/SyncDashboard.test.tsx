@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { I18nProvider, type Locale } from '@/i18n';
 import { sample } from '@/lib/sync-check.test';
 import type { SyncStoreState } from '@/lib/sync-check';
+import type { SyncCheckResult } from '../../lib/sync-check-types';
 import dashboardSrc from './SyncDashboard.tsx?raw';
 import storeSrc from '@/lib/sync-check.ts?raw';
 import apiSrc from '@/lib/matches.api.ts?raw';
@@ -361,5 +362,53 @@ describe('SyncDashboard states', () => {
     for (const [f, src] of Object.entries(files)) {
       expect(src, f).not.toMatch(/\/api\/(wallos|actual|create)|create-(in|schedule|subscription)|createSchedule|createSubscription/i);
     }
+  });
+});
+
+const linkedFixture = (): SyncCheckResult => ({
+  ...sample(),
+  linked: [
+    {
+      matchId: 'm1', wallosId: 'lw1', actualScheduleId: 'la1', status: 'LINKED', orphan: null,
+      wallosName: 'Spotify', actualName: 'Spotify AB', wallosAmountCents: 999, actualAmountCents: 999, isRange: false, relinkCandidateIds: [],
+    },
+    {
+      matchId: 'm2', wallosId: 'lw2', actualScheduleId: 'la2', status: 'LINKED', orphan: null,
+      wallosName: 'Netflix Plan', actualName: 'Netflix AB', wallosAmountCents: 1299, actualAmountCents: 1500, isRange: false, relinkCandidateIds: [],
+    },
+  ],
+});
+
+describe('Sync Dashboard counts line and differing cue (retire-matches-tab)', () => {
+  it('counts line counts only the filtered linked rows, with differences among them', () => {
+    const html = render({ status: 'ready', result: linkedFixture(), errorCode: null }, { query: 'netflix' });
+    expect(html).toContain('1 of 2 pairs, 1 with differences');
+    expect(html).not.toContain('2 of 2 pairs');
+  });
+  it('counts line shows every linked row when the search is empty', () => {
+    const html = render({ status: 'ready', result: linkedFixture(), errorCode: null });
+    expect(html).toContain('2 of 2 pairs, 1 with differences');
+  });
+  it('counts line is absent when there are no linked rows', () => {
+    const html = render({ status: 'ready', result: sample(), errorCode: null });
+    expect(html).not.toContain(' pairs, ');
+  });
+  it('counts line in nl uses the same keys with Dutch text', () => {
+    const html = render({ status: 'ready', result: linkedFixture(), errorCode: null }, {}, 'nl');
+    expect(html).toContain('2 van 2 paren, 1 met verschillen');
+  });
+  it('differing cue (bold and hidden "differs") appears only on linked cells whose amounts differ', () => {
+    const html = render({ status: 'ready', result: linkedFixture(), errorCode: null });
+    expect(cellOf(html, 'wallos', 'lw2')).toContain('<span class="sr-only"> differs</span>');
+    expect(cellOf(html, 'wallos', 'lw2')).toContain('font-bold');
+    expect(cellOf(html, 'wallos', 'lw1')).not.toContain('differs');
+    expect(cellOf(html, 'wallos', 'lw1')).not.toContain('font-bold');
+    expect(cellOf(html, 'actual', 'la2')).toContain('<span class="sr-only"> differs</span>');
+    expect(cellOf(html, 'actual', 'la1')).not.toContain('differs');
+    expect(html.match(/> differs<\/span>/g)).toHaveLength(2);
+  });
+  it('differs in nl is "wijkt af"', () => {
+    const html = render({ status: 'ready', result: linkedFixture(), errorCode: null }, {}, 'nl');
+    expect(html).toContain('> wijkt af</span>');
   });
 });
