@@ -184,6 +184,38 @@ describe('POST /api/sync/check', () => {
   });
 });
 
+describe('POST /api/sync/check with a disabled Wallos item', () => {
+  // The real client drops inactive items (inactive 1 or true) before they reach sync, so the mock returns none for them.
+  it('reports a linked pair whose Wallos item is disabled as orphaned_wallos, not as linked', async () => {
+    const createSubscription = vi.fn();
+    const updateSubscription = vi.fn();
+    const { app, db, a, sa, createSchedule } = setup({
+      wallos: {
+        listSubscriptions: async () => [],
+        listPaymentMethods: async () => [],
+        listCategories: async () => [],
+        listCurrencies: async () => [{ id: 1, code: 'EUR', rate: '1' }],
+        createSubscription,
+        updateSubscription,
+      } as unknown as WallosClient,
+    });
+    const row = createUserRepo(db, a).insertMatch({ wallosId: '7', actualScheduleId: 'sch-a', status: 'LINKED' });
+    const res = await injectAs(app, sa, { method: 'POST', url: URL });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      linked: { matchId: string; wallosId: string | null; wallosName: string | null; orphan: string | null }[];
+      orphaned: { wallosId: string; actualScheduleId: string; classification: string }[];
+    }>();
+    // Walley lists the row in `orphaned` as orphaned_wallos and marks it orphan on `linked`; it is never a clean link.
+    expect(body.orphaned).toEqual([expect.objectContaining({ wallosId: '7', actualScheduleId: 'sch-a', classification: 'orphaned_wallos' })]);
+    expect(body.linked).toEqual([expect.objectContaining({ matchId: row.id, wallosId: '7', wallosName: null, orphan: 'orphaned_wallos' })]);
+    expect(createUserRepo(db, a).getMatch(row.id)).toMatchObject({ wallosId: '7', actualScheduleId: 'sch-a', status: 'LINKED' });
+    expect(createSchedule).not.toHaveBeenCalled();
+    expect(createSubscription).not.toHaveBeenCalled();
+    expect(updateSubscription).not.toHaveBeenCalled();
+  });
+});
+
 interface Item {
   id: string;
   cycle?: { key: string; count: number };

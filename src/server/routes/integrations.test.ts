@@ -122,7 +122,12 @@ function setup(overrides: Partial<CreateDeps> = {}, failMatchInsert: boolean | '
     choices.methods[b] = [{ id: '9', name: 'Cash' }];
     choices.categories[b] = [{ id: '8', name: 'Bills' }];
   };
-  return { app, a, b, sa: signIn(ctx, a), sb: signIn(ctx, b), createSchedule, createSubscription, db: t.db, seedChoices };
+  // Removes a Wallos item from a user's list, as the real client does for a disabled (inactive) item.
+  const dropSubscription = (userId: string, subId: number): void => {
+    const o = (owned[userId] ??= { subs: [], schedules: [] });
+    o.subs = o.subs.filter((s) => s !== subId);
+  };
+  return { app, a, b, sa: signIn(ctx, a), sb: signIn(ctx, b), createSchedule, createSubscription, db: t.db, seedChoices, dropSubscription };
 }
 
 
@@ -994,6 +999,22 @@ describe('Recreate an orphaned match side with matchId (#109)', () => {
     expect(t.createSubscription).not.toHaveBeenCalled();
     expect(rowsOf(t.db, t.a)).toEqual(before);
     expect(rowsOf(t.db, t.b)).toEqual([]);
+  });
+
+  it('a disabled Wallos item (gone from the list): Recreate in Actual answers invalid_state and writes nothing', async () => {
+    // The real client drops inactive items, so the disabled Wallos item 7 is absent from the list (owned subs emptied).
+    const createSchedule = vi.fn(async () => NEW_SCHEDULE);
+    const t = setup({ createSchedule });
+    const row = createUserRepo(t.db, t.a).insertMatch({ wallosId: '7', actualScheduleId: 'gone', status: 'LINKED' });
+    const before = rowsOf(t.db, t.a);
+    t.dropSubscription(t.a, 7);
+    const res = await injectAs(t.app, t.sa, { method: 'POST', url: SCHED_URL, payload: { ...SCHED_BODY, matchId: row.id } });
+    // checkRecreate runs first: the survivor (Wallos item) is absent, so invalid_state, before any create.
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'invalid_state' });
+    expect(createSchedule).not.toHaveBeenCalled();
+    expect(t.createSubscription).not.toHaveBeenCalled();
+    expect(rowsOf(t.db, t.a)).toEqual(before);
   });
 
   it('an unknown matchId answers 404 match_not_found', async () => {
