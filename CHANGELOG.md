@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Nothing yet.
 
+## [0.2.2] - 2026-10-30
+
+### Added
+
+- Payee search in the Create Actual Budget modal, in a searchable popover.
+
+### Fixed
+
+- Linked pairs whose Wallos name contains an HTML entity such as & no longer show as differing after the update. The diff for such a pair shows no changed fields, and the stored baseline is updated silently.
+
 ## [0.2.1] - 2026-10-30
 
 ### Fixed
