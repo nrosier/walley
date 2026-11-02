@@ -21,6 +21,7 @@ import { settingsPageMessages } from '../pages/SettingsPage.messages';
 import { loginPageMessages } from '../pages/LoginPage.messages';
 import { notFoundMessages } from '../pages/NotFound.messages';
 import { syncDashboardMessages } from '../pages/SyncDashboard.messages';
+import { syncItemDetailsMessages } from '../components/dashboard/SyncItemDetailsDialog.messages';
 import { verifyEmailPageMessages } from '../pages/VerifyEmailPage.messages';
 import { wallosSettingsMessages } from '../pages/WallosSettings.messages';
 import type { Catalogue } from './translate';
@@ -47,4 +48,5 @@ export const catalogues: Readonly<Record<string, Catalogue<object>>> = {
   accountSettings: accountSettingsMessages,
   matchingSettings: matchingSettingsMessages,
   syncDashboard: syncDashboardMessages,
+  syncItemDetails: syncItemDetailsMessages,
 };

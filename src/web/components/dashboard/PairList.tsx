@@ -13,6 +13,8 @@ import { Button } from '../ui/button';
 import { Disclosure } from '../ui/disclosure';
 import { MoreActionsMenu, type MoreActionsItem } from '../ui/more-actions-menu';
 import { ItemRow } from './ItemRow';
+import { SyncItemDetailsDialog } from './SyncItemDetailsDialog';
+import { syncItemDetailsMessages } from './SyncItemDetailsDialog.messages';
 
 export interface PairListProps {
   rows: readonly PairRow[];
@@ -43,6 +45,8 @@ export interface PairListProps {
   onRelink?: (row: SyncLinked) => void;
   /** Opens the diff modal for a MISMATCH_DETECTED pair by its match id. Offered on the pair's Wallos cell. */
   onReview?: (matchId: string) => void;
+  /** Injected fetch for the read-only details dialog (tests); absent uses the global fetch. */
+  detailsFetch?: typeof fetch;
 }
 
 /** A linked pair's side: name, amount, the pair's status badge and, when offered, its actions menu. */
@@ -54,6 +58,7 @@ function LinkedCell({
   differs,
   actions,
   review,
+  onOpenDetails,
 }: {
   row: RowModel;
   side: Side;
@@ -64,13 +69,23 @@ function LinkedCell({
   actions: MoreActionsItem[] | null;
   /** The Review button for a mismatch pair's cell; null hides it. */
   review: { matchId: string; onReview: (matchId: string) => void } | null;
+  /** Opens the read-only details of this side's item; the name becomes a button. */
+  onOpenDetails: (side: Side, row: RowModel) => void;
 }) {
   const { t, locale } = useT(syncDashboardMessages);
+  const { t: tDetails } = useT(syncItemDetailsMessages);
   return (
     <div data-row-id={row.id} data-side={side} data-linked="" tabIndex={-1} className="flex h-full items-center gap-x-3 px-3 py-1.5 text-sm">
-      <span className="min-w-0 flex-1 truncate font-medium" title={row.name}>
+      <button
+        type="button"
+        data-details-for={row.id}
+        aria-label={tDetails('openDetails', { name: row.name })}
+        onClick={() => { onOpenDetails(side, row); }}
+        className="min-w-0 flex-1 truncate rounded-sm text-left font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        title={row.name}
+      >
         {row.name}
-      </span>
+      </button>
       {row.isRange ? (
         <Badge variant="mismatch" title={t('row.rangeHint')}>
           {t('row.range')}
@@ -120,6 +135,9 @@ export function PairList(props: PairListProps) {
   const { t } = useT(syncDashboardMessages);
   const unlinkLabel = useT(diffModalMessages).t('unlink');
   const [folded, setFolded] = useState<ReadonlySet<PairKind>>(() => new Set());
+  /** The synced item whose read-only details dialog is open; null when closed. */
+  const [details, setDetails] = useState<{ side: Side; id: string; name: string } | null>(null);
+  const openDetails = (side: Side, row: RowModel) => { setDetails({ side, id: row.id, name: row.name }); };
   const createLabel = (side: Side) => (side === 'wallos' ? t('row.createInActual') : t('row.createInWallos'));
   const hide = (side: Side) => (props.pane === side ? '' : 'max-md:hidden');
   const hasCell = (side: Side) => props.rows.some((r) => (side === 'wallos' ? r.wallos : r.actual) !== null);
@@ -155,6 +173,7 @@ export function PairList(props: PairListProps) {
             baseCurrency={props.baseCurrency}
             differs={r.differs}
             actions={menuHere && r.link !== null ? linkedActions(r.link) : null}
+            onOpenDetails={openDetails}
             review={
               menuHere && r.link !== null && r.link.status === 'MISMATCH_DETECTED' && props.onReview !== undefined
                 ? { matchId: r.link.matchId, onReview: props.onReview }
@@ -225,6 +244,14 @@ export function PairList(props: PairListProps) {
   };
   return (
     <div data-pairs="" tabIndex={-1} className="min-w-0 outline-none">
+      <SyncItemDetailsDialog
+        open={details !== null}
+        onOpenChange={(open) => { if (!open) setDetails(null); }}
+        side={details?.side ?? 'wallos'}
+        itemId={details?.id ?? ''}
+        name={details?.name ?? ''}
+        {...(props.detailsFetch === undefined ? {} : { fetchImpl: props.detailsFetch })}
+      />
       {/* Desktop only: the column titles stay at the top while the rows scroll. Below 768px the pane switch replaces this. */}
       <div data-column-header="" className="grid grid-cols-1 bg-card md:sticky md:top-0 md:z-20 md:grid-cols-2">
         <h2 id="col-wallos" className={`px-3 py-1.5 text-sm font-semibold ${hide('wallos')}`}>
