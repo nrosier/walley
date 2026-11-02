@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Nothing yet.
 
+## [0.4.0] - 2026-11-02
+
+### Added
+
+- Click the name of a synced item on the Sync Dashboard to see how it is set up on that side: the Wallos subscription, or the Actual Budget schedule. The card is read-only.
+
+### Changed
+
+- Dependency updates for lucide-react, globals, jose, @actual-app/api, cn, openid-client, fastify and @vitejs/plugin-react. No user-visible change is expected.
+
 ## [0.3.1] - 2026-10-30
 
 ### Changed
