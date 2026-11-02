@@ -245,11 +245,12 @@ describe('SyncDashboard states', () => {
     expect(at('Linked W')).toBeLessThan(at('NETFLIX.COM'));
     expect(at('NETFLIX.COM')).toBeLessThan(at('Gym'));
     expect(at('Gym')).toBeLessThan(at('Rent'));
-    // The linked row carries its status badge and no actions.
+    // The linked row carries its status badge and no actions; its only button is the name (#155 details).
     const linkedStart = html.indexOf('data-pair="linked"');
     const linked = html.slice(linkedStart, html.indexOf('</li>', linkedStart));
     expect(linked).toContain('data-kind="synced"');
-    expect(linked).not.toContain('<button');
+    expect(linked.match(/<button/g)).toHaveLength(2);
+    expect(linked.match(/data-details-for="/g)).toHaveLength(2);
     // The suggested row holds both sides of the pair side by side.
     const suggested = html.slice(html.indexOf('data-pair="suggested"'), html.indexOf('data-pair="wallos"'));
     expect(suggested).toContain('data-row-id="w1" data-side="wallos"');

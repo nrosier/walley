@@ -61,6 +61,8 @@ function buildEnv() {
   const writes = { createSchedule: vi.fn(), createSubscription: vi.fn() };
   const actualApi = (userId: string) => ({
     getPreferences: async () => ({ defaultCurrencyCode: 'EUR' }),
+    getPayees: async () => [],
+    getAccounts: async () => [],
     getBudgets: async () => [{ groupId: `sync-${userId}`, name: `Budget of ${userId}` }],
     getSchedules: async () =>
       userId === b
@@ -507,6 +509,23 @@ const CASES: Record<string, Case> = {
             expect(body[key], key).toEqual([]);
           }
         },
+      },
+    ],
+  },
+  'GET /api/sync/items/:side/:id': {
+    why: "reads one item for the session user: B's Wallos subscription and Actual schedule give 404 for A, never their details",
+    attempts: () => [
+      {
+        method: 'GET',
+        url: `/api/sync/items/wallos/${String(B_SUB_ID)}`,
+        status: NOT_FOUND,
+        error: 'item_not_found',
+      },
+      {
+        method: 'GET',
+        url: `/api/sync/items/actual/${B_SCHEDULE_ID}`,
+        status: NOT_FOUND,
+        error: 'item_not_found',
       },
     ],
   },
