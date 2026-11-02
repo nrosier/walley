@@ -26,7 +26,7 @@
     "seed:test-data": "tsx scripts/seed-test-data.ts"
   },
   "dependencies": {
-    "@actual-app/api": "26.10.0",
+    "@actual-app/api": "26.11.0",
     "@fastify/cookie": "11.1.5",
     "@fastify/static": "10.1.8",
     "better-sqlite3": "13.0.3",
