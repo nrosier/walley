@@ -1,0 +1,68 @@
+name: Stale branches
+on:
+  schedule:
+    - cron: "43 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List the branches that would be deleted without deleting them"
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: stale-branches
+  cancel-in-progress: false
+jobs:
+  prune:
+    name: prune
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      OWNER: ${{ github.repository_owner }}
+      MAX_AGE_DAYS: "30"
+      # Scheduled runs always delete; manual runs follow the dry_run input.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    steps:
+      - name: Delete stale branches
+        run: |
+          set -euo pipefail
+          default_branch="$(gh api "repos/$REPO" --jq .default_branch)"
+          cutoff="$(date -u -d "$MAX_AGE_DAYS days ago" +%s)"
+          deleted=0
+          while IFS= read -r branch; do
+            [ -n "$branch" ] || continue
+            [ "$branch" != "main" ] && [ "$branch" != "$default_branch" ] || continue
+            ref="$OWNER:$branch"
+            open="$(gh api -X GET "repos/$REPO/pulls" -f state=open -f head="$ref" --jq length)"
+            if [ "$open" != "0" ]; then
+              echo "keep $branch: open PR"
+              continue
+            fi
+            info="$(gh api "repos/$REPO/branches/$branch" --jq '[.commit.sha, .commit.commit.committer.date] | @tsv')"
+            sha="${info%%$'\t'*}"
+            committed="${info#*$'\t'}"
+            reason=""
+            # A closed or merged PR whose head is this branch's tip means the work is finished.
+            closed="$(gh api -X GET "repos/$REPO/pulls" -f state=closed -f head="$ref" --jq "map(select(.head.sha == \"$sha\")) | length")"
+            if [ "$closed" != "0" ]; then
+              reason="PR merged or closed"
+            elif [ "$(date -u -d "$committed" +%s)" -lt "$cutoff" ]; then
+              reason="no open PR and last commit $committed is older than $MAX_AGE_DAYS days"
+            else
+              echo "keep $branch: recent commit $committed"
+              continue
+            fi
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "dry run: would delete $branch ($reason)"
+            else
+              echo "delete $branch ($reason)"
+              gh api -X DELETE "repos/$REPO/git/refs/heads/$branch"
+            fi
+            deleted=$((deleted + 1))
+          done < <(gh api --paginate "repos/$REPO/branches" --jq '.[] | select(.protected | not) | .name')
+          echo "branches selected: $deleted (dry run: $DRY_RUN)"
