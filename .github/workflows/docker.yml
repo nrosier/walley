@@ -34,9 +34,14 @@ jobs:
           push: false
           load: true
           tags: walley:smoke
+          build-args: GIT_SHA=${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Check the revision label
+        run: |
+          rev="$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' walley:smoke)"
+          test "$rev" = "$GITHUB_SHA" || { echo "revision label '$rev' != $GITHUB_SHA"; exit 1; }
       - name: Smoke test the image
         run: |
           docker run -d --name walley-smoke -p 127.0.0.1:3000:3000 -e APP_SECRET="$(openssl rand -base64 48)" -e PUBLIC_ORIGIN=http://127.0.0.1:3000 walley:smoke
@@ -114,6 +119,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          build-args: GIT_SHA=${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
