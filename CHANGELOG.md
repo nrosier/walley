@@ -4,6 +4,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.4.2] - 2026-11-06
+
 ### Added
 
 - Docker images published to `ghcr.io/nrosier/walley` are now signed with cosign keyless signing. The Docker workflow signs the image digest and verifies the signature before the job ends. The README explains how to verify an image.

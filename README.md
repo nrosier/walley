@@ -140,7 +140,7 @@ cosign verify \
 
 A successful check prints the verified claims as JSON, including the issuer (`https://token.actions.githubusercontent.com`) and the subject (the identity above). The signature is stored in GHCR as an OCI referrer (a Sigstore bundle attached to the image digest). Verifying needs cosign v3 or newer.
 
-The tags `edge`, `latest`, `sha-*`, `X.Y` and `X` move, so verifying one checks only what it points to now. Verify by digest (`ghcr.io/nrosier/walley@sha256:...`) or by a full version tag such as `0.4.1`. Kubernetes users can enforce signatures with Kyverno or the Sigstore policy-controller; Walley ships no policy files.
+The tags `edge`, `latest`, `sha-*`, `X.Y` and `X` move, so verifying one checks only what it points to now. Verify by digest (`ghcr.io/nrosier/walley@sha256:...`) or by a full version tag such as `0.4.2`. Kubernetes users can enforce signatures with Kyverno or the Sigstore policy-controller; Walley ships no policy files.
 
 ### Registration
 
