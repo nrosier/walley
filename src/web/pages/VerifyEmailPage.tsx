@@ -108,6 +108,13 @@ export function VerifyEmailView({
       break;
   }
   const showForm = state.kind === 'form' || state.kind === 'verifying';
+  const resultRef = useRef<HTMLDivElement>(null);
+  const wasForm = useRef(showForm);
+  useEffect(() => {
+    // Only after Confirm: the first render of the 'missing' state (no token) must not steal focus.
+    if (wasForm.current && !showForm) resultRef.current?.focus();
+    wasForm.current = showForm;
+  }, [showForm]);
   return (
     <AuthCard title={t('title')}>
       {showForm ? (
@@ -115,16 +122,20 @@ export function VerifyEmailView({
           className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
+            if (state.kind === 'verifying') return;
             onSubmit?.();
           }}
         >
           {message === null ? null : <Alert variant={isError ? 'error' : 'info'}>{message}</Alert>}
-          <button type="submit" disabled={state.kind === 'verifying'} aria-busy={state.kind === 'verifying'} className={buttonClass}>
+          <button type="submit" aria-disabled={state.kind === 'verifying'} aria-busy={state.kind === 'verifying'} className={buttonClass}>
             {t('submit')}
           </button>
         </form>
       ) : (
-        <Alert variant={isError ? 'error' : state.kind === 'success' ? 'success' : 'info'}>{message}</Alert>
+        // Confirm unmounts when the result arrives; the result gets focus (tabIndex -1) so it is read and Tab reaches the sign-in link next.
+        <div ref={resultRef} tabIndex={-1} className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          <Alert variant={isError ? 'error' : state.kind === 'success' ? 'success' : 'info'}>{message}</Alert>
+        </div>
       )}
       {showForm ? null : (
         <a
