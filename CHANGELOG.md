@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - Nothing yet.
 
+## [0.4.1] - 2026-11-06
+
+### Changed
+
+- The Docker image now records the commit it was built from in the standard `org.opencontainers.image.revision` label. The Docker workflow sets it on every build.
+- The container base image is now Node.js 26.
+- A weekly workflow deletes stale remote branches. It is repository maintenance and has no effect on the app.
+
 ## [0.4.0] - 2026-11-02
 
 ### Added
