@@ -10,6 +10,8 @@ import { CreateActualForm } from '@/components/dashboard/CreateActualModal';
 import { CreateWallosForm } from '@/components/dashboard/CreateWallosModal';
 import diffSrc from '@/components/matches/DiffModal.tsx?raw';
 import relinkSrc from '@/components/matches/RelinkDialog.tsx?raw';
+import rowFocusSrc from '@/components/matches/row-menu-focus.ts?raw';
+import dashboardSrc from '@/pages/SyncDashboard.tsx?raw';
 import unlinkSrc from '@/components/matches/UnlinkDialog.tsx?raw';
 import detailsSrc from '@/components/dashboard/SyncItemDetailsDialog.tsx?raw';
 import createActualSrc from '@/components/dashboard/CreateActualModal.tsx?raw';
@@ -26,7 +28,6 @@ import actualSettingsSrc from '@/pages/ActualSettings.tsx?raw';
 import matchingSettingsSrc from '@/pages/MatchingSettings.tsx?raw';
 import verifySrc from '@/pages/VerifyEmailPage.tsx?raw';
 import loginSrc from '@/pages/LoginPage.tsx?raw';
-import dashboardSrc from '@/pages/SyncDashboard.tsx?raw';
 import toolbarSrc from '@/components/dashboard/Toolbar.tsx?raw';
 import { ActualSettingsView } from '@/pages/ActualSettings';
 import { WallosSettingsView } from '@/pages/WallosSettings';
@@ -220,7 +221,8 @@ describe('modal focus handling', () => {
   it('modals that open from a trigger return focus to it on close', () => {
     expect(diffSrc).toContain('onCloseAutoFocus');
     expect(diffSrc).toContain('onOpenAutoFocus');
-    expect(unlinkSrc).toMatch(/focus\(\)/);
+    expect(unlinkSrc).toContain('restoreFocus(event');
+    expect(rowFocusSrc).toMatch(/next\.focus\(\)/);
   });
 
   it('icon-only controls hide the icon and carry a text name', () => {
@@ -292,6 +294,32 @@ describe('focus return after closing', () => {
     expect(createWallosSrc).toContain('returnFocus={props.returnFocus}');
     expect(itemRowSrc).toContain('ref={createRef}');
     expect(itemRowSrc).toContain('returnFocus={returnToCreate}');
+  });
+
+  // Issue 58 N1. Source wiring only: that focus really lands on the button needs a browser.
+  it('dialogs opened from a row menu item return focus to that row menu button, not the search box', () => {
+    // The trigger lookup uses the attribute PairList really renders (UnlinkDialog once used a data-linked-id that never existed).
+    expect(rowFocusSrc).toContain('[data-linked-match=');
+    expect(rowFocusSrc).toContain('[aria-haspopup="menu"]');
+    expect(pairListSrc).toContain('data-linked-match');
+    expect(unlinkSrc).not.toContain('data-linked-id');
+    expect(unlinkSrc).toContain('rowMenuTrigger(lastId.current)');
+    // Confirm removes the row: that path keeps the search box fallback.
+    expect(unlinkSrc).toMatch(/confirmed\.current \? null : rowMenuTrigger/);
+    expect(unlinkSrc).toMatch(/confirmed\.current = true;\s+if \(row !== null\) onConfirm/);
+    expect(rowFocusSrc).toContain('input[type="search"]');
+    // Relink and both Recreate modals get the row-aware target from the dashboard.
+    expect(relinkSrc).toContain('onCloseAutoFocus');
+    expect(relinkSrc).toContain('props.returnFocus');
+    expect(dashboardSrc.match(/returnFocus=\{orphanReturnFocus\}/g)).toHaveLength(3);
+    expect(dashboardSrc).toContain('onCreated={orphanDone}');
+    expect(dashboardSrc).toMatch(/onLinked=\{\(\) => \{\s+orphanDone\(\)/);
+  });
+
+  it('the Overwrite and Unlink confirmations inside the diff modal keep their own button as opener', () => {
+    // Opened from AlertDialogTrigger buttons that stay mounted, so Radix returns focus to them; no menu item is involved.
+    expect((diffSrc.match(/<AlertDialogTrigger asChild>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(diffSrc).not.toContain('MoreActionsMenu');
   });
 
   it('closing Review after Ignore Diff falls back to the pair row details button', () => {

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { rowMenuTrigger } from '@/components/matches/row-menu-focus';
 import { UnlinkDialog } from '@/components/matches/UnlinkDialog';
 import { DiffModal } from '@/components/matches/DiffModal';
 import { diffModalMessages, isOverwriteErrorCode } from '@/components/matches/DiffModal.messages';
@@ -263,6 +264,20 @@ export function SyncDashboard() {
   const [unlinking, setUnlinking] = useState<SyncLinked | null>(null);
   const [unlinkError, setUnlinkError] = useState<string | null>(null);
   const [orphanAction, setOrphanAction] = useState<{ kind: 'recreate' | 'relink'; row: SyncLinked } | null>(null);
+  // Recreate and Link open from the row's menu, whose item unmounts, so Radix cannot return focus. Cancel or a
+  // failure: back to the row's menu button. Success: the row is rewritten, so null (the search box).
+  const orphanFocus = useRef<{ matchId: string; done: boolean } | null>(null);
+  const openOrphan = (kind: 'recreate' | 'relink', row: SyncLinked) => {
+    orphanFocus.current = { matchId: row.matchId, done: false };
+    setOrphanAction({ kind, row });
+  };
+  const orphanReturnFocus = () => {
+    const f = orphanFocus.current;
+    return f === null || f.done ? null : rowMenuTrigger(f.matchId);
+  };
+  const orphanDone = () => {
+    if (orphanFocus.current !== null) orphanFocus.current.done = true;
+  };
   // The mismatch under review is held here, not looked up in the result: the optimistic resolve removes it
   // from the result at once, and the modal must stay open ("Working...") until the server answers.
   const [reviewing, setReviewing] = useState<SyncMismatch | null>(null);
@@ -337,8 +352,8 @@ export function SyncDashboard() {
       rowError={failed?.text ?? null}
       unlinkErrorMessage={unlinkError}
       onUnlink={(row) => { setUnlinking(row); }}
-      onRecreate={(row) => { setOrphanAction({ kind: 'recreate', row }); }}
-      onRelink={(row) => { setOrphanAction({ kind: 'relink', row }); }}
+      onRecreate={(row) => { openOrphan('recreate', row); }}
+      onRelink={(row) => { openOrphan('relink', row); }}
       onReview={(id) => {
         setResolveError(null);
         setReviewing(sync.result?.mismatches.find((m) => m.matchId === id) ?? null);
@@ -371,6 +386,8 @@ export function SyncDashboard() {
         wallosId={orphanAction.row.wallosId}
         wallosName={orphanAction.row.wallosName ?? orphanAction.row.wallosId}
         matchId={orphanAction.row.matchId}
+        returnFocus={orphanReturnFocus}
+        onCreated={orphanDone}
         onClose={() => { setOrphanAction(null); }}
       />
     ) : null}
@@ -379,6 +396,8 @@ export function SyncDashboard() {
         scheduleId={orphanAction.row.actualScheduleId}
         scheduleName={orphanAction.row.actualName ?? orphanAction.row.actualScheduleId}
         matchId={orphanAction.row.matchId}
+        returnFocus={orphanReturnFocus}
+        onCreated={orphanDone}
         onClose={() => { setOrphanAction(null); }}
       />
     ) : null}
@@ -390,8 +409,12 @@ export function SyncDashboard() {
         items={(orphanAction.row.orphan === 'orphaned_actual' ? sync.result?.unlinkedActual : sync.result?.unlinkedWallos) ?? []}
         candidateIds={orphanAction.row.relinkCandidateIds}
         baseCurrency={sync.result?.baseCurrency ?? ''}
+        returnFocus={orphanReturnFocus}
         onClose={() => { setOrphanAction(null); }}
-        onLinked={() => { void syncStore.requestRun(); }}
+        onLinked={() => {
+          orphanDone();
+          void syncStore.requestRun();
+        }}
       />
     ) : null}
     <DiffModal
