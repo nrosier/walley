@@ -11,6 +11,7 @@ import { DialogShell } from '../ui/dialog-shell';
 import { OptionCards } from '../ui/option-cards';
 import { relinkDialogMessages } from './RelinkDialog.messages';
 import { orderRelinkItems } from './relink-order';
+import { restoreFocus } from './row-menu-focus';
 
 export interface RelinkDialogProps {
   matchId: string;
@@ -25,6 +26,8 @@ export interface RelinkDialogProps {
   onClose: () => void;
   /** Called after the server accepted the relink; the caller re-checks. */
   onLinked: () => void;
+  /** Focus target on close: the row's menu button, or null for the search box (see row-menu-focus.ts). */
+  returnFocus?: () => HTMLElement | null;
   fetchImpl?: typeof fetch;
 }
 
@@ -63,6 +66,7 @@ export function RelinkDialog(props: RelinkDialogProps) {
     >
       <DialogShell
         title={t('title')}
+        onCloseAutoFocus={(event) => { restoreFocus(event, props.returnFocus?.() ?? null); }}
         description={t('description', { name: props.name, side: sideName })}
         footer={
           <>

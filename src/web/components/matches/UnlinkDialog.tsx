@@ -13,6 +13,7 @@ import {
 } from '../ui/dialog';
 import { diffModalMessages } from './DiffModal.messages';
 import { unlinkDialogMessages } from './UnlinkDialog.messages';
+import { restoreFocus, rowMenuTrigger } from './row-menu-focus';
 
 export interface UnlinkDialogProps {
   /** The Synced pair to unlink; the dialog is open while this is set. */
@@ -28,9 +29,14 @@ export function UnlinkDialog({ row, onConfirm, onCancel }: UnlinkDialogProps) {
   const { t } = useT(unlinkDialogMessages);
   // The row is already null when the close focus handler runs, so the last open row id is kept here.
   const lastId = useRef<string | null>(null);
+  // Set by Confirm: the pair is then unlinked and its row is gone, so focus must not go to its menu button.
+  const confirmed = useRef(false);
   const openId = row?.matchId ?? null;
   useEffect(() => {
-    if (openId !== null) lastId.current = openId;
+    if (openId !== null) {
+      lastId.current = openId;
+      confirmed.current = false;
+    }
   }, [openId]);
   return (
     <AlertDialog
@@ -41,15 +47,9 @@ export function UnlinkDialog({ row, onConfirm, onCancel }: UnlinkDialogProps) {
     >
       <AlertDialogContent
         onCloseAutoFocus={(event) => {
-          // Back to the row's menu button; when the row is gone (unlinked), to the search box.
-          const id = lastId.current;
-          const target =
-            (id === null ? null : document.querySelector<HTMLElement>(`[data-linked-id="${CSS.escape(id)}"] [aria-haspopup="menu"]`)) ??
-            document.querySelector<HTMLElement>('input[type="search"]');
-          if (target !== null) {
-            event.preventDefault();
-            target.focus();
-          }
+          // Cancel or Escape: the row stays, so back to its menu button (the menu item that opened this dialog is
+          // unmounted, Radix has nothing to return to). Confirm: the row is gone, so the search box.
+          restoreFocus(event, confirmed.current ? null : rowMenuTrigger(lastId.current));
         }}
       >
         <AlertDialogHeader>
@@ -63,6 +63,7 @@ export function UnlinkDialog({ row, onConfirm, onCancel }: UnlinkDialogProps) {
           <AlertDialogAction
             className="border border-danger-line bg-card text-danger hover:bg-danger-bg"
             onClick={() => {
+              confirmed.current = true;
               if (row !== null) onConfirm(row);
             }}
           >
