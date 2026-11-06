@@ -49,7 +49,9 @@ describe('SyncDashboard states', () => {
   it('loading: shows status text and a disabled Run button', () => {
     const html = render({ status: 'loading', result: null, errorCode: null });
     expect(html).toContain('Checking Wallos and Actual Budget...');
-    expect(/<button[^>]*disabled=""[^>]*>[\s\S]*?Checking\.\.\./.test(html)).toBe(true);
+    // aria-disabled, not disabled, so the button keeps keyboard focus (issue 58).
+    expect(/<button[^>]*aria-disabled="true"[^>]*>[\s\S]*?Checking\.\.\./.test(html)).toBe(true);
+    expect(/<button[^>]*\sdisabled=""[^>]*>[\s\S]*?Checking\.\.\./.test(html)).toBe(false);
   });
   it('error: shows the server code text in an alert', () => {
     const html = render({ status: 'error', result: null, errorCode: 'wallos_unavailable' });

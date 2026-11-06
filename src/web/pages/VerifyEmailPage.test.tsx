@@ -88,8 +88,8 @@ describe('VerifyEmailView', () => {
     expect(html.toLowerCase()).not.toContain('password');
     expect(html).not.toContain('role="alert"');
   });
-  it('M2: disables the Confirm button while verifying', () => {
-    expect(render({ kind: 'verifying' })).toMatch(/<button type="submit" disabled=""/);
+  it('M2: marks the Confirm button aria-disabled (it keeps focus) while verifying', () => {
+    expect(render({ kind: 'verifying' })).toMatch(/<button type="submit" aria-disabled="true"/);
   });
   it('shows the legacy-link message', () => {
     expect(render({ kind: 'legacy' })).toContain('older version');

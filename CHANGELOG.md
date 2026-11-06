@@ -4,7 +4,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- Keyboard focus (issue 58 walkthrough): the About dialog and the Create in Actual Budget / Create in Wallos modals now return focus to the control that opened them, and the Create modals start on their first field. Run Sync Check, Test Connection, Load budgets and the Save buttons stay focused while busy (they are `aria-disabled` instead of `disabled`), and Load budgets announces how many budgets loaded. After Confirm on the verify-email page and after Ignore Diff, focus moves to the result or the row instead of the page body. Failed sign-in marks the login fields invalid and points them at the error.
+- The primary button focus ring showed white for the first moments in the light theme. It is now always the indigo ring colour.
+- The Run Sync Check spinner and the loading skeletons stop animating when the system asks for reduced motion.
 
 ## [0.4.2] - 2026-11-06
 

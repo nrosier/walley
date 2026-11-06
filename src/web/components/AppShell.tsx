@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode } from 'react';
+import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { DropdownMenu } from 'radix-ui';
 import { ArrowLeftRight, ChevronDown, LogOut, Moon, RefreshCw, Settings, Sun, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,7 @@ function onTabClick(event: MouseEvent<HTMLAnchorElement>, path: string) {
 export function AppShell({ route, theme, email, onRefresh, onToggleTheme, onLogout, menuDefaultOpen, children }: AppShellProps) {
   const { t } = useT(appShellMessages);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const aboutButtonRef = useRef<HTMLButtonElement>(null);
   return (
     <div className="min-h-screen">
       <a
@@ -125,6 +126,7 @@ export function AppShell({ route, theme, email, onRefresh, onToggleTheme, onLogo
       <footer className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t bg-card px-3 py-1.5 text-xs text-muted">
         <span>{t('footer.text', { version: __APP_VERSION__ })}</span>
         <Button
+          ref={aboutButtonRef}
           variant="ghost"
           size="sm"
           className={`ml-auto h-auto ${TARGET} text-xs text-muted hover:text-foreground`}
@@ -135,7 +137,7 @@ export function AppShell({ route, theme, email, onRefresh, onToggleTheme, onLogo
           {t('footer.about')}
         </Button>
       </footer>
-      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} returnFocusRef={aboutButtonRef} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { SyncCandidate } from '../../../lib/sync-check-types';
 import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
@@ -50,6 +50,25 @@ export function ItemRow(props: ItemRowProps) {
   const { row, side } = props;
   const { t, locale } = useT(syncDashboardMessages);
   const [creating, setCreating] = useState(false);
+  const createRef = useRef<HTMLButtonElement>(null);
+  const rowEl = useRef<HTMLElement | null>(null);
+  const createdRef = useRef(false);
+  /**
+   * Focus target when a create modal closes. After a successful create the row is about to be removed by the
+   * sync re-run, so focus goes to the next row's first control (its primary action). After a cancel, or a
+   * failed create, it goes back to this row's Create button. Null sends focus to the search box.
+   */
+  const returnToCreate = (): HTMLElement | null => {
+    if (createdRef.current) {
+      const next = rowEl.current?.nextElementSibling;
+      if (next?.hasAttribute('data-row-id') !== true) return null;
+      return next.querySelector<HTMLElement>('button');
+    }
+    return createRef.current?.isConnected === true ? createRef.current : null;
+  };
+  const onCreated = () => {
+    createdRef.current = true;
+  };
   const mine = props.candidates
     .filter((c) => (side === 'wallos' ? c.wallosId === row.id : c.actualScheduleId === row.id))
     .sort((a, b) => b.nameScore - a.nameScore);
@@ -100,6 +119,9 @@ export function ItemRow(props: ItemRowProps) {
   const Tag = props.cell === true ? 'div' : 'li';
   return (
     <Tag
+      ref={(el: HTMLElement | null) => {
+        rowEl.current = el;
+      }}
       data-row-id={row.id}
       data-side={side}
       tabIndex={-1}
@@ -142,6 +164,7 @@ export function ItemRow(props: ItemRowProps) {
           </Button>
         ) : (
           <Button
+            ref={createRef}
             type="button"
             size="sm"
             variant="outline"
@@ -164,6 +187,8 @@ export function ItemRow(props: ItemRowProps) {
           onClose={() => {
             setCreating(false);
           }}
+          returnFocus={returnToCreate}
+          onCreated={onCreated}
         />
       ) : null}
       {creating && side === 'actual' ? (
@@ -173,6 +198,8 @@ export function ItemRow(props: ItemRowProps) {
           onClose={() => {
             setCreating(false);
           }}
+          returnFocus={returnToCreate}
+          onCreated={onCreated}
         />
       ) : null}
       {props.error != null ? (

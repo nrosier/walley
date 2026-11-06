@@ -46,7 +46,11 @@ export interface SaveFooterProps {
   disabled?: boolean;
 }
 
-/** The one Save of an account card, with "Unsaved changes" / "No unsaved changes". */
+/**
+ * The one Save of an account card, with "Unsaved changes" / "No unsaved changes".
+ * While busy the button is aria-disabled rather than disabled, so it keeps keyboard focus; the form's submit
+ * handler ignores submits while busy.
+ */
 export function SaveFooter({ formId, dirty, label, busy = false, disabled = false }: SaveFooterProps) {
   const { t } = useT(settingsPageMessages);
   return (
@@ -55,7 +59,7 @@ export function SaveFooter({ formId, dirty, label, busy = false, disabled = fals
         {dirty ? <AlertTriangle className="size-3.5" aria-hidden="true" /> : null}
         {dirty ? t('save.unsaved') : t('save.clean')}
       </span>
-      <Button type="submit" form={formId} className="ml-auto min-h-(--control-h)" disabled={busy || disabled}>
+      <Button type="submit" form={formId} className="ml-auto min-h-(--control-h)" disabled={disabled} aria-disabled={busy || undefined}>
         {label}
       </Button>
     </>

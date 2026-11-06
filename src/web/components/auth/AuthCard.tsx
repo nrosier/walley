@@ -9,7 +9,7 @@ export const AUTH_INPUT =
 
 /** Primary button class for the auth pages (44px). */
 export const AUTH_BUTTON =
-  'inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50';
+  'inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50 aria-disabled:opacity-50';
 
 export interface AuthCardProps {
   /** Translated heading. */

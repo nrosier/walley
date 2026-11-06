@@ -97,6 +97,7 @@ export function MatchingSettingsView(props: MatchingSettingsViewProps) {
 
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
+    if (props.status === 'saving') return;
     props.onCommit?.(props.text);
   };
 

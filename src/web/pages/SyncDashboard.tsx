@@ -73,9 +73,9 @@ function Skeleton({ label }: { label: string }) {
         <div key={col} aria-hidden="true" className="rounded-lg border bg-card">
           {[0, 1, 2, 3].map((row) => (
             <div key={row} className="flex items-center gap-3 border-b px-3 py-2.5 last:border-b-0">
-              <div className="h-3 flex-1 animate-pulse rounded bg-surface-2" />
-              <div className="h-3 w-14 animate-pulse rounded bg-surface-2" />
-              <div className="h-7 w-16 animate-pulse rounded bg-surface-2" />
+              <div className="h-3 flex-1 animate-pulse motion-reduce:animate-none rounded bg-surface-2" />
+              <div className="h-3 w-14 animate-pulse motion-reduce:animate-none rounded bg-surface-2" />
+              <div className="h-7 w-16 animate-pulse motion-reduce:animate-none rounded bg-surface-2" />
             </div>
           ))}
         </div>

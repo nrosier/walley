@@ -1,4 +1,4 @@
-import { useEffect, useState, type SyntheticEvent } from 'react';
+import { useEffect, useId, useState, type SyntheticEvent } from 'react';
 import { KeyRound } from 'lucide-react';
 import { AUTH_BUTTON, AUTH_INPUT, AuthCard } from '@/components/auth/AuthCard';
 import { Alert } from '@/components/ui/alert';
@@ -74,6 +74,7 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
   const [busy, setBusy] = useState(false);
   const [registering, setRegistering] = useState(initialRegistering);
 
+  const failureId = useId();
   const pageError = pageErrorMessage(errorCode, locale);
 
   if (config.mode === 'oidc') {
@@ -146,6 +147,8 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
             onChange={(e) => {
               setEmail(e.target.value);
             }}
+            aria-invalid={failure !== null ? true : undefined}
+            aria-describedby={failure !== null ? failureId : undefined}
             className={inputClass}
           />
         </label>
@@ -160,6 +163,8 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
             onChange={(e) => {
               setPassword(e.target.value);
             }}
+            aria-invalid={failure !== null ? true : undefined}
+            aria-describedby={failure !== null ? failureId : undefined}
             className={inputClass}
           />
         </label>
@@ -175,12 +180,16 @@ export function LoginForm({ config, errorCode, initialRegistering = false }: Log
               onChange={(e) => {
                 setConfirm(e.target.value);
               }}
+              aria-invalid={failure !== null ? true : undefined}
+              aria-describedby={failure !== null ? failureId : undefined}
               className={inputClass}
             />
           </label>
         ) : null}
         {failure !== null ? (
-          <Alert variant="error">{registering ? registerErrorMessage(failure, locale) : errorFor(failure)}</Alert>
+          <div id={failureId}>
+            <Alert variant="error">{registering ? registerErrorMessage(failure, locale) : errorFor(failure)}</Alert>
+          </div>
         ) : null}
         {sent ? <Alert variant="info">{t('registerSent')}</Alert> : null}
         <button type="submit" disabled={busy} aria-busy={busy} className={buttonClass}>

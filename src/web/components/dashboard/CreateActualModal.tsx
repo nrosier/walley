@@ -196,6 +196,9 @@ export function CreateActualForm({ prefill, wallosId, matchId, fetchImpl, onRate
         {t('actual.name')}
         <input
           id={ids.name}
+          // The form mounts after the pre-fill loads, so the dialog's own initial focus has already settled
+          // on a footer button; the first field takes it.
+          autoFocus
           type="text"
           required
           maxLength={200}
@@ -303,6 +306,10 @@ export interface CreateActualModalProps {
   /** Recreate from an orphaned linked-pair row on the Sync Dashboard: the create call repoints this match. */
   matchId?: string;
   onClose: () => void;
+  /** Focus target on close, see CreateModalFrame. */
+  returnFocus?: () => HTMLElement | null;
+  /** Called before onClose when the create succeeds (not on cancel). */
+  onCreated?: () => void;
   fetchImpl?: typeof fetch;
 }
 
@@ -334,6 +341,7 @@ export function CreateActualModal(props: CreateActualModalProps) {
       title={t('actual.title')}
       description={t('actual.description', { name: props.wallosName })}
       onClose={props.onClose}
+      returnFocus={props.returnFocus}
       footer={<div ref={setHost} className="flex w-full" />}
     >
       {load.status === 'loading' ? <p role="status">{t('loading')}</p> : null}
@@ -349,6 +357,7 @@ export function CreateActualModal(props: CreateActualModalProps) {
           onCancel={props.onClose}
           onCreated={(result) => {
             noticeStore.push(createNoticeKinds(result));
+            props.onCreated?.();
             props.onClose();
           }}
         />

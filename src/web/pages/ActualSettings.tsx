@@ -19,7 +19,7 @@ import { settingsPageMessages } from './SettingsPage.messages';
 const FIELD =
   'min-h-(--control-h) w-full rounded-md border border-input-border bg-background px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
-type Status = { kind: 'none' } | { kind: 'busy'; text: 'saving' | 'loadingBudgets' } | { kind: 'ok'; text: 'saved' | 'budgetSaved' } | { kind: 'error'; code: string };
+type Status = { kind: 'none' } | { kind: 'busy'; text: 'saving' | 'loadingBudgets' } | { kind: 'ok'; text: 'saved' | 'budgetSaved' | 'budgetsLoaded' | 'noBudgets'; count?: number } | { kind: 'error'; code: string };
 
 export interface ActualSettingsViewProps {
   url: string;
@@ -56,10 +56,12 @@ export function ActualSettingsView(props: ActualSettingsViewProps) {
   const busy = status.kind === 'busy';
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
+    if (busy) return;
     props.onSave?.();
   };
   let statusText = '';
-  if (status.kind === 'busy' || status.kind === 'ok') statusText = t(status.text);
+  if (status.kind === 'busy') statusText = t(status.text);
+  if (status.kind === 'ok') statusText = status.text === 'budgetsLoaded' ? t('budgetsLoaded', { count: String(status.count ?? 0) }) : t(status.text);
   if (status.kind === 'error') {
     if (status.code === 'password_required') statusText = t('errors.password_required');
     else if (status.code === 'load_failed') statusText = t('loadFailed');
@@ -141,7 +143,16 @@ export function ActualSettingsView(props: ActualSettingsViewProps) {
           </label>
         ) : null}
       </div>
-      <Button type="button" variant="outline" className="min-h-(--control-h)" disabled={busy} onClick={props.onLoadBudgets}>
+      <Button
+        type="button"
+        variant="outline"
+        className="min-h-(--control-h)"
+        aria-disabled={busy}
+        onClick={() => {
+          // aria-disabled, not disabled: the button keeps focus while budgets load.
+          if (!busy) props.onLoadBudgets?.();
+        }}
+      >
         {t('loadBudgets')}
       </Button>
       {props.budgets !== null ? (
@@ -300,7 +311,8 @@ export function ActualSettings() {
     fetchBudgets({ url, password, syncKey })
       .then((list) => {
         setBudgets(list);
-        setStatus({ kind: 'none' });
+        // Announced through the status region; the Load budgets button keeps focus.
+        setStatus(list.length === 0 ? { kind: 'ok', text: 'noBudgets' } : { kind: 'ok', text: 'budgetsLoaded', count: list.length });
       })
       .catch(fail);
   };

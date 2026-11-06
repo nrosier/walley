@@ -77,6 +77,7 @@ export function WallosSettingsView(props: WallosSettingsViewProps) {
   const test = props.test ?? { kind: 'idle' };
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
+    if (props.saving === true) return;
     props.onSave?.();
   };
   const testNotice: Notice | null =
@@ -139,8 +140,11 @@ export function WallosSettingsView(props: WallosSettingsViewProps) {
           type="button"
           variant="outline"
           className="min-h-(--control-h)"
-          disabled={test.kind === 'testing'}
-          onClick={props.onTest}
+          aria-disabled={test.kind === 'testing'}
+          onClick={() => {
+            // aria-disabled, not disabled: the button keeps focus while the test runs.
+            if (test.kind !== 'testing') props.onTest?.();
+          }}
         >
           {test.kind === 'testing' ? t('actions.testing') : t('actions.test')}
         </Button>

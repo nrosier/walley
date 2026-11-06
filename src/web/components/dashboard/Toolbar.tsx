@@ -25,12 +25,15 @@ export function Toolbar(props: ToolbarProps) {
       />
       <Button
         type="button"
-        disabled={props.running}
+        // aria-disabled, not disabled: a disabled button drops keyboard focus to the body when the run starts.
+        aria-disabled={props.running}
         aria-busy={props.running}
-        onClick={props.onRun}
+        onClick={() => {
+          if (!props.running) props.onRun?.();
+        }}
         className="ml-auto min-h-(--control-h) max-md:w-full"
       >
-        {props.running ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
+        {props.running ? <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : null}
         {props.running ? t('toolbar.running') : t('toolbar.run')}
       </Button>
     </div>

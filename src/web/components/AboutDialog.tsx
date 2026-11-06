@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import { useT } from '@/i18n';
 import { Dialog } from '@/components/ui/dialog';
 import { DialogShell } from '@/components/ui/dialog-shell';
@@ -6,17 +7,30 @@ import { appShellMessages } from './AppShell.messages';
 export interface AboutDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The control that opened the dialog; it gets focus back on close (the dialog has no Trigger of its own). */
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }
 
 const REPOSITORY_URL = 'https://github.com/nrosier/walley';
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
-/** About Walley: name, one-line description, version, copyright, MIT licence and the project link. */
-export function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
+/** About Walley (no form field, so initial focus stays on the dialog container): name, one-line description, version, copyright, MIT licence and the project link. */
+export function AboutDialog({ open, onOpenChange, returnFocusRef }: AboutDialogProps) {
   const { t } = useT(appShellMessages);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogShell title={t('about.title')} description={t('about.description')}>
+      <DialogShell
+        title={t('about.title')}
+        description={t('about.description')}
+        onCloseAutoFocus={(event) => {
+          // Controlled dialog without a Trigger: Radix has nothing to return to, so focus goes back by hand.
+          const opener = returnFocusRef?.current;
+          if (opener != null) {
+            event.preventDefault();
+            opener.focus();
+          }
+        }}
+      >
         <p className="font-mono text-sm text-muted-foreground">{t('about.version', { version: __APP_VERSION__ })}</p>
         <p className="mt-3 text-sm text-foreground">{t('about.copyright')}</p>
         <p className="mt-1 text-sm text-muted-foreground">{t('about.license')}</p>
