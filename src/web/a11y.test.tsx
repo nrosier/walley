@@ -42,10 +42,22 @@ const unlabelled = (html: string): string[] => {
     .map((m) => m[0]);
 };
 
+/** Visible text of a markup fragment: characters outside tags, skipping inline svg. Only used to test for emptiness. */
+const textOf = (markup: string): string => {
+  let out = '';
+  let depth = 0;
+  for (const ch of markup) {
+    if (ch === '<') depth++;
+    else if (ch === '>' && depth > 0) depth--;
+    else if (depth === 0) out += ch;
+  }
+  return out.trim();
+};
+
 /** Every button has visible text or an aria-label. */
 const nameless = (html: string): string[] =>
   [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)]
-    .filter(([, a = '', inner = '']) => !/\saria-label="[^"]+"/.test(a) && inner.replace(/<svg[\s\S]*?<\/svg>/g, '').replace(/<[^>]+>/g, '').trim() === '')
+    .filter(([, a = '', inner = '']) => !/\saria-label="[^"]+"/.test(a) && textOf(inner) === '')
     .map((m) => m[0]);
 
 const ready = (): SyncStoreState => ({ status: 'ready', result: sample(), errorCode: null });
@@ -132,7 +144,7 @@ describe('badges do not rely on color alone', () => {
     const badges = tags(html, 'span').filter((s) => attr(s, 'data-variant') !== undefined);
     expect(badges.length).toBeGreaterThan(0);
     for (const m of html.matchAll(/<span[^>]*data-variant="[^"]+"[^>]*>([\s\S]*?)<\/span>/g)) {
-      expect((m[1] ?? '').replace(/<[^>]+>/g, '').trim()).not.toBe('');
+      expect(textOf(m[1] ?? '')).not.toBe('');
     }
   });
 });
