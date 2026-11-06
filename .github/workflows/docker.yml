@@ -42,6 +42,9 @@ jobs:
         run: |
           rev="$(docker inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' walley:smoke)"
           test "$rev" = "$GITHUB_SHA" || { echo "revision label '$rev' != $GITHUB_SHA"; exit 1; }
+      - name: Check the image ships no npm toolchain
+        run: |
+          docker run --rm --entrypoint sh walley:smoke -c 'for c in npm npx corepack yarn; do ! command -v "$c" || { echo "$c is present in the runtime image"; exit 1; }; done; test ! -e /usr/local/lib/node_modules/npm && test ! -e /usr/local/lib/node_modules/corepack'
       - name: Smoke test the image
         run: |
           docker run -d --name walley-smoke -p 127.0.0.1:3000:3000 -e APP_SECRET="$(openssl rand -base64 48)" -e PUBLIC_ORIGIN=http://127.0.0.1:3000 walley:smoke
