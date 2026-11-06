@@ -4,6 +4,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Security
+
+- The runtime Docker image no longer ships npm, npx or corepack. The vulnerable copies of undici, ip-address, brace-expansion, minimatch, glob and postcss-selector-parser flagged by HarborGate lived inside npm's own bundled modules in the Node base image, and Walley never uses them at run time. If you ran npm inside the container, use your own image or `docker run` another image instead.
+
 ### Fixed
 
 - Keyboard focus (issue 58 walkthrough): the About dialog and the Create in Actual Budget / Create in Wallos modals now return focus to the control that opened them, and the Create modals start on their first field. Run Sync Check, Test Connection, Load budgets and the Save buttons stay focused while busy (they are `aria-disabled` instead of `disabled`), and Load budgets announces how many budgets loaded. After Confirm on the verify-email page and after Ignore Diff, focus moves to the result or the row instead of the page body. Failed sign-in marks the login fields invalid and points them at the error.
