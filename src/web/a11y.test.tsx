@@ -15,6 +15,23 @@ import detailsSrc from '@/components/dashboard/SyncItemDetailsDialog.tsx?raw';
 import createActualSrc from '@/components/dashboard/CreateActualModal.tsx?raw';
 import createWallosSrc from '@/components/dashboard/CreateWallosModal.tsx?raw';
 import frameSrc from '@/components/dashboard/CreateModalFrame.tsx?raw';
+import aboutSrc from '@/components/AboutDialog.tsx?raw';
+import appShellSrc from '@/components/AppShell.tsx?raw';
+import itemRowSrc from '@/components/dashboard/ItemRow.tsx?raw';
+import pairListSrc from '@/components/dashboard/PairList.tsx?raw';
+import buttonSrc from '@/components/ui/button.tsx?raw';
+import settingsCardSrc from '@/components/settings/SettingsCard.tsx?raw';
+import wallosSettingsSrc from '@/pages/WallosSettings.tsx?raw';
+import actualSettingsSrc from '@/pages/ActualSettings.tsx?raw';
+import matchingSettingsSrc from '@/pages/MatchingSettings.tsx?raw';
+import verifySrc from '@/pages/VerifyEmailPage.tsx?raw';
+import loginSrc from '@/pages/LoginPage.tsx?raw';
+import dashboardSrc from '@/pages/SyncDashboard.tsx?raw';
+import toolbarSrc from '@/components/dashboard/Toolbar.tsx?raw';
+import { ActualSettingsView } from '@/pages/ActualSettings';
+import { WallosSettingsView } from '@/pages/WallosSettings';
+import { Toolbar } from '@/components/dashboard/Toolbar';
+import { VerifyEmailView } from '@/pages/VerifyEmailPage';
 import shellSrc from '@/components/ui/dialog-shell.tsx?raw';
 import dialogSrc from '@/components/ui/dialog.tsx?raw';
 
@@ -212,5 +229,104 @@ describe('modal focus handling', () => {
         expect(m[0]).toContain('aria-hidden');
       }
     }
+  });
+});
+
+// Issue #58 keyboard walkthrough fixes. Markup and source checks only: that focus really lands where the
+// comments say needs a browser, so these prove the wiring, not the runtime focus position.
+describe('focus is kept while a control is busy', () => {
+  it('Run Sync Check is aria-disabled, not disabled, while running', () => {
+    const html = render(<Toolbar query="" running />);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"/);
+    expect(html).not.toMatch(/<button[^>]*\sdisabled=""/);
+    expect(toolbarSrc).toMatch(/if \(!props\.running\) props\.onRun/);
+  });
+
+  it('Test Connection is aria-disabled while testing and the handler is guarded', () => {
+    const html = render(<WallosSettingsView url="" apiKey="" hasKey={false} test={{ kind: 'testing' }} />);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Testing/);
+    expect(html).not.toMatch(/<button[^>]*\sdisabled=""[^>]*>Testing/);
+    expect(wallosSettingsSrc).toMatch(/test\.kind !== 'testing'\) props\.onTest/);
+  });
+
+  it('Load budgets and Save are aria-disabled while busy and announce through the status region', () => {
+    const base = { url: '', password: '', syncKey: '', clearSyncKey: false, hasPassword: false, hasSyncKey: false, budgetId: null, budgets: null };
+    const html = render(<ActualSettingsView {...base} status={{ kind: 'busy', text: 'loadingBudgets' }} />);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Load budgets/);
+    expect(html).not.toMatch(/<button[^>]*\sdisabled=""/);
+    expect(html).toMatch(/role="status"[^>]*>Loading budgets/);
+    const done = render(<ActualSettingsView {...base} budgets={[{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }]} status={{ kind: 'ok', text: 'budgetsLoaded', count: 2 }} />);
+    expect(done).toMatch(/role="status"[^>]*>2 budgets loaded/);
+    const empty = render(<ActualSettingsView {...base} budgets={[]} status={{ kind: 'ok', text: 'noBudgets' }} />);
+    expect(empty).toMatch(/role="status"[^>]*>No budgets on this server/);
+  });
+
+  it('the shared Save button and every settings submit handler ignore a busy state instead of disabling', () => {
+    expect(settingsCardSrc).toContain('aria-disabled={busy || undefined}');
+    expect(settingsCardSrc).not.toMatch(/[^-]disabled=\{busy/);
+    expect(wallosSettingsSrc).toMatch(/props\.saving === true\) return/);
+    expect(actualSettingsSrc).toMatch(/if \(busy\) return/);
+    expect(matchingSettingsSrc).toMatch(/props\.status === 'saving'\) return/);
+  });
+
+  it('Confirm email stays focusable while verifying and the result takes focus when it replaces the form', () => {
+    const verifying = render(<VerifyEmailView state={{ kind: 'verifying' }} />);
+    expect(verifying).toMatch(/<button type="submit" aria-disabled="true"/);
+    expect(render(<VerifyEmailView state={{ kind: 'success' }} />)).toMatch(/tabindex="-1"/);
+    expect(verifySrc).toMatch(/resultRef\.current\?\.focus\(\)/);
+  });
+});
+
+describe('focus return after closing', () => {
+  it('the About dialog hands focus back to the footer About button', () => {
+    expect(aboutSrc).toContain('onCloseAutoFocus');
+    expect(aboutSrc).toContain('returnFocusRef');
+    expect(appShellSrc).toMatch(/ref=\{aboutButtonRef\}/);
+    expect(appShellSrc).toMatch(/returnFocusRef=\{aboutButtonRef\}/);
+  });
+
+  it('both create modals share a frame that restores focus, with the search box as the fallback', () => {
+    expect(frameSrc).toContain('onCloseAutoFocus');
+    expect(frameSrc).toContain('input[type="search"]');
+    expect(createActualSrc).toContain('returnFocus={props.returnFocus}');
+    expect(createWallosSrc).toContain('returnFocus={props.returnFocus}');
+    expect(itemRowSrc).toContain('ref={createRef}');
+    expect(itemRowSrc).toContain('returnFocus={returnToCreate}');
+  });
+
+  it('closing Review after Ignore Diff falls back to the pair row details button', () => {
+    expect(diffSrc).toContain('data-linked-match');
+    expect(pairListSrc).toContain('data-linked-match');
+    expect(diffSrc).toContain('[data-details-for]');
+  });
+});
+
+describe('focus ring and motion', () => {
+  it('the button does not transition outline-color from its initial white', () => {
+    // transition-colors includes outline-color. Without a base outline colour the ring transitions from the inherited
+    // currentColor (white on primary) to --ring, so it reads white for the first ~150ms. The base class sets
+    // outline-ring so there is nothing to transition from.
+    expect(buttonSrc).toContain('outline-ring focus-visible');
+    expect(dialogSrc).toContain('transition-colors outline-ring');
+  });
+
+  it('spinner and skeleton animations are off under reduced motion', () => {
+    expect(toolbarSrc).toContain('animate-spin motion-reduce:animate-none');
+    for (const m of dashboardSrc.matchAll(/animate-pulse[^"]*/g)) expect(m[0]).toContain('motion-reduce:animate-none');
+    expect(dashboardSrc).toContain('animate-pulse');
+  });
+});
+
+describe('first-field focus and login errors', () => {
+  it('create forms put initial focus on the first field', () => {
+    expect(createActualSrc).toMatch(/autoFocus\s+type="text"/);
+    expect(createWallosSrc).toMatch(/autoFocus\s+type="text"/);
+    expect(aboutSrc).not.toContain('autoFocus');
+  });
+
+  it('login inputs point at the error and are marked invalid on a failed sign-in', () => {
+    expect(loginSrc.match(/aria-invalid=\{failure !== null/g)?.length).toBe(3);
+    expect(loginSrc.match(/aria-describedby=\{failure !== null \? failureId/g)?.length).toBe(3);
+    expect(loginSrc).toContain('<div id={failureId}>');
   });
 });
