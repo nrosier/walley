@@ -116,7 +116,7 @@ NODE_ENV=production npm start
 
 In production Walley reads `.env` only. Set `PUBLIC_ORIGIN` to the address users open, not a local one.
 
-The `Dockerfile` builds the app with `npm run build` and runs `node dist/server/index.js` in a Node 24 image. The image sets `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=3000`, `DATABASE_PATH=/data/walley.db` and `DATA_DIR=/data`. Keep `/data` on persistent storage, because it holds the database and the per-user Actual Budget data.
+The `Dockerfile` builds the app with `npm run build` and runs `node dist/server/index.js` in a Node 26 image. The image sets `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=3000`, `DATABASE_PATH=/data/walley.db` and `DATA_DIR=/data`. Keep `/data` on persistent storage, because it holds the database and the per-user Actual Budget data.
 
 #### Verify the image
 
@@ -138,7 +138,19 @@ cosign verify \
   ghcr.io/nrosier/walley:edge
 ```
 
-A successful check prints the verified claims as JSON, including the issuer (`https://token.actions.githubusercontent.com`) and the subject (the identity above). The signature is stored in GHCR as an OCI referrer (a Sigstore bundle attached to the image digest). Verifying needs cosign v3 or newer.
+A successful check prints three lines about what cosign verified (the claims, the transparency log entry checked offline, and the code-signing certificate checked against the trusted CA certificates), followed by JSON that holds only the image reference and its manifest digest. For example:
+
+```text
+Verification for ghcr.io/nrosier/walley:0.4.2 --
+The following checks were performed on each of these signatures:
+  - The cosign claims were validated
+  - Existence of the claims in the transparency log was verified offline
+  - The code-signing certificate was verified using trusted certificate authority certificates
+
+[{"critical":{"identity":{"docker-reference":"ghcr.io/nrosier/walley"},"image":{"docker-manifest-digest":"sha256:64e816a743d89bda896b0e793f0235c5ec0cdb6ae54ad526aa66315c2583fc8b"},"type":"https://sigstore.dev/cosign/sign/v1"},"optional":{}}]
+```
+
+The output does not print the issuer or the subject. The `--certificate-identity` (or `--certificate-identity-regexp`) and `--certificate-oidc-issuer` flags are checked against the certificate, and the command fails if either does not match. The signature is stored in GHCR as an OCI referrer (a Sigstore bundle attached to the image digest).
 
 The tags `edge`, `latest`, `sha-*`, `X.Y` and `X` move, so verifying one checks only what it points to now. Verify by digest (`ghcr.io/nrosier/walley@sha256:...`) or by a full version tag such as `0.4.2`. Kubernetes users can enforce signatures with Kyverno or the Sigstore policy-controller; Walley ships no policy files.
 
