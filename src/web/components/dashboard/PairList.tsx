@@ -165,7 +165,7 @@ export function PairList(props: PairListProps) {
       // One menu per pair, on its first cell: the surviving side for an orphan, the Wallos cell otherwise.
       const menuHere = side === (r.wallos !== null ? 'wallos' : 'actual');
       return (
-        <div key={side} className={base}>
+        <div key={side} className={base} data-linked-match={r.link?.matchId}>
           <LinkedCell
             row={cell}
             side={side}

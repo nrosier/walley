@@ -135,9 +135,12 @@ export function DiffModal({ mismatch, baseCurrency, onClose, onIgnoreDiff, onOve
         onCloseAutoFocus={(event) => {
           const id = lastId.current;
           const review = id === null ? null : document.querySelector<HTMLElement>(`[data-review-for="${CSS.escape(id)}"]`);
-          if (review !== null) {
+          // After Ignore Diff the pair is Synced and the Review button is gone: use the row's name (details) button.
+          const details = id === null ? null : document.querySelector<HTMLElement>(`[data-linked-match="${CSS.escape(id)}"] [data-details-for]`);
+          const target = review ?? details;
+          if (target !== null) {
             event.preventDefault();
-            review.focus();
+            target.focus();
           }
         }}
         footer={

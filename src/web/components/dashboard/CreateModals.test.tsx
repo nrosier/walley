@@ -553,7 +553,7 @@ describe('close on success and toast notices (issue 110)', () => {
       expect(src).not.toMatch(/<Alert variant="success">/);
     }
     expect(actualSrc).toMatch(/onCreated=\{\(result\) => \{[^}]*props\.onClose\(\);/);
-    expect(wallosSrc).toContain('onCreated={props.onClose}');
+    expect(wallosSrc).toMatch(/onCreated=\{\(\) => \{ props\.onCreated\?\.\(\); props\.onClose\(\); \}\}/);
   });
 
   it('If the create returns payee or category notices, they are shown on the dashboard as a dismissible toast, not in a blocking modal', () => {

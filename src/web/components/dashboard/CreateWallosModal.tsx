@@ -86,6 +86,8 @@ export function CreateWallosForm({ prefill, scheduleId, matchId, fetchImpl, foot
         {t('wallos.name')}
         <input
           id={titleFieldId}
+          // The form mounts after the pre-fill loads; the first field takes focus (see CreateActualModal).
+          autoFocus
           type="text"
           required
           maxLength={200}
@@ -182,6 +184,10 @@ export interface CreateWallosModalProps {
   /** Recreate from an orphaned linked-pair row on the Sync Dashboard: the create call repoints this match. */
   matchId?: string;
   onClose: () => void;
+  /** Focus target on close, see CreateModalFrame. */
+  returnFocus?: () => HTMLElement | null;
+  /** Called before onClose when the create succeeds (not on cancel). */
+  onCreated?: () => void;
   fetchImpl?: typeof fetch;
 }
 
@@ -215,12 +221,13 @@ export function CreateWallosModal(props: CreateWallosModalProps) {
       title={t('wallos.title')}
       description={t('wallos.description', { name: props.scheduleName })}
       onClose={props.onClose}
+      returnFocus={props.returnFocus}
       footer={<div ref={setHost} className="flex w-full" />}
     >
       {load.status === 'loading' ? <p role="status">{t('loading')}</p> : null}
       {load.status === 'error' ? <Alert variant="error">{errorText(load.code)}</Alert> : null}
       {load.status === 'ready' ? (
-        <CreateWallosForm prefill={load.prefill} scheduleId={scheduleId} matchId={props.matchId} fetchImpl={fetchImpl} footerHost={host} onCancel={props.onClose} onCreated={props.onClose} />
+        <CreateWallosForm prefill={load.prefill} scheduleId={scheduleId} matchId={props.matchId} fetchImpl={fetchImpl} footerHost={host} onCancel={props.onClose} onCreated={() => { props.onCreated?.(); props.onClose(); }} />
       ) : (
         <CreateFooter
           formId={footerId}

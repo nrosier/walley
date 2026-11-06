@@ -232,7 +232,8 @@ describe('Matches and diff modal checklist (issue 113)', () => {
     const close = src.slice(src.indexOf('onCloseAutoFocus'), src.indexOf('footer={'));
     expect(close).toContain('[data-review-for=');
     expect(close).toContain('event.preventDefault()');
-    expect(close).toContain('review.focus()');
+    expect(close).toContain('target.focus()');
+    expect(close).toContain('[data-details-for]');
     // The Sync Dashboard renders the hook the modal looks for, on Mismatch rows only.
     expect(pairListSrc).toContain('data-review-for={review.matchId}');
     expect(pairListSrc).toContain("r.link.status === 'MISMATCH_DETECTED' && props.onReview !== undefined");
