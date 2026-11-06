@@ -118,6 +118,30 @@ In production Walley reads `.env` only. Set `PUBLIC_ORIGIN` to the address users
 
 The `Dockerfile` builds the app with `npm run build` and runs `node dist/server/index.js` in a Node 24 image. The image sets `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT=3000`, `DATABASE_PATH=/data/walley.db` and `DATA_DIR=/data`. Keep `/data` on persistent storage, because it holds the database and the per-user Actual Budget data.
 
+#### Verify the image
+
+Images on `ghcr.io/nrosier/walley` are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) keyless signing from the `docker.yml` workflow. There are no keys to manage: GitHub OIDC gives the job a short-lived certificate, and the signing proof is logged in the Rekor transparency log. To check an image, install cosign v3 or newer (older versions were not tested) and run this for a release (replace `vX.Y.Z` with the tag you run):
+
+```bash
+cosign verify \
+  --certificate-identity https://github.com/nrosier/walley/.github/workflows/docker.yml@refs/tags/vX.Y.Z \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/nrosier/walley:X.Y.Z
+```
+
+Images built from `main` (the `edge` tag) are signed with the ref `refs/heads/main`. To accept only this workflow on `main` or a version tag, use a regexp instead of the exact identity:
+
+```bash
+cosign verify \
+  --certificate-identity-regexp 'https://github\.com/nrosier/walley/\.github/workflows/docker\.yml@refs/(heads/main|tags/v.*)' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/nrosier/walley:edge
+```
+
+A successful check prints the verified claims as JSON, including the issuer (`https://token.actions.githubusercontent.com`) and the subject (the identity above). The signature is stored in GHCR as an OCI referrer (a Sigstore bundle attached to the image digest). Verifying needs cosign v3 or newer.
+
+The tags `edge`, `latest`, `sha-*`, `X.Y` and `X` move, so verifying one checks only what it points to now. Verify by digest (`ghcr.io/nrosier/walley@sha256:...`) or by a full version tag such as `0.4.1`. Kubernetes users can enforce signatures with Kyverno or the Sigstore policy-controller; Walley ships no policy files.
+
 ### Registration
 
 Registration has two switches, and both must be on before a new account can be created:
