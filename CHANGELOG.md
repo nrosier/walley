@@ -4,6 +4,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.4.3] - 2026-11-06
+
 ### Security
 
 - The runtime Docker image no longer ships npm, npx or corepack. The vulnerable copies of undici, ip-address, brace-expansion, minimatch, glob and postcss-selector-parser flagged by HarborGate lived inside npm's own bundled modules in the Node base image, and Walley never uses them at run time. If you ran npm inside the container, use your own image or `docker run` another image instead.
