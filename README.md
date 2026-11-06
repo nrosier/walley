@@ -120,7 +120,7 @@ The `Dockerfile` builds the app with `npm run build` and runs `node dist/server/
 
 #### Verify the image
 
-Images on `ghcr.io/nrosier/walley` are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) keyless signing from the `docker.yml` workflow. There are no keys to manage: GitHub OIDC gives the job a short-lived certificate, and the signing proof is logged in the Rekor transparency log. To check an image, install cosign and run this for a release (replace `vX.Y.Z` with the tag you run):
+Images on `ghcr.io/nrosier/walley` are signed with [cosign](https://docs.sigstore.dev/cosign/overview/) keyless signing from the `docker.yml` workflow. There are no keys to manage: GitHub OIDC gives the job a short-lived certificate, and the signing proof is logged in the Rekor transparency log. To check an image, install cosign v3 or newer (older versions were not tested) and run this for a release (replace `vX.Y.Z` with the tag you run):
 
 ```bash
 cosign verify \
@@ -129,16 +129,16 @@ cosign verify \
   ghcr.io/nrosier/walley:X.Y.Z
 ```
 
-Images built from `main` (the `edge` tag) are signed with the ref `refs/heads/main`. To accept any workflow ref in this repository, use a regexp instead of the exact identity:
+Images built from `main` (the `edge` tag) are signed with the ref `refs/heads/main`. To accept only this workflow on `main` or a version tag, use a regexp instead of the exact identity:
 
 ```bash
 cosign verify \
-  --certificate-identity-regexp 'https://github.com/nrosier/walley/.*' \
+  --certificate-identity-regexp 'https://github\.com/nrosier/walley/\.github/workflows/docker\.yml@refs/(heads/main|tags/v.*)' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/nrosier/walley:edge
 ```
 
-A successful check prints the verified claims as JSON, including the issuer (`https://token.actions.githubusercontent.com`) and the subject (the identity above). The signature is stored in GHCR as a `sha256-<hash>.sig` tag next to the image.
+A successful check prints the verified claims as JSON, including the issuer (`https://token.actions.githubusercontent.com`) and the subject (the identity above). The signature is stored in GHCR as an OCI referrer (a Sigstore bundle attached to the image digest). Verifying needs cosign v3 or newer.
 
 The tags `edge`, `latest`, `sha-*`, `X.Y` and `X` move, so verifying one checks only what it points to now. Verify by digest (`ghcr.io/nrosier/walley@sha256:...`) or by a full version tag such as `0.4.1`. Kubernetes users can enforce signatures with Kyverno or the Sigstore policy-controller; Walley ships no policy files.
 
