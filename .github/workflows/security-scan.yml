@@ -1,0 +1,198 @@
+name: Security scan
+# Report-only: findings go to the Security tab and, on the weekly run, to one
+# tracking issue. Nothing here gates a merge.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  scan:
+    name: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+      issues: write
+    env:
+      # Fork and Dependabot pull requests get a read-only token, so SARIF upload is skipped for them.
+      CAN_UPLOAD: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The checkout holds no node_modules, so the SBOM comes from package-lock.json
+      # (production dependencies only) and the actions referenced in .github/workflows.
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: .
+          syft-version: v1.57.0
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+          upload-artifact: false
+          dependency-snapshot: false
+
+      - name: Upload SBOM artifact
+        if: always() && hashFiles('sbom.cyclonedx.json') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cyclonedx.json
+          retention-days: 30
+
+      - name: Scan SBOM (Grype)
+        id: grype
+        # Runs even if the SBOM artifact upload failed, as long as Syft wrote the SBOM.
+        if: always() && hashFiles('sbom.cyclonedx.json') != ''
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          sbom: sbom.cyclonedx.json
+          grype-version: v0.121.2
+          fail-build: false
+          output-format: sarif
+          output-file: grype-results.sarif
+
+      - name: Scan repository files (Trivy fs)
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.2
+          # The default cache (github.workspace/.cache/trivy, about 1.6 GB) would land in the
+          # docker build context below, which .dockerignore does not exclude.
+          cache-dir: ${{ runner.temp }}/trivy-cache
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: '0'
+
+      - name: Build Docker image
+        if: always()
+        run: docker build -t walley:scan .
+
+      - name: Scan Docker image (Trivy image)
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.2
+          skip-setup-trivy: true
+          cache-dir: ${{ runner.temp }}/trivy-cache
+          scan-type: image
+          image-ref: walley:scan
+          scanners: vuln,secret
+          format: sarif
+          output: trivy-image-results.sarif
+          exit-code: '0'
+
+      - name: Upload Grype SARIF
+        if: ${{ !cancelled() && env.CAN_UPLOAD == 'true' && hashFiles('grype-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: grype-results.sarif
+          category: grype
+
+      - name: Upload Trivy fs SARIF
+        if: ${{ !cancelled() && env.CAN_UPLOAD == 'true' && hashFiles('trivy-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-fs
+
+      - name: Upload Trivy image SARIF
+        if: ${{ !cancelled() && env.CAN_UPLOAD == 'true' && hashFiles('trivy-image-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-image-results.sarif
+          category: trivy-image
+
+      - name: Open or update the High/Critical issue
+        if: always() && github.event_name == 'schedule'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const files = [
+              ['grype', 'grype-results.sarif'],
+              ['trivy-fs', 'trivy-results.sarif'],
+              ['trivy-image', 'trivy-image-results.sarif'],
+            ];
+            const findings = [];
+            for (const [tool, file] of files) {
+              if (!fs.existsSync(file)) continue;
+              let sarif;
+              try { sarif = JSON.parse(fs.readFileSync(file, 'utf8')); }
+              catch { core.warning(`${file} is not valid JSON`); continue; }
+              for (const run of sarif.runs ?? []) {
+                const rules = new Map();
+                for (const r of run.tool?.driver?.rules ?? []) rules.set(r.id, r);
+                for (const res of run.results ?? []) {
+                  const rule = rules.get(res.ruleId);
+                  const score = parseFloat(rule?.properties?.['security-severity'] ?? '');
+                  if (!(score >= 7.0)) continue;
+                  // Rule id, score and file path only: messages can carry matched secret text.
+                  findings.push({
+                    tool,
+                    id: res.ruleId,
+                    score,
+                    level: score >= 9.0 ? 'Critical' : 'High',
+                    uri: res.locations?.[0]?.physicalLocation?.artifactLocation?.uri ?? '',
+                  });
+                }
+              }
+            }
+            if (findings.length === 0) {
+              core.info('No High or Critical findings; no issue opened.');
+              return;
+            }
+            findings.sort((a, b) => b.score - a.score);
+            const critical = findings.filter((f) => f.level === 'Critical').length;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const rows = findings.slice(0, 100).map(
+              (f) => `| ${f.level} | ${f.score.toFixed(1)} | ${f.tool} | \`${f.id}\` | \`${f.uri}\` |`,
+            );
+            const body = [
+              `The weekly security scan found ${findings.length} High or Critical finding(s) (${critical} Critical).`,
+              '',
+              '| Severity | Score | Scanner | Rule | Location |',
+              '| --- | --- | --- | --- | --- |',
+              ...rows,
+              findings.length > 100 ? `\n${findings.length - 100} more not shown.` : '',
+              '',
+              `Details are in the Security tab (categories grype, trivy-fs, trivy-image). Run: ${runUrl}`,
+              '',
+              'This issue is updated by the scheduled scan. Nothing is blocked by it.',
+            ].join('\n');
+            const title = 'Security scan: High or Critical findings';
+            try {
+              await github.rest.issues.createLabel({
+                ...context.repo, name: 'security', color: 'b60205',
+                description: 'Security findings',
+              });
+            } catch (e) {
+              if (e.status !== 422) throw e;
+            }
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              ...context.repo, state: 'open', labels: 'security', per_page: 100,
+            });
+            const match = existing.find((i) => !i.pull_request && i.title === title);
+            if (match) {
+              await github.rest.issues.update({ ...context.repo, issue_number: match.number, body });
+              core.info(`Updated issue #${match.number}`);
+            } else {
+              const created = await github.rest.issues.create({
+                ...context.repo, title, body, labels: ['security'],
+              });
+              core.info(`Opened issue #${created.data.number}`);
+            }
