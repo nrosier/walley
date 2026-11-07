@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Nothing yet.
 
+## [0.4.4] - 2026-11-07
+
+### Added
+
+- Security scan workflow (issue 194, PR 195). On every push and pull request to `main`, on a weekly schedule (Mondays 04:00 UTC) and on manual dispatch, it builds a CycloneDX SBOM with Syft, scans it with Grype, and scans the repository files and the built Docker image with Trivy. SARIF results go to Code Scanning under the categories `grype`, `trivy-fs` and `trivy-image`, the SBOM is kept as a build artifact, and on the scheduled run a High or Critical finding opens or updates a GitHub issue labelled `security`. Report-only: it does not fail the build.
+
 ## [0.4.3] - 2026-11-06
 
 ### Security
