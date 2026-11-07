@@ -16,7 +16,7 @@ Walley syncs recurring subscriptions between Wallos and Actual Budget. Start wit
 | `drizzle.config.ts` | Drizzle Kit: schema path and migrations folder | Generating a migration |
 | `Dockerfile`, `.dockerignore`, `compose.example.yml` | Container image and the Traefik compose template (copy to `compose.yml`) | Docker build or deployment |
 | `renovate.json`, `.gitleaks.toml` | Dependency updates; the secret scan allowlist (by path, for one test vector) | Dependency bumps or a scanner finding |
-| `.github/workflows/` | CI (build, typecheck, lint, test, migration drift guard), Security (gitleaks, dependency review), Docker | A failing check |
+| `.github/workflows/` | CI (build, typecheck, lint, test, migration drift guard), Security (gitleaks, dependency review), Security scan (`security-scan.yml`: Syft SBOM, Grype, Trivy fs + image, SARIF to Code Scanning, weekly issue), Docker | A failing check |
 | `.claude/` | Subagents and skills for this repo | Choosing an agent or skill; see `.claude/MAP.md` |
 
 ## Source
