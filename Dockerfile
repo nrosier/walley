@@ -24,6 +24,9 @@ COPY --chown=node:node LICENSE ./
 USER root
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
     /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn*
+# The pinned base digest ships zlib 1.3.2-r1. Upgrading it fixes CVE-2026-4738
+# (issue 197). Drop this step once the base digest ships zlib >= 1.4-r0.
+RUN apk add --no-cache 'zlib>=1.4-r0'
 USER node
 ENV HOST=0.0.0.0 PORT=3000 DATABASE_PATH=/data/walley.db DATA_DIR=/data
 EXPOSE 3000

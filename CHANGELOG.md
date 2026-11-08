@@ -4,7 +4,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+- The runtime image upgrades Alpine `zlib` to 1.4-r0 or later, which fixes CVE-2026-4738 (issue 197).
 
 ## [0.4.4] - 2026-11-07
 
