@@ -4,7 +4,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- Sync Dashboard keyboard help (issue 170): a "Skip to linked pairs" link is the first dashboard stop when linked pairs are shown, screen readers hear the outcome of Link, Create, Ignore, Restore, Unlink, Recreate and Link to another item, and a visible hint explains the arrow keys.
+
+### Changed
+
+- On the Sync Dashboard each row cell is now a single tab stop. Left and Right arrow keys (and Home and End) move between that cell's actions (issue 170).
 
 ## [0.4.5] - 2026-11-08
 

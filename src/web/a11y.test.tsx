@@ -312,7 +312,7 @@ describe('focus return after closing', () => {
     expect(relinkSrc).toContain('onCloseAutoFocus');
     expect(relinkSrc).toContain('props.returnFocus');
     expect(dashboardSrc.match(/returnFocus=\{orphanReturnFocus\}/g)).toHaveLength(3);
-    expect(dashboardSrc).toContain('onCreated={orphanDone}');
+    expect(dashboardSrc.match(/onCreated=\{\(\) => \{\s+orphanDone\(\);/g)).toHaveLength(2);
     expect(dashboardSrc).toMatch(/onLinked=\{\(\) => \{\s+orphanDone\(\)/);
   });
 

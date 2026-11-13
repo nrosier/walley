@@ -11,13 +11,15 @@ export interface DisclosureProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   className?: string;
+  /** Id for the trigger button, so a skip link or aria-labelledby can reach it. */
+  triggerId?: string;
 }
 
 /** Collapsible section. The trigger is a button with aria-expanded and aria-controls (Enter and Space toggle). */
-export function Disclosure({ title, children, defaultOpen, open, onOpenChange, className }: DisclosureProps) {
+export function Disclosure({ title, children, defaultOpen, open, onOpenChange, className, triggerId }: DisclosureProps) {
   return (
     <Collapsible.Root defaultOpen={defaultOpen} open={open} onOpenChange={onOpenChange} className={className}>
-      <Collapsible.Trigger className="group inline-flex min-h-(--control-h) items-center gap-1.5 rounded-md text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+      <Collapsible.Trigger id={triggerId} className="group inline-flex min-h-(--control-h) items-center gap-1.5 rounded-md text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         <ChevronRight className={cn('size-4 transition-transform group-data-[state=open]:rotate-90')} aria-hidden="true" />
         {title}
       </Collapsible.Trigger>

@@ -4,6 +4,7 @@ import { Ellipsis } from 'lucide-react';
 import { cn } from 'cn';
 import { useT } from '@/i18n';
 import { controlsMessages } from './controls.messages';
+import { rovingItemProps } from './roving-toolbar';
 
 export interface MoreActionsItem {
   id: string;
@@ -20,18 +21,21 @@ export interface MoreActionsMenuProps {
   /** Names the row the menu belongs to, so each trigger has a unique accessible name ("More actions for Netflix"). */
   name?: string;
   className?: string;
+  /** Makes the trigger a stop of an enclosing `RovingToolbar` (sets `data-roving-item`). */
+  roving?: boolean;
   /** Opens the menu on first render. For tests. */
   defaultOpen?: boolean;
 }
 
 /** One-level dropdown behind a "more actions" button. Radix handles arrow keys, Escape and focus return. */
-export function MoreActionsMenu({ items, name, className, defaultOpen }: MoreActionsMenuProps) {
+export function MoreActionsMenu({ items, name, className, roving, defaultOpen }: MoreActionsMenuProps) {
   const { t } = useT(controlsMessages);
   const label = name === undefined ? t('moreActions') : t('moreActionsFor', { name });
   return (
     <DropdownMenu.Root defaultOpen={defaultOpen} modal={false}>
       <DropdownMenu.Trigger
         aria-label={label}
+        {...(roving === true ? rovingItemProps : {})}
         className={cn(
           'inline-flex min-h-(--control-h) min-w-(--control-h) items-center justify-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
           className,
