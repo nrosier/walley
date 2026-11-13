@@ -1,5 +1,5 @@
 import { SignJWT, exportJWK, generateKeyPair, type CryptoKey, type JWK } from "jose";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OidcConfig } from "../config.js";
 import { createOidcProvider, OidcError, type OidcFetch, type OidcFlow } from "./oidc.js";
 
@@ -255,6 +255,16 @@ describe("createOidcProvider", () => {
   });
 
   describe("iat", () => {
+    // The token is built in the test and its iat is checked later in finish(); freeze
+    // Date so both reads see the same second, however slow the machine is.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     const iatAt = (offsetSeconds: number) => Math.floor(Date.now() / 1000) + offsetSeconds;
 
     it("accepts an iat 30 seconds in the future", async () => {
