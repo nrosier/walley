@@ -28,7 +28,7 @@
   "dependencies": {
     "@actual-app/api": "26.11.0",
     "@fastify/cookie": "11.1.5",
-    "@fastify/static": "10.1.10",
+    "@fastify/static": "10.1.11",
     "better-sqlite3": "13.1.1",
     "class-variance-authority": "0.7.1",
     "cn": "0.5.2",
