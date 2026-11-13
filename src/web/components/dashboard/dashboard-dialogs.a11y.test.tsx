@@ -26,6 +26,8 @@ import { syncItemDetailsMessages } from './SyncItemDetailsDialog.messages';
 
 afterEach(cleanupDashboard);
 
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const fill = (text: string, vars: Record<string, string>): string => Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, v), text);
 const dash = (locale: Locale) => syncDashboardMessages[locale];
 const create = (locale: Locale) => createModalMessages[locale];
@@ -55,7 +57,7 @@ async function waitForCalls(mounted: { server: { calls: { method: string; url: s
 }
 
 /** The account label also holds its inline hint, so match on the leading word. */
-const accountLabel = (name: string): RegExp => new RegExp(`^${name}`);
+const accountLabel = (name: string): RegExp => new RegExp(`^${escapeRe(name)}`);
 
 const region = (): HTMLElement => document.querySelector('[data-slot="announcement-region"]') as HTMLElement;
 const regionText = (): string => region().textContent.trim();
@@ -165,7 +167,7 @@ describe('Item details dialog', () => {
 
 describe.each(['en', 'nl'] as const)('Create in Actual Budget (%s)', (locale) => {
   const m = create(locale).actual;
-  const labels = [m.name, new RegExp(`^${m.amount.replace(/[()]/g, '\\$&')}`), m.startDate, accountLabel(m.account), m.category];
+  const labels = [m.name, new RegExp(`^${escapeRe(m.amount)}`), m.startDate, accountLabel(m.account), m.category];
 
   it('focuses Cancel while the pre-fill loads and the first field after, with every field labelled', async () => {
     await mountDashboard({ locale });
@@ -179,7 +181,7 @@ describe.each(['en', 'nl'] as const)('Create in Actual Budget (%s)', (locale) =>
     await waitForFocus(within(dialog).getByLabelText(m.name));
     expect(within(dialog).getByLabelText<HTMLInputElement>(m.name).value).toBe('Hulu');
     // the payee choice is a labelled button, and the frequency a dt/dd pair
-    expect(within(dialog).getByRole('button', { name: new RegExp(m.payee) })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: new RegExp(escapeRe(m.payee)) })).toBeTruthy();
     expect(within(dialog).getByText(m.frequency).tagName).toBe('DT');
   });
 
@@ -248,7 +250,7 @@ describe.each(['en', 'nl'] as const)('Create in Actual Budget (%s)', (locale) =>
 
 describe.each(['en', 'nl'] as const)('Create in Wallos (%s)', (locale) => {
   const m = create(locale).wallos;
-  const labels = [m.name, new RegExp(`^${m.price}`), m.startDate, m.paymentMethod, m.category];
+  const labels = [m.name, new RegExp(`^${escapeRe(m.price)}`), m.startDate, m.paymentMethod, m.category];
 
   it('focuses Cancel while the pre-fill loads and the first field after, with every field labelled', async () => {
     await mountDashboard({ locale });
