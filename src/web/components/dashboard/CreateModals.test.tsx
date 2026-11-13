@@ -63,7 +63,7 @@ describe('CreateActualForm', () => {
     expect(html).toContain('Checking');
     expect(html).toContain('Fun');
     expect(html).not.toContain('Held:');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Create<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Create<\/button>/);
   });
   it('renders in nl', () => {
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" />, 'nl');
@@ -165,7 +165,7 @@ describe('CreateWallosForm', () => {
     expect(html).toContain('Every month');
     expect(html).toContain('2026-01-05');
     expect(html).not.toContain('Held:');
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Create<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*aria-disabled="true"[^>]*>Create<\/button>/);
     expect(html).toMatch(/<button[^>]*>Create<\/button>/);
   });
 });
@@ -468,7 +468,7 @@ describe('create modal layout (Actual fields editable, #135; Wallos fields edita
     const html = render(<CreateActualForm prefill={actual} wallosId="w1" onCancel={() => undefined} />);
     const footer = html.slice(html.indexOf('data-slot="create-footer"'));
     expect(footer).toContain('>Cancel</button>');
-    expect(footer).toMatch(/<button[^>]*disabled=""[^>]*>Create<\/button>/);
+    expect(footer).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Create<\/button>/);
     expect(footer).toContain('Create is off: An account is required.');
     expect(footer).toMatch(/aria-describedby="[^"]+"[^>]*>Create</);
     const beside = html.slice(html.indexOf('Choose an account'), html.indexOf('data-slot="create-footer"'));
@@ -515,7 +515,7 @@ describe('create modal layout (Actual fields editable, #135; Wallos fields edita
     for (const [prefill, text] of reasons) {
       const html = render(<CreateWallosForm prefill={prefill} scheduleId="s1" />);
       expect(html).toContain(text);
-      expect(html.slice(html.indexOf('data-slot="create-footer"'))).toMatch(/<button[^>]*disabled=""[^>]*>Create<\/button>/);
+      expect(html.slice(html.indexOf('data-slot="create-footer"'))).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Create<\/button>/);
     }
   });
   it('Wallos (#133): the submit builds its body from the form fields through buildWallosBody', () => {

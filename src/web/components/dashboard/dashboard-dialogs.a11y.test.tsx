@@ -191,12 +191,12 @@ describe.each(['en', 'nl'] as const)('Create in Actual Budget (%s)', (locale) =>
     const dialog = await expectCreateFrame({ locale, kind: 'actual', source: 'Hulu', fieldLabels: labels });
     await within(dialog).findByLabelText(m.name);
     const submit = within(dialog).getByRole('button', { name: create(locale).submit });
-    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    expect(submit.getAttribute('aria-disabled')).toBe('true');
     const reasonId = submit.getAttribute('aria-describedby');
     expect(reasonId).not.toBeNull();
     expect(document.getElementById(reasonId as string)?.textContent).toBe(fill(m.createDisabled, { reason: m.accountRequired }));
     fireEvent.change(within(dialog).getByLabelText(accountLabel(m.account)), { target: { value: 'acc1' } });
-    await waitFor(() => { expect((submit as HTMLButtonElement).disabled).toBe(false); });
+    await waitFor(() => { expect(submit.getAttribute('aria-disabled')).not.toBe('true'); });
     expect(submit.getAttribute('aria-describedby')).toBeNull();
   });
 
@@ -224,7 +224,7 @@ describe.each(['en', 'nl'] as const)('Create in Actual Budget (%s)', (locale) =>
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(await within(dialog).findByLabelText(accountLabel(m.account)), { target: { value: 'acc1' } });
     const submit = within(dialog).getByRole('button', { name: create(locale).submit });
-    await waitFor(() => { expect((submit as HTMLButtonElement).disabled).toBe(false); });
+    await waitFor(() => { expect(submit.getAttribute('aria-disabled')).not.toBe('true'); });
     fireEvent.click(submit);
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull(); });
     expect(mounted.server.calls.some((c) => c.url === '/api/integrations/actual-schedules' && c.method === 'POST')).toBe(true);
@@ -271,9 +271,9 @@ describe.each(['en', 'nl'] as const)('Create in Wallos (%s)', (locale) => {
     const dialog = await expectCreateFrame({ locale, kind: 'wallos', source: 'Gym', fieldLabels: labels });
     const title = await within(dialog).findByLabelText(m.name);
     const submit = within(dialog).getByRole('button', { name: create(locale).submit });
-    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    expect(submit.getAttribute('aria-disabled')).not.toBe('true');
     fireEvent.change(title, { target: { value: '' } });
-    await waitFor(() => { expect((submit as HTMLButtonElement).disabled).toBe(true); });
+    await waitFor(() => { expect(submit.getAttribute('aria-disabled')).toBe('true'); });
     const reasonId = submit.getAttribute('aria-describedby');
     expect(reasonId).not.toBeNull();
     expect(document.getElementById(reasonId as string)?.textContent).toBe(fill(m.createDisabled, { reason: m.titleInvalid }));
@@ -339,11 +339,11 @@ describe('Recreate in Actual Budget (orphaned_actual row)', () => {
     const dialog = await expectCreateFrame({ locale: 'en', kind: 'actual', source: 'Orphan', fieldLabels: labels });
     await waitForFocus(await within(dialog).findByLabelText(m.name));
     const submit = within(dialog).getByRole('button', { name: create('en').submit });
-    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    expect(submit.getAttribute('aria-disabled')).toBe('true');
     expect(document.getElementById(submit.getAttribute('aria-describedby') as string)?.textContent).toBe(fill(m.createDisabled, { reason: m.accountRequired }));
     expectFocusTrapped(dialog);
     fireEvent.change(within(dialog).getByLabelText(accountLabel(m.account)), { target: { value: 'acc1' } });
-    await waitFor(() => { expect((submit as HTMLButtonElement).disabled).toBe(false); });
+    await waitFor(() => { expect(submit.getAttribute('aria-disabled')).not.toBe('true'); });
     fireEvent.click(submit);
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull(); });
     const post = mounted.server.calls.find((c) => c.url === '/api/integrations/actual-schedules' && c.method === 'POST');
@@ -373,7 +373,7 @@ describe('Recreate in Actual Budget (orphaned_actual row)', () => {
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(await within(dialog).findByLabelText(accountLabel(create(locale).actual.account)), { target: { value: 'acc1' } });
     const submit = within(dialog).getByRole('button', { name: create(locale).submit });
-    await waitFor(() => { expect((submit as HTMLButtonElement).disabled).toBe(false); });
+    await waitFor(() => { expect(submit.getAttribute('aria-disabled')).not.toBe('true'); });
     fireEvent.click(submit);
     await waitFor(() => { expect(regionText()).toBe(fill(dash(locale).announce.createdInActual, { name: 'Orphan' })); }, { timeout: 2500 });
     expect(region().getAttribute('role')).toBe('status');
@@ -388,7 +388,7 @@ describe('Recreate in Actual Budget (orphaned_actual row)', () => {
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(await within(dialog).findByLabelText(accountLabel(m.account)), { target: { value: 'acc1' } });
     const submit = within(dialog).getByRole('button', { name: create('en').submit });
-    await waitFor(() => { expect((submit as HTMLButtonElement).disabled).toBe(false); });
+    await waitFor(() => { expect(submit.getAttribute('aria-disabled')).not.toBe('true'); });
     fireEvent.click(submit);
     await within(dialog).findByRole('alert');
     await waitForCalls(mounted, 'POST', /actual-schedules$/, 1);
@@ -516,7 +516,7 @@ describe.each(['en', 'nl'] as const)('Focus after Create from an unlinked row (%
       await within(dialog).findByLabelText(m.wallos.name);
     }
     const submit = within(dialog).getByRole('button', { name: m.submit });
-    await waitFor(() => { expect((submit as HTMLButtonElement).disabled).toBe(false); });
+    await waitFor(() => { expect(submit.getAttribute('aria-disabled')).not.toBe('true'); });
     fireEvent.click(submit);
     await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull(); });
     await waitForCalls(mounted, 'POST', side === 'wallos' ? /actual-schedules$/ : /wallos-subscriptions$/, 1);
@@ -585,7 +585,7 @@ describe('A failed Create from an unlinked row', () => {
     const dialog = await screen.findByRole('dialog');
     fireEvent.change(await within(dialog).findByLabelText(accountLabel(create('en').actual.account)), { target: { value: 'acc1' } });
     const submit = within(dialog).getByRole('button', { name: create('en').submit });
-    await waitFor(() => { expect((submit as HTMLButtonElement).disabled).toBe(false); });
+    await waitFor(() => { expect(submit.getAttribute('aria-disabled')).not.toBe('true'); });
     fireEvent.click(submit);
     await within(dialog).findByRole('alert');
     await waitForCalls(mounted, 'POST', /actual-schedules$/, 1);

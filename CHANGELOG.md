@@ -4,7 +4,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- Create modals keep keyboard focus on the Create button while a create is pending or has failed, instead of dropping it to the page (issue 215).
 
 ## [0.5.0] - 2026-11-13
 
