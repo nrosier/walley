@@ -242,6 +242,8 @@ const regionEl = (): HTMLElement => {
 const regionText = () => regionEl().textContent;
 const T = { timeout: 2500 };
 const settle = () => new Promise<void>((r) => setTimeout(r, 100));
+/** Resolves after the next animation frame. Frame callbacks run in order, so every earlier one (the page's focus move after an action) has run. */
+const frame = () => new Promise<void>((r) => { requestAnimationFrame(() => { r(); }); });
 
 async function openMenu(trigger: HTMLElement) {
   trigger.focus();
@@ -459,6 +461,9 @@ describe('announcements', () => {
     await mountPage();
     fireEvent.click(btn('Link Netflix to NETFLIX.COM'));
     await waitFor(() => { expect(regionText()).toBe('Linked Netflix to NETFLIX.COM.'); }, T);
+    // The page moves focus to the next row one frame after the action. Let that finish first: if it ran after the
+    // remount and the menu below had opened, the focus move would count as a click outside and close the menu.
+    await frame();
     // Leave the dashboard (e.g. to Settings) and come back: same module graph, so the announcer keeps its last message.
     cleanup();
     await mountPage();

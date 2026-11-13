@@ -113,8 +113,7 @@ async function ready(s: Scenario, locale: Locale, fail: readonly FailableEndpoin
 
 const posts = (mounted: MountedDashboard, endpoint: RegExp): number => mounted.server.calls.filter((c) => c.method === 'POST' && endpoint.test(c.url)).length;
 
-// The first mount of a worker pays the cold import of the dashboard; allow for it under a loaded full run.
-describe.each(['en', 'nl'] as const)('create footer focus (%s)', { timeout: 20000 }, (locale) => {
+describe.each(['en', 'nl'] as const)('create footer focus (%s)', (locale) => {
   describe.each(scenarios)('$name', (s) => {
     it('keeps focus on the aria-disabled Create button while the request is pending and ignores a second activation', async () => {
       const { dialog, mounted } = await ready(s, locale);

@@ -17,5 +17,7 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],
     environment: 'node',
     globals: false,
+    // Issue 216: the first test of a jsdom file that mounts the dashboard pays a cold dynamic import, which exceeds 5 s under load.
+    testTimeout: 20000,
   },
 });
