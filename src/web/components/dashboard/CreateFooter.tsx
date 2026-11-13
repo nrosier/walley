@@ -21,6 +21,7 @@ export interface CreateFooterProps {
 
 /** Cancel and Create together, with the reason Create is disabled. Rendered into the modal's pinned footer when `host` is given. */
 export function CreateFooter({ formId, cancelLabel, submitLabel, onCancel, reason, busy = false, host, reasonId }: CreateFooterProps) {
+  const blocked = reason !== null || busy;
   const node = (
     <div data-slot="create-footer" className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
       {reason === null ? null : (
@@ -38,7 +39,14 @@ export function CreateFooter({ formId, cancelLabel, submitLabel, onCancel, reaso
           type="submit"
           form={formId}
           className="min-h-(--control-h)"
-          disabled={reason !== null || busy}
+          // aria-disabled, not disabled: a natively disabled button that has focus drops it to the body (while the
+          // request is pending, and when a failed create re-enables it). The click is cancelled here, and the forms'
+          // onSubmit guards the Enter-in-a-field path, so a blocked Create sends nothing.
+          aria-disabled={blocked}
+          aria-busy={busy && reason === null}
+          onClick={(e) => {
+            if (blocked) e.preventDefault();
+          }}
           aria-describedby={reason === null ? undefined : reasonId}
         >
           {submitLabel}
