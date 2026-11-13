@@ -4,6 +4,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.0] - 2026-11-13
+
 ### Added
 
 - Sync Dashboard keyboard help (issue 170): a "Skip to linked pairs" link is the first dashboard stop when linked pairs are shown, screen readers hear the outcome of Link, Create, Ignore, Restore, Unlink, Recreate and Link to another item, and a visible hint explains the arrow keys.
@@ -11,6 +15,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - On the Sync Dashboard each row cell is now a single tab stop. Left and Right arrow keys (and Home and End) move between that cell's actions (issue 170).
+- After a successful Create in Actual Budget or Create in Wallos, focus moves to the primary action of the next row on that side (or the previous one), instead of the search box. The search box is used only when no other row is left (issue 58).
+- The About dialog, the Create modals, the Link dialog, the Unlink confirmation and the Recreate and diff modals are covered by rendered accessibility tests for focus, labels and keyboard use (issue 58).
+- Dependency updates: better-sqlite3 13.1.1, nodemailer 10.5.0, lucide-react 1.72.0, tailwindcss and @tailwindcss/vite 4.3.5, vite 8.3.8, jsdom 31.0.1, @vitejs/plugin-react 6.3.0, typescript-eslint 8.72.2, concurrently 10.0.7 and jose 6.2.17, plus a newer Node 26 Alpine base image digest. No user-visible change is expected.
 
 ## [0.4.5] - 2026-11-08
 
