@@ -4,7 +4,7 @@ import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
 import { announce } from '@/lib/announcer';
 import { cycleLabel } from '@/lib/billing-cycle-label';
-import { type RowModel, type Side } from '@/lib/sync-check';
+import { nextRowId, type RowModel, type Side } from '@/lib/sync-check';
 import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
 import { StatusBadge } from '../StatusBadge';
 import { Alert } from '../ui/alert';
@@ -56,23 +56,34 @@ export function ItemRow(props: ItemRowProps) {
   const { t, locale } = useT(syncDashboardMessages);
   const [creating, setCreating] = useState(false);
   const createRef = useRef<HTMLButtonElement>(null);
-  const rowEl = useRef<HTMLElement | null>(null);
-  const createdRef = useRef(false);
+  /**
+   * The row to focus once a create succeeds, fixed when the modal opens (null: no other unlinked row on this
+   * side). It cannot be read at success time: the sync re-run has already put this item's new LINKED cell,
+   * with the same `data-side` and `data-row-id`, first in its side of the DOM.
+   */
+  const neighbour = useRef<string | null>(null);
+  const created = useRef(false);
+  /** The row after this one among the unlinked rows of this side, else the one before it (like `nextRowId`). */
+  const neighbourOf = (): string | null => {
+    const ids = Array.from(document.querySelectorAll<HTMLElement>(`[data-side="${side}"][data-row-id]:not([data-linked])`)).map((el) => el.dataset.rowId ?? '');
+    return nextRowId(ids, row.id);
+  };
   /**
    * Focus target when a create modal closes. After a successful create the row is about to be removed by the
-   * sync re-run, so focus goes to the next row's first control (its primary action). After a cancel, or a
-   * failed create, it goes back to this row's Create button. Null sends focus to the search box.
+   * sync re-run, so focus goes to the primary action of the row that followed it, chosen like Link, Ignore and
+   * Restore choose it (next, else previous). With no other row, null sends focus to the search box. After a
+   * cancel, or a failed create, it goes back to this row's Create button.
    */
   const returnToCreate = (): HTMLElement | null => {
-    if (createdRef.current) {
-      const next = rowEl.current?.nextElementSibling;
-      if (next?.hasAttribute('data-row-id') !== true) return null;
-      return next.querySelector<HTMLElement>('button');
+    if (created.current) {
+      if (neighbour.current === null) return null;
+      const next = document.querySelector<HTMLElement>(`[data-side="${side}"][data-row-id="${CSS.escape(neighbour.current)}"]:not([data-linked])`);
+      return next?.querySelector<HTMLElement>('[data-roving-item]:not([disabled])') ?? next ?? null;
     }
     return createRef.current?.isConnected === true ? createRef.current : null;
   };
   const onCreated = () => {
-    createdRef.current = true;
+    created.current = true;
     announce(t(side === 'wallos' ? 'announce.createdInActual' : 'announce.createdInWallos', { name: row.name }));
   };
   const mine = props.candidates
@@ -125,9 +136,6 @@ export function ItemRow(props: ItemRowProps) {
   const Tag = props.cell === true ? 'div' : 'li';
   return (
     <Tag
-      ref={(el: HTMLElement | null) => {
-        rowEl.current = el;
-      }}
       data-row-id={row.id}
       data-side={side}
       tabIndex={-1}
@@ -180,6 +188,10 @@ export function ItemRow(props: ItemRowProps) {
             {...rovingItemProps}
             aria-label={t(side === 'wallos' ? 'row.createInActualNamed' : 'row.createInWallosNamed', { name: row.name })}
             onClick={() => {
+              // A fresh create: forget an earlier success so Cancel returns to this button, and pick the
+              // neighbour now, before a sync re-run changes the DOM.
+              created.current = false;
+              neighbour.current = neighbourOf();
               setCreating(true);
             }}
           >
