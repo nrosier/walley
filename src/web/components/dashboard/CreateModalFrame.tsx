@@ -8,7 +8,8 @@ export interface CreateModalFrameProps {
   onClose: () => void;
   /**
    * Where focus goes when the modal closes: the control that opened it, or null when that control is gone
-   * (a successful create usually removes the row). Null falls back to the dashboard search box.
+   * (a successful create usually removes the row; ItemRow then returns the next or previous row). Null falls
+   * back to the dashboard search box.
    */
   returnFocus?: () => HTMLElement | null;
   /** Pinned footer. */
@@ -22,9 +23,9 @@ export interface CreateModalFrameProps {
  *
  * Focus on close: Radix would return focus to whatever was focused when the modal opened. That is the row's
  * Create button, which is unmounted when the row goes, so focus fell to the body. We move it explicitly.
- * Choice: back to the Create button while the row exists (cancel, or a failed create); the search box once the
- * row is gone (a successful create). The search box is the stable landmark, because the next row's position
- * depends on the list order after a sync re-run.
+ * Choice: back to the Create button while the row exists (cancel, or a failed create); the next row's primary
+ * action once the row is gone (a successful create), like Link, Ignore and Restore; the search box only when
+ * no other row is left. The caller picks that row when the modal opens, before the sync re-run changes the DOM.
  */
 export function CreateModalFrame({ title, description, onClose, returnFocus, footer, children }: CreateModalFrameProps) {
   return (
