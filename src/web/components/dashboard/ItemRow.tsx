@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import type { SyncCandidate } from '../../../lib/sync-check-types';
 import { formatMoney } from '../../../lib/format-money';
 import { useT } from '@/i18n';
+import { announce } from '@/lib/announcer';
 import { cycleLabel } from '@/lib/billing-cycle-label';
 import { type RowModel, type Side } from '@/lib/sync-check';
 import { syncDashboardMessages } from '@/pages/SyncDashboard.messages';
@@ -11,8 +12,12 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Disclosure } from '../ui/disclosure';
 import { MoreActionsMenu, type MoreActionsItem } from '../ui/more-actions-menu';
+import { RovingToolbar, rovingItemProps } from '../ui/roving-toolbar';
 import { CreateActualModal } from './CreateActualModal';
 import { CreateWallosModal } from './CreateWallosModal';
+
+/** Id of the visible arrow-key hint line on the dashboard; every row toolbar is described by it. */
+export const ROW_HINT_ID = 'row-arrow-hint';
 
 export interface ItemRowProps {
   row: RowModel;
@@ -68,6 +73,7 @@ export function ItemRow(props: ItemRowProps) {
   };
   const onCreated = () => {
     createdRef.current = true;
+    announce(t(side === 'wallos' ? 'announce.createdInActual' : 'announce.createdInWallos', { name: row.name }));
   };
   const mine = props.candidates
     .filter((c) => (side === 'wallos' ? c.wallosId === row.id : c.actualScheduleId === row.id))
@@ -127,7 +133,7 @@ export function ItemRow(props: ItemRowProps) {
       tabIndex={-1}
       className={`${props.cell === true ? 'h-full' : 'border-b last:border-b-0'} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring`}
     >
-      <div className={`flex items-center gap-x-3 ${CELL}`}>
+      <RovingToolbar aria-label={t('row.actionsFor', { name: row.name })} aria-describedby={ROW_HINT_ID} className={`flex items-center gap-x-3 ${CELL}`}>
         <div className="min-w-0 flex-1">
           <span className="block truncate font-medium" title={row.name}>
             {row.name}
@@ -157,6 +163,7 @@ export function ItemRow(props: ItemRowProps) {
             variant="outline"
             className={ACTION}
             disabled={busy}
+            {...rovingItemProps}
             aria-label={t('row.linkNamed', { name: row.name, other: otherName(best) })}
             onClick={() => props.onLink?.(best.wallosId, best.actualScheduleId, side)}
           >
@@ -170,6 +177,7 @@ export function ItemRow(props: ItemRowProps) {
             variant="outline"
             className={ACTION}
             disabled={busy}
+            {...rovingItemProps}
             aria-label={t(side === 'wallos' ? 'row.createInActualNamed' : 'row.createInWallosNamed', { name: row.name })}
             onClick={() => {
               setCreating(true);
@@ -178,8 +186,8 @@ export function ItemRow(props: ItemRowProps) {
             {props.createLabel}
           </Button>
         )}
-        {menu.length > 0 ? <MoreActionsMenu items={menu} name={row.name} /> : null}
-      </div>
+        {menu.length > 0 ? <MoreActionsMenu items={menu} name={row.name} roving /> : null}
+      </RovingToolbar>
       {creating && side === 'wallos' ? (
         <CreateActualModal
           wallosId={row.id}

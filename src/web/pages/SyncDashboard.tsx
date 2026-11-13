@@ -9,7 +9,8 @@ import { CreateWallosModal } from '@/components/dashboard/CreateWallosModal';
 import { unlinkDialogMessages } from '@/components/matches/UnlinkDialog.messages';
 import { NoticeToast } from '@/components/dashboard/NoticeToast';
 import { IgnoredSection } from '@/components/dashboard/ItemRow';
-import { PairList } from '@/components/dashboard/PairList';
+import { ROW_HINT_ID } from '@/components/dashboard/ItemRow';
+import { LINKED_TRIGGER_ID, PairList } from '@/components/dashboard/PairList';
 import { HealthStatus } from '@/components/HealthStatus';
 import { Toolbar } from '@/components/dashboard/Toolbar';
 import { Alert } from '@/components/ui/alert';
@@ -17,6 +18,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { useT } from '@/i18n';
+import { announce } from '@/lib/announcer';
+import { AnnouncementRegion } from '@/components/dashboard/AnnouncementRegion';
 import { buildPairRows, cellsOf } from '@/lib/pair-rows';
 import { followInApp } from '@/lib/route';
 import { failedSide, NOT_CONFIGURED_CODES } from '@/lib/sync-failure';
@@ -33,7 +36,7 @@ import {
 } from '@/lib/sync-check';
 import { performResolve } from '@/lib/resolve-mismatch';
 import type { ResolveAction } from '@/lib/matches.api';
-import type { SyncLinked, SyncMismatch } from '../../lib/sync-check-types';
+import type { SyncCheckResult, SyncLinked, SyncMismatch } from '../../lib/sync-check-types';
 import { syncDashboardMessages } from './SyncDashboard.messages';
 
 export interface SyncDashboardViewProps {
@@ -99,6 +102,8 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
   const side = failedSide(state.errorCode);
 
   let body;
+  let hasLinked = false;
+  let hasCells = false;
   if (result === null) {
     // Idle is only the moment before the load-time check starts, so it shows the same skeleton as loading.
     if (state.status === 'error') body = null;
@@ -108,9 +113,15 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
     const emptyText = filtering ? t('states.noMatches') : t('states.empty');
     const ignoredFor = (s: Side): RowModel[] => buildRows(result, s, props.query, true).filter((r) => r.ignored);
     const pairRows = buildPairRows(result, props.query);
+    // Same rule as PairList: the linked section hides below 768px on a pane where it has no cell.
+    hasLinked = pairRows.some((r) => r.kind === 'linked' && (pane === 'wallos' ? r.wallos : r.actual) !== null);
+    const ignoredWallos = ignoredFor('wallos');
+    const ignoredActual = ignoredFor('actual');
+    // Ignored rows have row toolbars too (inside the disclosure), so they count.
+    hasCells = pairRows.length > 0 || ignoredWallos.length + ignoredActual.length > 0;
     const wallosCount = cellsOf(pairRows, 'wallos').length;
     const actualCount = cellsOf(pairRows, 'actual').length;
-    const errorInIgnored = props.errorRowId != null && [...ignoredFor('wallos'), ...ignoredFor('actual')].some((r) => r.id === props.errorRowId);
+    const errorInIgnored = props.errorRowId != null && [...ignoredWallos, ...ignoredActual].some((r) => r.id === props.errorRowId);
     const ignoredCommon = {
       baseCurrency: result.baseCurrency,
       busyId: props.busyId,
@@ -172,7 +183,7 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
             side="wallos"
             title={t('columns.wallos')}
             createLabel={t('row.createInActual')}
-            rows={ignoredFor('wallos')}
+            rows={ignoredWallos}
             className={pane === 'wallos' ? '' : 'max-md:hidden'}
           />
           <IgnoredSection
@@ -180,7 +191,7 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
             side="actual"
             title={t('columns.actual')}
             createLabel={t('row.createInWallos')}
-            rows={ignoredFor('actual')}
+            rows={ignoredActual}
             className={pane === 'actual' ? '' : 'max-md:hidden'}
           />
         </div>
@@ -205,6 +216,18 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
       <h1 id="sync-title" className="mb-3 text-lg font-semibold">
         {t('title')}
       </h1>
+      {hasLinked ? (
+        <a
+          href={`#${LINKED_TRIGGER_ID}`}
+          onClick={(e) => {
+            e.preventDefault();
+            document.getElementById(LINKED_TRIGGER_ID)?.focus();
+          }}
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:inline-flex focus:min-h-(--control-h) focus:items-center focus:rounded-md focus:bg-primary focus:px-3 focus:text-sm focus:text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {t('row.skipToLinked')}
+        </a>
+      ) : null}
       <Toolbar query={props.query} running={running} onQueryChange={props.onQueryChange} onRun={props.onRun} />
       {state.status === 'loading' && result !== null ? (
         <p role="status" className="mb-2 text-xs text-muted">
@@ -235,7 +258,13 @@ export function SyncDashboardView(props: SyncDashboardViewProps) {
           {props.unlinkErrorMessage}
         </p>
       ) : null}
+      {hasCells ? (
+        <p id={ROW_HINT_ID} className="mb-2 text-xs text-muted">
+          {t('row.arrowHint')}
+        </p>
+      ) : null}
       {body}
+      <AnnouncementRegion />
       <HealthStatus />
     </section>
   );
@@ -309,13 +338,31 @@ export function SyncDashboard() {
     const name = row.wallosName ?? row.actualName ?? row.matchId;
     setUnlinkError(null);
     void performResolve(() => syncStore.getState().result, syncStore.setResult, row.matchId, 'unlink', syncStore.requestRun).then((outcome) => {
-      if (outcome.ok) return;
+      if (outcome.ok) {
+        announce(t('announce.unlinked', { name }));
+        return;
+      }
       const stale = outcome.code === 'invalid_state' || outcome.code === 'match_not_found';
       setUnlinkError(`${unlinkT('failed', { name })} ${stale ? unlinkT('stale') : errorText(outcome.code)}`);
       // The pair changed elsewhere: show the current state.
       if (stale) void syncStore.requestRun();
     });
   };
+
+  /** Names come from the check the action started on, since the success rewrites the result. */
+  const announceRowAction = useCallback(
+    (result: SyncCheckResult, side: Side, id: string, action: RowAction) => {
+      const nameOf = (s: Side, itemId: string) => buildRows(result, s, '', true).find((r) => r.id === itemId)?.name ?? itemId;
+      if (action.kind === 'link') {
+        announce(t('announce.linked', { name: nameOf('wallos', action.wallosId), other: nameOf('actual', action.actualScheduleId) }));
+      } else if (action.kind === 'ignore') {
+        announce(t('announce.ignored', { name: nameOf(side, id) }));
+      } else {
+        announce(t('announce.restored', { name: nameOf(side, id) }));
+      }
+    },
+    [t],
+  );
 
   const act = useCallback(
     (side: Side, id: string, action: RowAction) => {
@@ -332,6 +379,7 @@ export function SyncDashboard() {
         setBusyId(null);
         if (outcome.ok) {
           focusAfter(side, next);
+          announceRowAction(result, side, id, action);
         } else {
           const name = buildRows(result, side, '', true).find((r) => r.id === id)?.name ?? id;
           setFailed({ id, side, action, text: `${t('row.actionFailed', { name })} ${errorText(outcome.code)}` });
@@ -339,7 +387,7 @@ export function SyncDashboard() {
         }
       });
     },
-    [sync, query, t, errorText],
+    [sync, query, t, errorText, announceRowAction],
   );
 
   return (
@@ -387,7 +435,10 @@ export function SyncDashboard() {
         wallosName={orphanAction.row.wallosName ?? orphanAction.row.wallosId}
         matchId={orphanAction.row.matchId}
         returnFocus={orphanReturnFocus}
-        onCreated={orphanDone}
+        onCreated={() => {
+          orphanDone();
+          announce(t('announce.createdInActual', { name: orphanAction.row.wallosName ?? orphanAction.row.wallosId }));
+        }}
         onClose={() => { setOrphanAction(null); }}
       />
     ) : null}
@@ -397,7 +448,10 @@ export function SyncDashboard() {
         scheduleName={orphanAction.row.actualName ?? orphanAction.row.actualScheduleId}
         matchId={orphanAction.row.matchId}
         returnFocus={orphanReturnFocus}
-        onCreated={orphanDone}
+        onCreated={() => {
+          orphanDone();
+          announce(t('announce.createdInWallos', { name: orphanAction.row.actualName ?? orphanAction.row.actualScheduleId }));
+        }}
         onClose={() => { setOrphanAction(null); }}
       />
     ) : null}
@@ -413,6 +467,7 @@ export function SyncDashboard() {
         onClose={() => { setOrphanAction(null); }}
         onLinked={() => {
           orphanDone();
+          announce(t('announce.relinked', { name: (orphanAction.row.orphan === 'orphaned_actual' ? orphanAction.row.wallosName : orphanAction.row.actualName) ?? DASH }));
           void syncStore.requestRun();
         }}
       />

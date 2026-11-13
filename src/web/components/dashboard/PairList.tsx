@@ -12,9 +12,13 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Disclosure } from '../ui/disclosure';
 import { MoreActionsMenu, type MoreActionsItem } from '../ui/more-actions-menu';
-import { ItemRow } from './ItemRow';
+import { RovingToolbar, rovingItemProps } from '../ui/roving-toolbar';
+import { ItemRow, ROW_HINT_ID } from './ItemRow';
 import { SyncItemDetailsDialog } from './SyncItemDetailsDialog';
 import { syncItemDetailsMessages } from './SyncItemDetailsDialog.messages';
+
+/** Id of the linked group's Disclosure trigger: the skip link's target and the group's accessible name. */
+export const LINKED_TRIGGER_ID = 'linked-pairs-trigger';
 
 export interface PairListProps {
   rows: readonly PairRow[];
@@ -75,10 +79,19 @@ function LinkedCell({
   const { t, locale } = useT(syncDashboardMessages);
   const { t: tDetails } = useT(syncItemDetailsMessages);
   return (
-    <div data-row-id={row.id} data-side={side} data-linked="" tabIndex={-1} className="flex h-full items-center gap-x-3 px-3 py-1.5 text-sm">
+    <RovingToolbar
+      data-row-id={row.id}
+      data-side={side}
+      data-linked=""
+      tabIndex={-1}
+      aria-label={t('row.actionsFor', { name: row.name })}
+      aria-describedby={ROW_HINT_ID}
+      className="flex h-full items-center gap-x-3 px-3 py-1.5 text-sm"
+    >
       <button
         type="button"
         data-details-for={row.id}
+        {...rovingItemProps}
         aria-label={tDetails('openDetails', { name: row.name })}
         onClick={() => { onOpenDetails(side, row); }}
         className="min-w-0 flex-1 truncate rounded-sm text-left font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
@@ -99,6 +112,7 @@ function LinkedCell({
           variant="outline"
           className="min-h-(--control-h)"
           data-review-for={review.matchId}
+          {...rovingItemProps}
           aria-label={t('reviewLabel', { name: row.name })}
           onClick={() => { review.onReview(review.matchId); }}
         >
@@ -113,8 +127,8 @@ function LinkedCell({
         )}
         {differs ? <span className="sr-only"> {t('differs')}</span> : null}
       </span>
-      {actions !== null ? <MoreActionsMenu name={row.name} className="-my-1" items={actions} /> : null}
-    </div>
+      {actions !== null ? <MoreActionsMenu name={row.name} className="-my-1" items={actions} roving /> : null}
+    </RovingToolbar>
   );
 }
 
@@ -223,8 +237,14 @@ export function PairList(props: PairListProps) {
     if (rows.length === 0) return null;
     const onPane = rows.some((r) => (props.pane === 'wallos' ? r.wallos : r.actual) !== null);
     return (
-      <section key={kind} data-group={kind} className={`min-w-0 rounded-lg border bg-card ${onPane ? '' : 'max-md:hidden'}`}>
+      <section
+        key={kind}
+        data-group={kind}
+        {...(kind === 'linked' ? { 'aria-labelledby': LINKED_TRIGGER_ID } : {})}
+        className={`min-w-0 rounded-lg border bg-card ${onPane ? '' : 'max-md:hidden'}`}
+      >
         <Disclosure
+          {...(kind === 'linked' ? { triggerId: LINKED_TRIGGER_ID } : {})}
           className="px-3"
           title={t(`groups.${kind}`, { count: rows.length })}
           open={!folded.has(kind)}
