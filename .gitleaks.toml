@@ -13,3 +13,8 @@ rules = ["generic-api-key"]
 description = "Cache test fixture: fake credentials that prove the cache never stores secrets (not real keys)"
 paths = ['''src/server/cache/upstream-cache\.test\.ts$''']
 rules = ["generic-api-key"]
+
+[[allowlists]]
+description = "Fake sentinel strings the secret-leak tests assert never appear in a response (#223)"
+regexes = ['''-SENTINEL-[0-9a-f]{4}\b''']
+rules = ["generic-api-key"]
