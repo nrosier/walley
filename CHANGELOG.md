@@ -4,9 +4,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.1] - 2026-11-14
+
 ### Fixed
 
 - Create modals keep keyboard focus on the Create button while a create is pending or has failed, instead of dropping it to the page (issue 215).
+
+### Changed
+
+- The full test suite no longer flakes under load (issue 216).
+- Dependency updates: better-sqlite3 13.2.0, openid-client 6.9.0, lucide-react 1.73.0, @fastify/static 10.1.11 and eslint 10.15.0. No user-visible change is expected.
 
 ## [0.5.0] - 2026-11-13
 
