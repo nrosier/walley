@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Nothing yet.
 
+## [0.6.0] - 2026-11-14
+
+### Added
+
+- Currency differences in the diff modal (issue 223). For a subscription priced in a foreign currency, the modal now shows the Wallos price in its own currency, the rate and where the rate comes from (Wallos or your own override), and you can set or clear that subscription's rate override there. A new confirmed action, "Change Wallos currency to <budget currency>", sets the Wallos subscription's currency to the budget currency and its price to the Actual amount. It never writes to Actual, which has one currency per budget. It is refused when the budget currency is not in your Wallos currency list, and the pair stays a mismatch if other fields still differ.
+
+### Changed
+
+- In the diff modal the buttons and the rate field keep keyboard focus while a request is pending or after it fails, focus after Unlink moves to the next row instead of the page, and a currency code that is not an ISO code (for example `US$`) no longer crashes the modal (issue 223).
+- The session tests no longer race a slow directory create, and the secret scan ignores the fake sentinel strings used by the leak tests (issue 225). No user-visible change.
+
 ## [0.5.1] - 2026-11-14
 
 ### Fixed
