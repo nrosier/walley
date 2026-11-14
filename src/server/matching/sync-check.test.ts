@@ -48,6 +48,7 @@ function setup(subs: Sub[], schedules: Sched[], dates: { start_date: string | nu
       listCurrencies: async () => [
         { id: 1, code: 'EUR', rate: '1' },
         { id: 2, code: 'USD', rate: '2' },
+        { id: 3, code: 'JPY', rate: '160' },
       ],
     } as unknown as WallosClient,
     withActual: (_id, use) =>
@@ -505,6 +506,75 @@ describe('runSyncCheck', () => {
     const t = setup([sub(1, 'Netflix', '12.50', 99)], []);
     const res = await runSyncCheck(t.deps, t.userId);
     expect(res.unmappable).toEqual([{ side: 'wallos', id: '1', name: 'Netflix', reason: 'mapping_failed' }]);
+  });
+});
+
+// #223: hashes of an unchanged pair, captured by running the code before `source` existed. The
+// foreign pair (USD 25.00 at rate 2) converts to the same EUR -12.50, so both hashes are equal.
+const PINNED_HASH_BASE_PAIR = '7cbfd291a8a6ce218b2ade2abbe1a4588f6adb21dc20fa0cb799776404641188';
+const PINNED_HASH_FOREIGN_PAIR = '7cbfd291a8a6ce218b2ade2abbe1a4588f6adb21dc20fa0cb799776404641188';
+
+describe('#223 Wallos source currency on a mismatch', () => {
+  // A drifted Actual range forces a mismatch so the payload carries both sides.
+  const mismatchOf = async (s: Sub, override?: string) => {
+    const t = setup([s], [sched('a1', 'Netflix', { num1: -1400, num2: -1600 })]);
+    t.repo.insertMatch({ wallosId: String(s.id), actualScheduleId: 'a1', status: 'LINKED', lastKnownWallosHash: null, lastKnownActualHash: h('Netflix', -1250) });
+    if (override !== undefined) t.repo.upsertSubscriptionOverride(String(s.id), { rate: override, now: new Date(0) });
+    const res = await runSyncCheck(t.deps, t.userId);
+    expect(res.mismatches).toHaveLength(1);
+    return { t, res, mm: res.mismatches[0] };
+  };
+
+  it('carries the own currency, minor units, Wallos rate and source for a foreign subscription', async () => {
+    const { mm } = await mismatchOf(sub(1, 'Netflix', '25.00', 2));
+    expect(mm?.wallosFields.source).toEqual({ currencyCode: 'USD', priceCents: -2500, rate: 2, rateSource: 'wallos' });
+    expect(mm?.wallosFields.currency).toBe('EUR');
+    expect(mm?.wallosAmountCents).toBe(-1250);
+    expect(mm?.actualFields.source).toBeUndefined();
+  });
+
+  it('reports the override rate and rateSource override when the user has an override row', async () => {
+    const { mm } = await mismatchOf(sub(1, 'Netflix', '25.00', 2), '2.5');
+    expect(mm?.wallosFields.source).toEqual({ currencyCode: 'USD', priceCents: -2500, rate: 2.5, rateSource: 'override' });
+    expect(mm?.wallosAmountCents).toBe(-1000);
+  });
+
+  it('uses the 0-decimal minor units of JPY', async () => {
+    // JPY 2000 at rate 160 per EUR rate 1 is EUR 12.50.
+    const { mm } = await mismatchOf(sub(1, 'Netflix', '2000', 3));
+    expect(mm?.wallosFields.source).toEqual({ currencyCode: 'JPY', priceCents: -2000, rate: 160, rateSource: 'wallos' });
+    expect(mm?.wallosAmountCents).toBe(-1250);
+  });
+
+  it('omits source for a base-currency subscription, even with an override row', async () => {
+    const { mm } = await mismatchOf(sub(1, 'Netflix', '12.50', 1), '3');
+    expect(mm?.wallosFields).not.toHaveProperty('source');
+    expect(mm?.actualFields).not.toHaveProperty('source');
+  });
+
+  it("never reads another user's override and never puts a secret in the payload", async () => {
+    const { t, res } = await mismatchOf(sub(1, 'Netflix', '25.00', 2));
+    t.repo.upsertConfig({ wallosUrl: 'https://w.example', wallosApiKeyEnc: 'WALLOS-SECRET-KEY', actualUrl: 'https://a.example', actualPasswordEnc: 'ACTUAL-SECRET-PW' });
+    const otherId = makeUser(t.db);
+    createUserRepo(t.db, otherId).upsertSubscriptionOverride('1', { rate: '9', now: new Date(0) });
+    const again = await runSyncCheck(t.deps, t.userId);
+    expect(again.mismatches[0]?.wallosFields.source).toEqual(res.mismatches[0]?.wallosFields.source);
+    const json = JSON.stringify(again);
+    expect(json).not.toContain('WALLOS-SECRET-KEY');
+    expect(json).not.toContain('ACTUAL-SECRET-PW');
+  });
+
+  it('keeps the hash of an unchanged base and foreign pair byte-identical to the pinned value', async () => {
+    for (const [price, currency, pinned] of [['12.50', 1, PINNED_HASH_BASE_PAIR], ['25.00', 2, PINNED_HASH_FOREIGN_PAIR]] as const) {
+      const t = setup([sub(1, 'Netflix', price, currency)], [sched('a1', 'Netflix', -1250)]);
+      const m = t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED', lastKnownWallosHash: null, lastKnownActualHash: null });
+      expect((await runSyncCheck(t.deps, t.userId)).mismatches).toEqual([]);
+      expect(t.repo.getMatch(m.id)).toMatchObject({ status: 'LINKED', lastKnownWallosHash: pinned, lastKnownActualHash: pinned });
+      expect(h('Netflix', -1250)).toBe(pinned);
+      // A second check with the stored pinned hashes stays LINKED: no re-baseline.
+      expect((await runSyncCheck(t.deps, t.userId)).mismatches).toEqual([]);
+      expect(t.repo.getMatch(m.id)?.lastKnownWallosHash).toBe(pinned);
+    }
   });
 });
 

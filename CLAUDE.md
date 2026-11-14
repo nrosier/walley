@@ -105,6 +105,7 @@ Walley is a multi-user web application with a Node.js backend and React frontend
   - Compare current field values against stored hashes on manual sync trigger.
   - Set status to `MISMATCH_DETECTED` on drift.
   - Present diff modal with explicit options: `[Overwrite Wallos]`, `[Overwrite Actual]`, `[Ignore Diff]`, `[Unlink]`.
+    - Currency is not part of the compared-fields hash: both sides hash in the Actual base currency with the converted amount, so a Wallos rate change moves the amount, not the hash form. A foreign-currency Wallos side carries a display-only `source` (own currency, minor-unit price, rate, rate source) in the mismatch payload. The diff modal shows it, lets the user set or clear the per-subscription override rate, and offers `overwrite_wallos_currency` on `POST /api/matches/:id/resolve` (needs `confirm: true` and MISMATCH_DETECTED). That action sets the Wallos subscription's currency to the Actual budget currency and its price to the Actual amount, with a snapshot and server-computed hashes. If another compared field still differs, the match stays MISMATCH_DETECTED (200 `{ status: 'MISMATCH_DETECTED', outcome: 'currency_changed_other_fields_differ' }`). It never writes to Actual and never adds a currency to Wallos (400 `wallos_currency_missing`).
 
 ---
 

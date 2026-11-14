@@ -577,7 +577,7 @@ const CASES: Record<string, Case> = {
         status: NOT_FOUND,
         error: 'match_not_found',
       },
-      ...(['overwrite_wallos', 'overwrite_actual'] as const).map((action) => ({
+      ...(['overwrite_wallos', 'overwrite_actual', 'overwrite_wallos_currency'] as const).map((action) => ({
         method: 'POST' as const,
         url: `/api/matches/${m.mismatch.id}/resolve`,
         payload: { action, confirm: true },

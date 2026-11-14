@@ -123,7 +123,7 @@ describe.each(['en', 'nl'] as const)('Diff modal (%s)', (locale) => {
 });
 
 describe('Diff modal states', () => {
-  it('while a resolve is in flight: buttons are disabled, a status shows, and Escape does not dismiss', async () => {
+  it('while a resolve is in flight: buttons are aria-disabled and keep focus, a status shows, and Escape does not dismiss', async () => {
     const { mounted, dialog } = await openDiff();
     const hold = holdResolve();
     const ignore = screen.getByRole('button', { name: 'Ignore Diff' });
@@ -133,9 +133,10 @@ describe('Diff modal states', () => {
     expect(dialog.getAttribute('aria-busy')).toBe('true');
     expect(within(dialog).getByRole('status').textContent).toContain('Working...');
     for (const label of ['Ignore Diff', 'Overwrite Wallos', 'Overwrite Actual', 'Unlink']) {
-      expect(screen.getByRole<HTMLButtonElement>('button', { name: label }).disabled, label).toBe(true);
+      expect(screen.getByRole('button', { name: label }).getAttribute('aria-disabled'), label).toBe('true');
     }
-    expect(names(dialog)).toEqual(['Close']);
+    // aria-disabled buttons stay tabbable (that is what keeps focus on the activated one) and do nothing.
+    expect(document.activeElement).toBe(ignore);
     escape();
     fireEvent.click(dialog.querySelector('[data-slot="dialog-close"]') as Element);
     expect(dialog.isConnected).toBe(true);
@@ -154,7 +155,8 @@ describe('Diff modal states', () => {
     expect(dialog.contains(alert)).toBe(true);
     expect(alert.textContent).toContain('Could not update Adobe.');
     expect(alert.textContent).toMatch(/request failed/i);
-    await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Ignore Diff' }).disabled).toBe(false); });
+    await waitFor(() => { expect(screen.getByRole('button', { name: 'Ignore Diff' }).getAttribute('aria-disabled')).toBe('false'); });
+    expect(document.activeElement).toBe(ignore);
     expect(dialog.getAttribute('aria-busy')).toBe('false');
     expect(dialog.isConnected).toBe(true);
     expectDialogAccessibility(dialog, { name: 'Review differences', description: /Adobe \(Wallos\)/ });
@@ -241,6 +243,17 @@ describe.each(['en', 'nl'] as const)('Unlink confirmation inside the diff modal 
     click(screen.getByRole('button', { name: m.confirm }));
     await waitFor(() => { expect(resolveCalls(mounted)).toHaveLength(1); });
     expect(resolveCalls(mounted)[0]?.body).toEqual({ action: 'unlink', confirm: true });
+  });
+
+  it('after a successful Unlink focus is not on the body: it lands on a row of the Wallos side', async () => {
+    const { dialog } = await openDiff(locale);
+    await openConfirmation(dialog, m.unlink);
+    click(screen.getByRole('button', { name: m.confirm }));
+    await waitFor(() => { expect(document.querySelector('[role="dialog"]')).toBeNull(); });
+    await waitForFocus(() => document.activeElement === document.body ? null : document.activeElement);
+    expect(document.activeElement).not.toBe(document.body);
+    const active = document.activeElement as HTMLElement;
+    expect(active.closest('[data-side="wallos"][data-row-id]') ?? active.matches('input[type="search"]')).toBeTruthy();
   });
 });
 

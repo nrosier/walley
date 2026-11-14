@@ -3,7 +3,7 @@ import type { CreateDeps } from '../integrations/create.js';
 import { DEFAULT_TOLERANCE_PERCENT } from '../../lib/amount-match.js';
 import type { UpstreamCache } from '../cache/upstream-cache.js';
 import { hashMatchFields } from '../matching/hash.js';
-import { OverwriteReadbackError, overwriteActual, overwriteWallos } from '../matching/overwrite.js';
+import { OverwriteReadbackError, overwriteActual, overwriteWallos, overwriteWallosCurrency } from '../matching/overwrite.js';
 import { isCandidate, readCurrentSides } from '../matching/sync-check.js';
 import { sendFailure } from './integrations.js';
 
@@ -38,7 +38,8 @@ const ALREADY_MATCHED = { error: 'already_matched' } as const;
  * link route reads both sides through readCurrentSides, the other two read nothing remote.
  *
  * POST /api/matches/:id/resolve. `ignore_diff` and `unlink` write only Walley's own data.
- * `overwrite_wallos` and `overwrite_actual` write to the remote side (see matching/overwrite.ts):
+ * `overwrite_wallos`, `overwrite_actual` and `overwrite_wallos_currency` (#223, Wallos only: sets the
+ * subscription currency to the budget currency, never writes to Actual) write to the remote side (see matching/overwrite.ts):
  * they need `confirm: true` and a MISMATCH_DETECTED match, snapshot the target record first, and
  * store server-computed hashes read back after the write. Any other action answers 400
  * `unsupported_action` before anything is read or written. The match is looked up through the
@@ -68,7 +69,8 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
       action !== 'ignore_diff' &&
       action !== 'unlink' &&
       action !== 'overwrite_wallos' &&
-      action !== 'overwrite_actual'
+      action !== 'overwrite_actual' &&
+      action !== 'overwrite_wallos_currency'
     ) {
       return reply.code(400).send({ error: 'unsupported_action' });
     }
@@ -100,15 +102,24 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
         repo.updateMatch(id, { status: 'LINKED', lastKnownWallosHash: wallosHash, lastKnownActualHash: actualHash });
         return await reply.code(200).send({ status: 'LINKED' });
       }
-      if (action === 'overwrite_wallos' || action === 'overwrite_actual') {
+      if (action === 'overwrite_wallos' || action === 'overwrite_actual' || action === 'overwrite_wallos_currency') {
         if (match.status !== 'MISMATCH_DETECTED') {
           return await reply.code(400).send({ error: 'invalid_state' });
         }
-        const run = action === 'overwrite_wallos' ? overwriteWallos : overwriteActual;
+        const run =
+          action === 'overwrite_wallos'
+            ? overwriteWallos
+            : action === 'overwrite_wallos_currency'
+              ? overwriteWallosCurrency
+              : overwriteActual;
         const outcome = await run(opts.deps, request.auth.userId, match, new Date());
         if (outcome === 'no_change_needed') {
           // Nothing differed, so nothing was written and the match is still MISMATCH_DETECTED.
           return await reply.code(200).send({ status: 'MISMATCH_DETECTED', outcome: 'no_change_needed' });
+        }
+        if (outcome === 'currency_changed_other_fields_differ') {
+          // Currency and price were written, but another field still differs: the match is not re-baselined.
+          return await reply.code(200).send({ status: 'MISMATCH_DETECTED', outcome });
         }
         return await reply.code(200).send({ status: 'LINKED' });
       }

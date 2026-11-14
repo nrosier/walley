@@ -312,6 +312,10 @@ export function SyncDashboard() {
   const [reviewing, setReviewing] = useState<SyncMismatch | null>(null);
   const [working, setWorking] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  // Partial success: the Wallos currency was written but other fields still differ; the modal stays open to say so.
+  const [resolveNotice, setResolveNotice] = useState<string | null>(null);
+  // Row id (Wallos side) the Diff modal hands focus to after a successful Unlink; null: the search box.
+  const unlinkFocus = useRef<string | null>(null);
   const modalT = useT(diffModalMessages).t;
   const unlinkT = useT(unlinkDialogMessages).t;
 
@@ -319,17 +323,48 @@ export function SyncDashboard() {
     const name = reviewing?.wallosName ?? matchId;
     setWorking(true);
     setResolveError(null);
+    setResolveNotice(null);
+    // Unlink removes the pair, so the Review button the modal returns to is gone: remember the next linked row on
+    // the Wallos side now (before the optimistic removal) and move focus there once the modal has closed.
+    const before = sync.result;
+    unlinkFocus.current = null;
+    const wallosId = reviewing?.wallosId ?? null;
+    const nextLinked =
+      action === 'unlink' && before !== null && wallosId !== null
+        ? nextRowId(cellsOf(buildPairRows(before, query), 'wallos').map((r) => r.id), wallosId)
+        : null;
     void performResolve(() => syncStore.getState().result, syncStore.setResult, matchId, action, syncStore.requestRun).then((outcome) => {
       setWorking(false);
       if (outcome.ok) {
-        setReviewing(null);
+        if (outcome.partial === undefined) {
+          setReviewing(null);
+          unlinkFocus.current = action === 'unlink' ? nextLinked : null;
+          return;
+        }
+        // Written, but another field still differs: the refreshed check lists the pair again, so show that mismatch.
+        const next = syncStore.getState().result?.mismatches.find((m) => m.matchId === matchId) ?? null;
+        setReviewing(next);
+        if (next !== null) setResolveNotice(modalT('currencyChanged'));
         return;
       }
+      // currency_conversion_failed has a specific text only for the currency action; the others use the common one.
       const reason =
-        action.startsWith('overwrite_') && isOverwriteErrorCode(outcome.code)
-          ? modalT(`overwriteErrors.${outcome.code}`)
+        action.startsWith('overwrite_') && isOverwriteErrorCode(outcome.code) && (outcome.code !== 'currency_conversion_failed' || action === 'overwrite_wallos_currency')
+          ? modalT(`overwriteErrors.${outcome.code}`, { currency: sync.result?.baseCurrency ?? '' })
           : errorText(outcome.code);
       setResolveError(`${modalT('failed', { name })} ${reason}`);
+    });
+  };
+
+  /**
+   * The rate override was saved or cleared in the diff modal (#223). The server cannot tell the modal the new
+   * converted amount, so re-run the check (the same refresh a resolve does) and show the pair's fresh mismatch.
+   * If the pair no longer differs it has left the mismatch list, so the modal closes.
+   */
+  const rateChanged = (matchId: string) => {
+    setResolveNotice(null);
+    void syncStore.requestRun().then(() => {
+      setReviewing(syncStore.getState().result?.mismatches.find((m) => m.matchId === matchId) ?? null);
     });
   };
 
@@ -404,6 +439,7 @@ export function SyncDashboard() {
       onRelink={(row) => { openOrphan('relink', row); }}
       onReview={(id) => {
         setResolveError(null);
+        setResolveNotice(null);
         setReviewing(sync.result?.mismatches.find((m) => m.matchId === id) ?? null);
       }}
       onQueryChange={setQuery}
@@ -477,9 +513,16 @@ export function SyncDashboard() {
       baseCurrency={sync.result?.baseCurrency ?? ''}
       working={working}
       error={resolveError}
+      notice={resolveNotice}
       onClose={() => { setReviewing(null); }}
+      closeFocus={() => {
+        const id = unlinkFocus.current;
+        unlinkFocus.current = null;
+        return id === null ? null : document.querySelector<HTMLElement>(`[data-side="wallos"][data-row-id="${CSS.escape(id)}"]`);
+      }}
       onIgnoreDiff={(id) => { resolve(id, 'ignore_diff'); }}
       onOverwrite={resolve}
+      onRateChanged={rateChanged}
       onUnlink={(id) => { resolve(id, 'unlink'); }}
     />
     <NoticeToast />
