@@ -269,35 +269,67 @@ describe('withActualServer', () => {
 });
 
 describe('call timeout', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  /** Every session a test starts. The hook below waits for all of them before the DB is closed. */
+  const started: Promise<unknown>[] = [];
 
-  /** Runs real I/O (mkdir) and fake timers forward until `done` is true. */
-  async function tickUntil(done: () => boolean): Promise<void> {
-    for (let i = 0; i < 1000 && !done(); i += 1) {
+  const track = <T>(promise: Promise<T>): Promise<T> => {
+    started.push(promise.catch(() => undefined));
+    return promise;
+  };
+
+  /**
+   * Runs real I/O (mkdir) and fake timers forward until `done` is true. It waits by wall-clock
+   * time, not by a loop count, so a slow mkdir on a loaded CI machine only makes it wait longer.
+   * It throws, naming `what`, when the deadline passes: it never returns with `done` still false.
+   */
+  async function tickUntil(done: () => boolean, what: string, stepMs = 5): Promise<void> {
+    const deadline = Date.now() + 5000;
+    while (!done()) {
+      if (Date.now() > deadline) {
+        throw new Error(`Timed out waiting for ${what}`);
+      }
       await new Promise((resolve) => setImmediate(resolve));
-      await vi.advanceTimersByTimeAsync(5);
+      await vi.advanceTimersByTimeAsync(stepMs);
     }
   }
+
+  // Runs before the top-level afterEach, which closes the DB and removes the data dir. Every
+  // session this test started must be finished first, or a late one would run on a closed DB and
+  // leave a stale entry in the shared queue for the next test. Each loop moves the fake clock past
+  // the call timeout, so a call that is still hung is rejected and its session shuts down.
+  afterEach(async () => {
+    try {
+      if (started.length === 0) return;
+      let drained = false;
+      void Promise.all(started).then(() => {
+        drained = true;
+      });
+      await tickUntil(() => drained, 'the started sessions to finish', ACTUAL_CALL_TIMEOUT_MS);
+    } finally {
+      started.length = 0;
+      vi.useRealTimers();
+    }
+  });
 
   it('rejects a call that never resolves after the timeout, then serves the next user', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     addUser('u1', PW_A);
     addUser('u2', PW_B);
     let hungStarted = false;
-    const hung = withActualSession(deps(), idOf('u1'), () => {
-      hungStarted = true;
-      return new Promise<never>(() => undefined);
-    });
+    const hung = track(
+      withActualSession(deps(), idOf('u1'), () => {
+        hungStarted = true;
+        return new Promise<never>(() => undefined);
+      }),
+    );
     const hungResult = hung.catch((e: unknown) => e);
-    const next = withActualSession(deps(), idOf('u2'), async () => 'u2 served');
+    const next = track(withActualSession(deps(), idOf('u2'), async () => 'u2 served'));
     let nextDone = false;
     void next.finally(() => {
       nextDone = true;
     });
 
-    await tickUntil(() => hungStarted);
+    await tickUntil(() => hungStarted, 'the hung call to start');
     expect(hungStarted).toBe(true);
     await vi.advanceTimersByTimeAsync(ACTUAL_CALL_TIMEOUT_MS - 10);
     expect(nextDone).toBe(false);
@@ -309,7 +341,7 @@ describe('call timeout', () => {
     expect((error as ActualSessionError).code).toBe('timed_out');
     expect((error as Error).message).not.toContain(PW_A);
 
-    await tickUntil(() => nextDone);
+    await tickUntil(() => nextDone, 'the next user to be served');
     await expect(next).resolves.toBe('u2 served');
     expect(calls).toEqual(['init', 'download', 'shutdown', 'init', 'download', 'shutdown']);
   });
@@ -323,14 +355,15 @@ describe('call timeout', () => {
       return new Promise<never>(() => undefined);
     });
     let settled = false;
-    const result = withActualServer(deps(), idOf('u1'), async () => 1).catch((e: unknown) => e);
+    const result = track(withActualServer(deps(), idOf('u1'), async () => 1)).catch((e: unknown) => e);
     void result.finally(() => {
       settled = true;
     });
-    await tickUntil(() => calls.includes('init'));
+    await tickUntil(() => calls.includes('init'), 'the hung init to start');
     await vi.advanceTimersByTimeAsync(ACTUAL_CALL_TIMEOUT_MS);
-    await tickUntil(() => settled);
+    await tickUntil(() => settled, 'the hung init to be rejected');
     expect(await result).toMatchObject({ code: 'timed_out' });
+    await tickUntil(() => calls.length >= 2, 'the shutdown after the hung init');
     expect(calls).toEqual(['init', 'shutdown']);
   });
 });
