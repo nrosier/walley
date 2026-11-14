@@ -26,6 +26,7 @@ import type { CreateScheduleInput } from './actual/write.js';
 export type CreateFlowErrorCode =
   | 'range_amount_unsupported'
   | 'base_currency_missing'
+  | 'wallos_currency_missing'
   | 'wallos_subscription_not_found'
   | 'schedule_not_found'
   | 'invalid_state'
@@ -39,6 +40,7 @@ export type CreateFlowErrorCode =
 const MESSAGES: Record<CreateFlowErrorCode, string> = {
   range_amount_unsupported: 'A schedule with an amount range cannot be created in Wallos',
   base_currency_missing: 'The Actual budget has no base currency set',
+  wallos_currency_missing: 'The budget currency is not in your Wallos currency list',
   wallos_subscription_not_found: 'The Wallos subscription was not found',
   schedule_not_found: 'The Actual schedule was not found',
   invalid_state: 'The match is no longer in a state that allows this action',

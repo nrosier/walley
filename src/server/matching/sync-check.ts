@@ -21,8 +21,10 @@ import type {
   SyncOrphanKind,
   SyncOrphaned,
   SyncUnmappable,
+  SyncWallosSource,
   UnmappableReason,
 } from '../../lib/sync-check-types.js';
+import { resolveBaseConversion } from '../../lib/currency-prepare.js';
 import type { MatchPatch } from '../db/repo.js';
 import { CreateFlowError, type CreateDeps } from '../integrations/create.js';
 import type { WallosClient } from '../integrations/wallos/client.js';
@@ -33,6 +35,7 @@ import {
   decodeWallosName,
   legacyWallosNameFields,
   mapWallosSubscription,
+  resolveCurrencyCode,
   WallosMappingError,
 } from '../integrations/wallos/map.js';
 import type { UpstreamCache } from '../cache/upstream-cache.js';
@@ -64,6 +67,7 @@ export type {
   SyncOrphaned,
   SyncOrphanKind,
   SyncUnmappable,
+  SyncWallosSource,
   UnmappableReason,
 } from '../../lib/sync-check-types.js';
 
@@ -77,6 +81,8 @@ export interface Side extends SyncItem {
    * anchor. Null or absent when start_date or a stored anchor was used.
    */
   readonly anchorDate?: string | null;
+  /** Wallos sides of a foreign-currency subscription only (#223): own price, currency and rate. Display only, not hashed. */
+  readonly source?: SyncWallosSource;
 }
 
 function mapActual(
@@ -154,13 +160,14 @@ export function fieldInputsOf(sides: ReadonlyMap<string, Side>): Map<string, Mat
   return out;
 }
 
-function mismatchFieldsOf(f: MatchFieldsInput): SyncMismatchFields {
+function mismatchFieldsOf(f: MatchFieldsInput, source?: SyncWallosSource): SyncMismatchFields {
   return {
     frequency: f.frequency,
     interval: f.interval ?? 1,
     startDate: f.startDate,
     currency: f.currency,
     amount: f.amount,
+    ...(source === undefined ? {} : { source }),
   };
 }
 
@@ -259,7 +266,20 @@ export async function readCurrentSides(
           }
         }
       }
-      const prepared = prepareActualScheduleInput(source, currencies, baseCode, overrides.get(id));
+      const override = overrides.get(id);
+      const prepared = prepareActualScheduleInput(source, currencies, baseCode, override);
+      // #223: display-only source of a foreign-currency item, from the same rate selection as the
+      // conversion above (prepareActualScheduleInput already proved both calls succeed).
+      const code = resolveCurrencyCode(currencyMap, mapped.currencyId);
+      const wallosSource: SyncWallosSource | null =
+        code === baseCode
+          ? null
+          : {
+              currencyCode: code,
+              priceCents: mapped.priceCents,
+              rate: resolveBaseConversion(currencies, code, baseCode, override).fromRate,
+              rateSource: override === undefined ? 'wallos' : 'override',
+            };
       const fields: MatchFieldsInput = {
         name: mapped.name,
         amount: { kind: 'single', cents: prepared.amountCents },
@@ -277,6 +297,7 @@ export async function readCurrentSides(
         reason: null,
         fields,
         legacyFields: legacyWallosNameFields(fields, raw.name ?? ''),
+        ...(wallosSource === null ? {} : { source: wallosSource }),
       };
     } catch (error: unknown) {
       if (!(error instanceof WallosMappingError || error instanceof CurrencyConversionError)) throw error;
@@ -413,7 +434,7 @@ export async function runSyncCheck(
         isRange: a.isRange,
         wallosDrift: r.wallosDrift,
         actualDrift: r.actualDrift,
-        wallosFields: mismatchFieldsOf(wf),
+        wallosFields: mismatchFieldsOf(wf, w.source),
         actualFields: mismatchFieldsOf(af),
       });
     }

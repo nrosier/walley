@@ -39,7 +39,8 @@ export function rollbackResolve(current: SyncCheckResult, snapshot: SyncCheckRes
   return { ...current, mismatches, linked };
 }
 
-export type ResolveOutcome = { readonly ok: true } | { readonly ok: false; readonly code: string };
+/** `partial`: the action wrote its part but the pair still differs (it is back in the mismatch list after the refresh). */
+export type ResolveOutcome = { readonly ok: true; readonly partial?: 'currency_changed_other_fields_differ' } | { readonly ok: false; readonly code: string };
 
 /**
  * Applies the resolve to the shared result at once, then sends it. A failure restores only this
@@ -56,16 +57,23 @@ export async function performResolve(
   const snapshot = get();
   if (snapshot === null) return { ok: false, code: 'request_failed' };
   set(applyResolve(snapshot, matchId, action));
+  let partial: 'currency_changed_other_fields_differ' | undefined;
   try {
+    const answer = await resolveMatch(matchId, action, fetchImpl);
     // The server wrote nothing and kept the mismatch: undo the optimistic change and say so.
-    if ((await resolveMatch(matchId, action, fetchImpl)) === 'no_change_needed') {
+    if (answer === 'no_change_needed') {
       set(rollbackResolve(get() ?? snapshot, snapshot, matchId));
       return { ok: false, code: 'no_change_needed' };
+    }
+    if (answer === 'currency_changed_other_fields_differ') {
+      // Written, but the pair still differs: undo the optimistic "resolved" state; the refresh below shows the new one.
+      set(rollbackResolve(get() ?? snapshot, snapshot, matchId));
+      partial = answer;
     }
   } catch (error: unknown) {
     set(rollbackResolve(get() ?? snapshot, snapshot, matchId));
     return { ok: false, code: error instanceof ApiError ? error.code : 'request_failed' };
   }
   await refresh();
-  return { ok: true };
+  return partial === undefined ? { ok: true } : { ok: true, partial };
 }

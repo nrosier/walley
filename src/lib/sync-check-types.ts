@@ -43,6 +43,24 @@ export interface SyncCandidate {
   readonly isRange: boolean;
 }
 
+/**
+ * The Wallos subscription's own price and currency behind a converted amount (#223). Display only:
+ * never part of the hash, which keeps the base currency and the converted amount.
+ */
+export interface SyncWallosSource {
+  /** The subscription's own currency code (trimmed, upper case). */
+  readonly currencyCode: string;
+  /** Price in that currency's minor units (exponent from currency-exponent.ts; JPY has 0), negative for an expense. */
+  readonly priceCents: number;
+  /**
+   * The rate used for the subscription's currency, on the Wallos scale (units per one unit of the
+   * Wallos main currency), the same scale as a subscription_overrides rate.
+   */
+  readonly rate: number;
+  /** 'override' when the user's subscription_overrides row supplied the rate, else 'wallos'. */
+  readonly rateSource: 'override' | 'wallos';
+}
+
 /** One side's compared fields on a mismatch. Amount is in the base currency (range: both bounds). */
 export interface SyncMismatchFields {
   readonly frequency: string;
@@ -51,6 +69,8 @@ export interface SyncMismatchFields {
   readonly startDate: string | null;
   readonly currency: string;
   readonly amount: MatchAmount;
+  /** Wallos side of a foreign-currency subscription only (#223); absent for a base-currency one and on the Actual side. */
+  readonly source?: SyncWallosSource;
 }
 
 export interface SyncMismatch {

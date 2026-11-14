@@ -18,6 +18,7 @@ const en = {
     ignoreDiff: 'Keeps both items as they are and stops flagging this difference.',
     overwriteWallos: 'Changes the subscription in Wallos to match Actual Budget.',
     overwriteActual: 'Changes the schedule in Actual Budget to match Wallos.',
+    changeCurrency: 'Switches the subscription in Wallos to {currency} and sets its price to the Actual Budget amount.',
     unlink: 'Walley stops tracking these two as a pair. Nothing changes in Wallos or Actual Budget.',
   },
   fields: {
@@ -28,6 +29,20 @@ const en = {
     startDate: 'Start date',
   },
   table: 'Drifted fields',
+  source: {
+    heading: 'Wallos currency and rate',
+    price: 'Price in Wallos',
+    rate: 'Effective rate ({from} to {to})',
+    wallosRate: 'Wallos rate ({from} per Wallos main currency)',
+    yourRate: 'Your rate ({from} per Wallos main currency)',
+    rateFrom: 'Rate from',
+    rateSources: { wallos: 'Wallos rate', override: 'Your override' },
+  },
+  currencyChanged: 'The Wallos currency and price now match Actual Budget. Other differences remain below.',
+  changeCurrency: 'Change Wallos currency to {currency}',
+  changeCurrencyConfirmTitle: 'Change the Wallos currency to {currency}?',
+  changeCurrencyConfirmBody:
+    'In Wallos, {name} changes from {from} to {to}, and its price becomes {amount}, the Actual Budget amount. Walley cannot add a missing currency to Wallos. This cannot be undone from Walley.',
   overwriteWallos: 'Overwrite Wallos',
   overwriteActual: 'Overwrite Actual',
   ignoreDiff: 'Ignore Diff',
@@ -48,6 +63,8 @@ const en = {
     patterns_unsupported: 'This recurrence pattern cannot be converted, so nothing was overwritten.',
     match_not_found: 'This pair no longer exists. Run the sync check again.',
     no_change_needed: 'Nothing needed to be written, so nothing was changed. The pair is still marked as different.',
+    wallos_currency_missing: '{currency} is not set up in your Wallos. Add it in Wallos first, then try again.',
+    currency_conversion_failed: 'No exchange rate is available for this currency, so nothing was changed. Set your own rate here or check the rates in Wallos.',
   },
 };
 
@@ -71,6 +88,7 @@ const nl: typeof en = {
     ignoreDiff: 'Laat beide items zoals ze zijn en meldt dit verschil niet meer.',
     overwriteWallos: 'Past het abonnement in Wallos aan zodat het overeenkomt met Actual Budget.',
     overwriteActual: 'Past het schema in Actual Budget aan zodat het overeenkomt met Wallos.',
+    changeCurrency: 'Zet het abonnement in Wallos om naar {currency} en stelt de prijs in op het bedrag uit Actual Budget.',
     unlink: 'Walley houdt deze twee niet meer bij als paar. In Wallos en Actual Budget verandert niets.',
   },
   fields: {
@@ -81,6 +99,20 @@ const nl: typeof en = {
     startDate: 'Startdatum',
   },
   table: 'Afwijkende velden',
+  source: {
+    heading: 'Wallos-valuta en koers',
+    price: 'Prijs in Wallos',
+    rate: 'Effectieve koers ({from} naar {to})',
+    wallosRate: 'Wallos-koers ({from} per Wallos-hoofdvaluta)',
+    yourRate: 'Uw koers ({from} per Wallos-hoofdvaluta)',
+    rateFrom: 'Koers van',
+    rateSources: { wallos: 'Wallos-koers', override: 'Uw eigen koers' },
+  },
+  currencyChanged: 'De Wallos-valuta en prijs komen nu overeen met Actual Budget. Andere verschillen staan hieronder.',
+  changeCurrency: 'Wallos-valuta wijzigen naar {currency}',
+  changeCurrencyConfirmTitle: 'De Wallos-valuta wijzigen naar {currency}?',
+  changeCurrencyConfirmBody:
+    'In Wallos wijzigt {name} van {from} naar {to}, en de prijs wordt {amount}, het bedrag uit Actual Budget. Walley kan geen ontbrekende valuta aan Wallos toevoegen. Dit kan niet vanuit Walley ongedaan worden gemaakt.',
   overwriteWallos: 'Wallos overschrijven',
   overwriteActual: 'Actual overschrijven',
   ignoreDiff: 'Verschil negeren',
@@ -101,6 +133,8 @@ const nl: typeof en = {
     patterns_unsupported: 'Dit herhalingspatroon kan niet worden omgezet, dus er is niets overschreven.',
     match_not_found: 'Dit paar bestaat niet meer. Voer de synchronisatiecontrole opnieuw uit.',
     no_change_needed: 'Er hoefde niets te worden geschreven, dus er is niets gewijzigd. Het paar staat nog als afwijkend gemarkeerd.',
+    wallos_currency_missing: '{currency} is niet ingesteld in uw Wallos. Voeg het eerst toe in Wallos en probeer het daarna opnieuw.',
+    currency_conversion_failed: 'Er is geen wisselkoers beschikbaar voor deze valuta, dus er is niets gewijzigd. Stel hier uw eigen koers in of controleer de koersen in Wallos.',
   },
 };
 
@@ -114,6 +148,8 @@ export const OVERWRITE_ERROR_CODES = [
   'patterns_unsupported',
   'match_not_found',
   'no_change_needed',
+  'wallos_currency_missing',
+  'currency_conversion_failed',
 ] as const;
 
 export type OverwriteErrorCode = (typeof OVERWRITE_ERROR_CODES)[number];

@@ -20,26 +20,36 @@ export function restoreMatch(matchId: string, fetchImpl?: typeof fetch): Promise
   return apiRequest(`/api/matches/${encodeURIComponent(matchId)}`, { method: 'DELETE', fetchImpl }).then(() => undefined);
 }
 
-export type OverwriteAction = 'overwrite_wallos' | 'overwrite_actual';
+/** `overwrite_wallos_currency` (#223) sets the Wallos currency to the budget currency; the server refuses it when Wallos lacks that currency. */
+export type OverwriteAction = 'overwrite_wallos' | 'overwrite_actual' | 'overwrite_wallos_currency';
 export type ResolveAction = 'ignore_diff' | 'unlink' | OverwriteAction;
+
+/**
+ * What a 200 answer says beyond success: `no_change_needed` (nothing was written, the pair stays a mismatch) and
+ * `currency_changed_other_fields_differ` (`overwrite_wallos_currency` wrote the currency and price, but another field
+ * still differs, so the pair stays a mismatch). `undefined`: the pair is resolved.
+ */
+export type ResolveAnswer = 'no_change_needed' | 'currency_changed_other_fields_differ' | undefined;
 
 /**
  * POST /api/matches/:id/resolve (204 or JSON). Unlink and the two overwrite actions send
  * `confirm: true`; callers must only use them after the user confirmed. Throws ApiError with the
  * server code (match_not_found, invalid_state, confirmation_required, overwrite_unverified,
- * range_amount_unsupported, patterns_unsupported).
+ * range_amount_unsupported, patterns_unsupported, wallos_currency_missing, currency_conversion_failed).
  */
 export function resolveMatch(
   matchId: string,
   action: ResolveAction,
   fetchImpl?: typeof fetch,
-): Promise<'no_change_needed' | undefined> {
+): Promise<ResolveAnswer> {
   const body = action === 'ignore_diff' ? { action } : { action, confirm: true };
   return apiRequest<{ outcome?: unknown } | undefined>(`/api/matches/${encodeURIComponent(matchId)}/resolve`, {
     method: 'POST',
     body,
     fetchImpl,
-  }).then((data) => (data?.outcome === 'no_change_needed' ? 'no_change_needed' : undefined));
+  }).then((data) =>
+    data?.outcome === 'no_change_needed' || data?.outcome === 'currency_changed_other_fields_differ' ? data.outcome : undefined,
+  );
 }
 
 /**

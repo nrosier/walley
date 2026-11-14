@@ -102,9 +102,10 @@ describe('resolveMatch', () => {
 
 describe('overwrite buttons', () => {
   it('are enabled, and only the confirmation action calls onOverwrite', () => {
-    // Buttons are only ever disabled while an action is being sent.
-    expect(src.match(/disabled=\{working\}/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(src).not.toMatch(/disabled(?!=\{working\})/);
+    // Buttons are only ever aria-disabled (never natively, which would drop focus) while an action is being sent.
+    expect(src.match(/aria-disabled=\{working\}/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(src).not.toMatch(/(?<!aria-)disabled/);
+    expect(src).not.toMatch(/aria-disabled(?!=\{working\})/);
     expect(src).not.toMatch(/fetch|apiRequest|resolveMatch/);
     // onOverwrite appears once in the call position: inside the AlertDialogAction onClick.
     expect(src.match(/onOverwrite\(mismatch\.matchId, action\)/g)).toHaveLength(1);
@@ -176,7 +177,7 @@ describe('performResolve', () => {
 });
 
 describe('DiffModal design contract', () => {
-  const unlinkBlock = src.slice(src.indexOf('footer={'), src.indexOf('{working ?'));
+  const unlinkBlock = src.slice(src.indexOf('footer={'), src.indexOf('{resolving ?'));
   it('opens with Ignore Diff focused (the safe choice) and returns focus to the Review button', () => {
     expect(src).toContain('onOpenAutoFocus');
     expect(src).toMatch(/ignoreRef\.current\?\.focus\(\)/);
@@ -237,5 +238,28 @@ describe('Matches and diff modal checklist (issue 113)', () => {
     // The Sync Dashboard renders the hook the modal looks for, on Mismatch rows only.
     expect(pairListSrc).toContain('data-review-for={review.matchId}');
     expect(pairListSrc).toContain("r.link.status === 'MISMATCH_DETECTED' && props.onReview !== undefined");
+  });
+});
+
+describe('currency_changed_other_fields_differ (#223)', () => {
+  const partial = () => vi.fn(() => Promise.resolve(Response.json({ status: 'MISMATCH_DETECTED', outcome: 'currency_changed_other_fields_differ' })));
+  it('resolveMatch reports the outcome', async () => {
+    await expect(resolveMatch('m1', 'overwrite_wallos_currency', partial())).resolves.toBe('currency_changed_other_fields_differ');
+  });
+  it('performResolve keeps the pair a mismatch, refreshes the check and returns ok with the partial outcome', async () => {
+    const start = result();
+    let current = start;
+    const refresh = vi.fn(() => Promise.resolve());
+    const out = await performResolve(() => current, (r) => { current = r; }, 'm1', 'overwrite_wallos_currency', refresh, partial());
+    expect(out).toEqual({ ok: true, partial: 'currency_changed_other_fields_differ' });
+    expect(current.mismatches.map((m) => m.matchId)).toEqual(['m1']);
+    expect(current.linked.find((l) => l.matchId === 'm1')?.status).toBe(start.linked.find((l) => l.matchId === 'm1')?.status);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+  it('no_change_needed keeps its own handling: a failure with that code, and no refresh', async () => {
+    const refresh = vi.fn(() => Promise.resolve());
+    const f = vi.fn(() => Promise.resolve(Response.json({ status: 'MISMATCH_DETECTED', outcome: 'no_change_needed' })));
+    expect(await performResolve(result, () => undefined, 'm1', 'overwrite_wallos_currency', refresh, f)).toEqual({ ok: false, code: 'no_change_needed' });
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
