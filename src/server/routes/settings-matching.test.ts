@@ -3,7 +3,7 @@ import { buildApp } from '../app.js';
 import { closeDatabase, openDatabase, type AppDatabase } from '../db/client.js';
 import { createUserRepo } from '../db/repo.js';
 import { injectAs, makeClock, makeUser, signIn, TEST_ORIGIN } from '../test/auth-helpers.js';
-import { checkTolerance } from './settings-matching.js';
+import { checkCurrencyDrift, checkTolerance } from './settings-matching.js';
 
 const PATH = '/api/settings/matching';
 const open: { close(): Promise<unknown>; db: AppDatabase }[] = [];
@@ -64,6 +64,20 @@ describe('checkTolerance', () => {
   });
 });
 
+describe('checkCurrencyDrift', () => {
+  it('accepts multiples of 0.5 from 0 to 10 and rejects the rest with fixed codes', () => {
+    for (const v of [0, 0.5, 2, 2.5, 10]) expect(checkCurrencyDrift(v)).toEqual({ ok: true, value: v });
+    const neg = checkCurrencyDrift(-0);
+    expect(neg.ok && Object.is(neg.value, 0)).toBe(true);
+    for (const v of [-0.1, -0.5, 10.1, 10.5, 2.3, 0.25, NaN, Infinity, -Infinity]) {
+      expect(checkCurrencyDrift(v), String(v)).toEqual({ ok: false, error: 'out_of_range' });
+    }
+    for (const v of ['2', null, undefined, true, [2], { v: 2 }]) {
+      expect(checkCurrencyDrift(v)).toEqual({ ok: false, error: 'invalid_request' });
+    }
+  });
+});
+
 describe('settings-matching routes', () => {
   it('401 without a session', async () => {
     const s = setup();
@@ -106,7 +120,7 @@ describe('settings-matching routes', () => {
     const s = setup();
     const res = await get(s, 'sa');
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ tolerancePercent: 5 });
+    expect(res.json()).toEqual({ tolerancePercent: 5, currencyDriftPercent: 2 });
   });
 
   it('PUT saves boundaries 0 and 50 and returns the saved value', async () => {
@@ -114,8 +128,8 @@ describe('settings-matching routes', () => {
     for (const v of [0, 50, 12.5]) {
       const res = await put(s, 'sa', { tolerancePercent: v });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ tolerancePercent: v });
-      expect((await get(s, 'sa')).json()).toEqual({ tolerancePercent: v });
+      expect(res.json()).toEqual({ tolerancePercent: v, currencyDriftPercent: 2 });
+      expect((await get(s, 'sa')).json()).toEqual({ tolerancePercent: v, currencyDriftPercent: 2 });
     }
   });
 
@@ -138,7 +152,7 @@ describe('settings-matching routes', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'invalid_request' });
     }
-    expect((await get(s, 'sa')).json()).toEqual({ tolerancePercent: 7 });
+    expect((await get(s, 'sa')).json()).toEqual({ tolerancePercent: 7, currencyDriftPercent: 2 });
   });
 
   it('isolates two users and ignores a user id in the body', async () => {
@@ -146,8 +160,128 @@ describe('settings-matching routes', () => {
     await put(s, 'sb', { tolerancePercent: 20 });
     const res = await put(s, 'sa', { tolerancePercent: 3, userId: s.b, user_id: s.b });
     expect(res.statusCode).toBe(200);
-    expect((await get(s, 'sa')).json()).toEqual({ tolerancePercent: 3 });
-    expect((await get(s, 'sb')).json()).toEqual({ tolerancePercent: 20 });
+    expect((await get(s, 'sa')).json()).toEqual({ tolerancePercent: 3, currencyDriftPercent: 2 });
+    expect((await get(s, 'sb')).json()).toEqual({ tolerancePercent: 20, currencyDriftPercent: 2 });
     expect(createUserRepo(s.db, s.b).getConfig()?.tolerancePercent).toBe(20);
+  });
+
+  describe('currencyDriftPercent', () => {
+    it('GET defaults to 2 when no config row exists', async () => {
+      const s = setup();
+      expect((await get(s, 'sa')).json()).toMatchObject({ currencyDriftPercent: 2 });
+    });
+
+    it('PUT saves 0, 0.5, 2.5 and 10 and returns both values', async () => {
+      const s = setup();
+      for (const v of [0, 0.5, 2.5, 10]) {
+        const res = await put(s, 'sa', { currencyDriftPercent: v });
+        expect(res.statusCode, String(v)).toBe(200);
+        expect(res.json()).toEqual({ tolerancePercent: 5, currencyDriftPercent: v });
+        expect((await get(s, 'sa')).json()).toEqual({ tolerancePercent: 5, currencyDriftPercent: v });
+      }
+    });
+
+    it('stores -0 as 0', async () => {
+      const s = setup();
+      const res = await s.app.inject({
+        method: 'PUT',
+        url: PATH,
+        payload: '{"currencyDriftPercent":-0}',
+        headers: {
+          'content-type': 'application/json',
+          origin: TEST_ORIGIN,
+          cookie: s.sa.cookie,
+          'x-csrf-token': s.sa.csrfToken,
+        },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(Object.is(createUserRepo(s.db, s.a).getConfig()?.currencyDriftPercent, 0)).toBe(true);
+    });
+
+    it('rejects out-of-range and wrong-type values and an empty body without writing', async () => {
+      const s = setup();
+      await put(s, 'sa', { currencyDriftPercent: 3 });
+      for (const v of [-0.1, 10.1, 2.3, 11, -1]) {
+        const res = await put(s, 'sa', { currencyDriftPercent: v });
+        expect(res.statusCode, String(v)).toBe(400);
+        expect(res.json()).toEqual({ error: 'out_of_range' });
+      }
+      for (const payload of [
+        { currencyDriftPercent: '2' },
+        { currencyDriftPercent: null },
+        { currencyDriftPercent: true },
+        {},
+        { userId: s.b },
+        '{"currencyDriftPercent":NaN}',
+      ]) {
+        const res = await put(s, 'sa', payload);
+        expect(res.statusCode).toBe(400);
+        expect(res.json()).toEqual({ error: 'invalid_request' });
+      }
+      expect(createUserRepo(s.db, s.a).getConfig()?.currencyDriftPercent).toBe(3);
+    });
+
+    it('a PUT with one key keeps the other, and both keys together are saved', async () => {
+      const s = setup();
+      await put(s, 'sa', { tolerancePercent: 12 });
+      expect((await put(s, 'sa', { currencyDriftPercent: 4 })).json()).toEqual({
+        tolerancePercent: 12,
+        currencyDriftPercent: 4,
+      });
+      expect((await put(s, 'sa', { tolerancePercent: 8 })).json()).toEqual({
+        tolerancePercent: 8,
+        currencyDriftPercent: 4,
+      });
+      const both = await put(s, 'sa', { tolerancePercent: 20, currencyDriftPercent: 6.5 });
+      expect(both.statusCode).toBe(200);
+      expect(both.json()).toEqual({ tolerancePercent: 20, currencyDriftPercent: 6.5 });
+    });
+
+    it('one valid and one invalid key write nothing', async () => {
+      const s = setup();
+      await put(s, 'sa', { tolerancePercent: 7, currencyDriftPercent: 3 });
+      const a = await put(s, 'sa', { tolerancePercent: 9, currencyDriftPercent: 2.3 });
+      expect(a.statusCode).toBe(400);
+      expect(a.json()).toEqual({ error: 'out_of_range' });
+      const b = await put(s, 'sa', { tolerancePercent: 51, currencyDriftPercent: 1 });
+      expect(b.statusCode).toBe(400);
+      expect(b.json()).toEqual({ error: 'out_of_range' });
+      const c = await put(s, 'sa', { tolerancePercent: 9, currencyDriftPercent: '1' });
+      expect(c.statusCode).toBe(400);
+      expect(c.json()).toEqual({ error: 'invalid_request' });
+      expect((await get(s, 'sa')).json()).toEqual({ tolerancePercent: 7, currencyDriftPercent: 3 });
+    });
+
+    it('401 without a session and 403 without CSRF, nothing written', async () => {
+      const s = setup();
+      const noSession = await s.app.inject({
+        method: 'PUT',
+        url: PATH,
+        payload: { currencyDriftPercent: 4 },
+        headers: { origin: TEST_ORIGIN },
+      });
+      expect(noSession.statusCode).toBe(401);
+      const noToken = await s.app.inject({
+        method: 'PUT',
+        url: PATH,
+        payload: { currencyDriftPercent: 4 },
+        headers: { origin: TEST_ORIGIN, cookie: s.sa.cookie },
+      });
+      expect(noToken.statusCode).toBe(403);
+      expect(createUserRepo(s.db, s.a).getConfig()).toBeUndefined();
+    });
+
+    it('isolates two users, ignores a user id in the body and returns no secret', async () => {
+      const s = setup();
+      createUserRepo(s.db, s.b).upsertConfig({ wallosApiKeyEnc: 'v1:secret-ciphertext' });
+      await put(s, 'sb', { currencyDriftPercent: 7 });
+      const res = await put(s, 'sa', { currencyDriftPercent: 1.5, userId: s.b, user_id: s.b });
+      expect(res.statusCode).toBe(200);
+      expect(Object.keys(res.json()).sort()).toEqual(['currencyDriftPercent', 'tolerancePercent']);
+      expect(res.body).not.toContain('secret');
+      expect((await get(s, 'sa')).json()).toMatchObject({ currencyDriftPercent: 1.5 });
+      expect((await get(s, 'sb')).json()).toMatchObject({ currencyDriftPercent: 7 });
+      expect(createUserRepo(s.db, s.b).getConfig()?.currencyDriftPercent).toBe(7);
+    });
   });
 });
