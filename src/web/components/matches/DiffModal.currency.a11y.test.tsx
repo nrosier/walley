@@ -557,7 +557,7 @@ describe.each(['en', 'nl'] as const)('Rate margin in the source block (%s)', (lo
   it('shows the difference with its percent and the margin with the setting when the source is unchanged', async () => {
     const { dialog } = await openDiff(locale, withMargin({ differenceCents: 31, marginCents: 25, marginPercent: 2, sourceChanged: false }));
     const text = block(dialog);
-    expect(plain(dialog.querySelector('[data-rate-margin="difference"]')?.textContent)).toBe(locale === 'en' ? '€0.31 (2.6%)' : '€ 0,31 (2,6%)');
+    expect(plain(dialog.querySelector('[data-rate-margin="difference"]')?.textContent)).toBe(locale === 'en' ? '€0.31 (2.58%)' : '€ 0,31 (2,58%)');
     expect(plain(dialog.querySelector('[data-rate-margin="margin"]')?.textContent)).toBe(locale === 'en' ? '€0.25 (2%)' : '€ 0,25 (2%)');
     expect(text).toContain(m.margin.difference);
     expect(text).toContain(m.margin.label);
@@ -571,7 +571,7 @@ describe.each(['en', 'nl'] as const)('Rate margin in the source block (%s)', (lo
     const diff = plain(dialog.querySelector('[data-rate-margin="difference"]')?.textContent);
     const marg = plain(dialog.querySelector('[data-rate-margin="margin"]')?.textContent);
     expect(diff).toMatch(/31(?![.,]\d)/);
-    expect(diff).toContain(locale === 'en' ? '(2.6%)' : '(2,6%)');
+    expect(diff).toContain(locale === 'en' ? '(2.58%)' : '(2,58%)');
     expect(marg).toMatch(/25(?![.,]\d)/);
     expect(marg).toContain(locale === 'en' ? '(2.5%)' : '(2,5%)');
   });

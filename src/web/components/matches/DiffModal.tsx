@@ -137,7 +137,7 @@ export function DiffModal({ mismatch, baseCurrency, onClose, onIgnoreDiff, onOve
   // The rate margin (#229): only with a foreign-currency Wallos side; the server omits it otherwise.
   const margin = mismatch?.rateMargin;
   const actualSingle = mismatch?.actualFields.amount.kind === 'single' ? Math.abs(mismatch.actualFields.amount.cents) : 0;
-  const percent = (n: number): string => `${n.toLocaleString(locale, { maximumFractionDigits: 1 })}%`;
+  const percent = (n: number): string => `${n.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%`;
   const marginDifference = margin === undefined ? '' : `${formatMoney(margin.differenceCents, baseCurrency, locale)}${actualSingle > 0 ? ` (${percent((margin.differenceCents / actualSingle) * 100)})` : ''}`;
   const marginText = margin === undefined ? '' : `${formatMoney(margin.marginCents, baseCurrency, locale)} (${percent(margin.marginPercent)})`;
 

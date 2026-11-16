@@ -150,6 +150,10 @@ describe('saveTolerance', () => {
 });
 
 describe('MatchingSettings card', () => {
+  it('turns native constraint validation off so the app\'s own range and step errors can show', () => {
+    expect(tagOf(renderView({}), /<form[^>]*id="matching-settings-form"[^>]*>/)).toMatch(/novalidate/i);
+  });
+
   it('saves only through the footer Save (no save on blur or slider release) and shows the unsaved status', () => {
     const html = renderView({ dirty: true });
     expect(html).toContain('Unsaved changes');
@@ -198,7 +202,7 @@ describe('currency rate margin control (markup)', () => {
   it('shows the label and hint in en and nl, and the error wired by aria-describedby', () => {
     const en = renderView({ driftInvalid: true, driftText: '2.3' });
     expect(en).toContain('Currency rate margin');
-    expect(en).toContain('or 2 cents, whichever is larger');
+    expect(en).toContain('or 2 minor units of the budget currency (2 cents for EUR), whichever is larger');
     expect(en).toContain('0 turns the margin off');
     expect(en).toContain('Enter a value from 0 to 10 in steps of 0.5.');
     expect(driftInput(en)).toContain('aria-describedby="matching-drift-error matching-drift-hint"');

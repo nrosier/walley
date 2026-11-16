@@ -241,7 +241,7 @@ export function MatchingSettingsView(props: MatchingSettingsViewProps) {
         />
       }
     >
-      <form id="matching-settings-form" onSubmit={submit} className="max-w-md space-y-3" aria-labelledby="matching-settings-heading">
+      <form id="matching-settings-form" noValidate onSubmit={submit} className="max-w-md space-y-3" aria-labelledby="matching-settings-heading">
         <PercentControl
           prefix="matching-tolerance"
           name="tolerancePercent"
