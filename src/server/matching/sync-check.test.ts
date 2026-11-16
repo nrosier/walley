@@ -564,6 +564,18 @@ describe('#223 Wallos source currency on a mismatch', () => {
     expect(json).not.toContain('ACTUAL-SECRET-PW');
   });
 
+  it('never serialises the server-only own price (#229)', async () => {
+    const t = setup(
+      [sub(1, 'Netflix', '25.00', 2), sub(2, 'Base', '5.00', 1), sub(3, 'Yen', '2000', 3)],
+      [sched('a1', 'Netflix', { num1: -1400, num2: -1600 }), sched('a9', 'Other', -100)],
+    );
+    t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED', lastKnownWallosHash: null, lastKnownActualHash: h('Netflix', -1250) });
+    const json = JSON.stringify(await runSyncCheck(t.deps, t.userId));
+    expect(json).toContain('"mismatches":[{');
+    expect(json).not.toContain('"own"');
+    expect(json).not.toContain('priceMinor');
+  });
+
   it('keeps the hash of an unchanged base and foreign pair byte-identical to the pinned value', async () => {
     for (const [price, currency, pinned] of [['12.50', 1, PINNED_HASH_BASE_PAIR], ['25.00', 2, PINNED_HASH_FOREIGN_PAIR]] as const) {
       const t = setup([sub(1, 'Netflix', price, currency)], [sched('a1', 'Netflix', -1250)]);
@@ -668,5 +680,247 @@ describe('isCandidate', () => {
   it('rejects an item without an amount', () => {
     expect(isCandidate(item('1', 'Netflix', null), item('a', 'Netflix', -1250), 5)).toBeNull();
     expect(isCandidate(item('1', 'Netflix', -1250), item('a', 'Netflix', null), 5)).toBeNull();
+  });
+});
+
+describe('#229 currency rate margin', () => {
+  // USD 25.00 (own price -2500) against Actual -1250 EUR. The converted cents are round(2500 / usdRate).
+  const withRates = (t: ReturnType<typeof setup>, rates: { usd: string; eur?: string }) => {
+    const wallos = t.deps.wallos as unknown as { listCurrencies: () => Promise<unknown[]> };
+    wallos.listCurrencies = async () => [
+      { id: 1, code: 'EUR', rate: rates.eur ?? '1' },
+      { id: 2, code: 'USD', rate: rates.usd },
+      { id: 3, code: 'JPY', rate: '160' },
+    ];
+  };
+  const usdPair = (usd = '2', price = '25.00', actual = -1250) => {
+    const t = setup([sub(1, 'Netflix', price, 2)], [sched('a1', 'Netflix', actual)]);
+    withRates(t, { usd });
+    return t;
+  };
+  const baselined = async (t: ReturnType<typeof setup>) => {
+    const m = t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED' });
+    await runSyncCheck(t.deps, t.userId); // null hashes: baseline set with the columns
+    return m;
+  };
+  const snapshot = (t: ReturnType<typeof setup>, id: string) => {
+    const r = t.repo.getMatch(id);
+    return JSON.stringify([
+      r?.lastKnownWallosHash,
+      r?.lastKnownActualHash,
+      r?.lastKnownWallosAmountCents,
+      r?.lastKnownWallosPriceMinor,
+      r?.lastKnownWallosCurrency,
+    ]);
+  };
+
+  it('writes the baseline columns together with a null-hash baseline', async () => {
+    const t = usdPair();
+    const m = await baselined(t);
+    expect(t.repo.getMatch(m.id)).toMatchObject({
+      lastKnownWallosHash: h('Netflix', -1250),
+      lastKnownWallosAmountCents: -1250,
+      lastKnownWallosPriceMinor: -2500,
+      lastKnownWallosCurrency: 'USD',
+    });
+  });
+
+  it('keeps a pair LINKED when the rate moves 2 to 2.02, with rateMargin', async () => {
+    const t = usdPair();
+    const m = await baselined(t);
+    const before = snapshot(t, m.id);
+    withRates(t, { usd: '2.02' });
+    const res = await runSyncCheck(t.deps, t.userId);
+    expect(res.mismatches).toEqual([]);
+    expect(res.linked[0]).toMatchObject({
+      status: 'LINKED',
+      wallosAmountCents: -1238,
+      actualAmountCents: -1250,
+      rateMargin: { differenceCents: 12, marginCents: 25, marginPercent: 2 },
+    });
+    expect(snapshot(t, m.id)).toBe(before);
+  });
+
+  it('does not ratchet: +0.8% steps stay LINKED then flag once the difference passes 25, nothing written', async () => {
+    const t = usdPair();
+    const m = await baselined(t);
+    const before = snapshot(t, m.id);
+    // round(2500 / rate): 1250, 1240, 1230, 1220 -> differences 0, 10, 20, 30 against 1250 (margin 25).
+    const steps: [string, number, 'LINKED' | 'MISMATCH_DETECTED'][] = [
+      ['2', -1250, 'LINKED'],
+      ['2.016', -1240, 'LINKED'],
+      ['2.0321', -1230, 'LINKED'],
+      ['2.0484', -1220, 'MISMATCH_DETECTED'],
+    ];
+    for (const [usd, cents, status] of steps) {
+      withRates(t, { usd });
+      const res = await runSyncCheck(t.deps, t.userId);
+      expect(res.linked[0]?.wallosAmountCents, usd).toBe(cents);
+      expect(res.linked[0]?.status, usd).toBe(status);
+      expect(res.mismatches.length, usd).toBe(status === 'LINKED' ? 0 : 1);
+      expect(snapshot(t, m.id), usd).toBe(before);
+    }
+    expect(t.repo.getMatch(m.id)?.status).toBe('MISMATCH_DETECTED');
+  });
+
+  it('returns a MISMATCH whose rate moved back inside the margin to LINKED', async () => {
+    const t = usdPair();
+    const m = await baselined(t);
+    withRates(t, { usd: '2.0484' });
+    expect((await runSyncCheck(t.deps, t.userId)).mismatches).toHaveLength(1);
+    const mm = (await runSyncCheck(t.deps, t.userId)).mismatches[0];
+    expect(mm?.rateMargin).toEqual({ differenceCents: 30, marginCents: 25, marginPercent: 2, sourceChanged: false });
+    withRates(t, { usd: '2.016' });
+    const res = await runSyncCheck(t.deps, t.userId);
+    expect(res.mismatches).toEqual([]);
+    expect(t.repo.getMatch(m.id)?.status).toBe('LINKED');
+  });
+
+  it('fills the columns of a migrated row on the first equal check, then absorbs a rate move', async () => {
+    const t = usdPair();
+    const m = t.repo.insertMatch({
+      wallosId: '1',
+      actualScheduleId: 'a1',
+      status: 'LINKED',
+      lastKnownWallosHash: h('Netflix', -1250),
+      lastKnownActualHash: h('Netflix', -1250),
+    });
+    withRates(t, { usd: '2.02' });
+    // First check after the rate moved: columns are null, so the comparison is exact.
+    expect((await runSyncCheck(t.deps, t.userId)).mismatches).toHaveLength(1);
+    expect(t.repo.getMatch(m.id)?.lastKnownWallosAmountCents).toBeNull();
+    withRates(t, { usd: '2' });
+    expect((await runSyncCheck(t.deps, t.userId)).mismatches).toEqual([]);
+    expect(t.repo.getMatch(m.id)).toMatchObject({
+      lastKnownWallosHash: h('Netflix', -1250),
+      lastKnownWallosAmountCents: -1250,
+      lastKnownWallosPriceMinor: -2500,
+      lastKnownWallosCurrency: 'USD',
+    });
+    withRates(t, { usd: '2.02' });
+    const res = await runSyncCheck(t.deps, t.userId);
+    expect(res.mismatches).toEqual([]);
+    expect(res.linked[0]?.rateMargin).toBeDefined();
+    expect(t.repo.getMatch(m.id)?.lastKnownWallosHash).toBe(h('Netflix', -1250));
+  });
+
+  it('flags a real 5% price change in the Wallos own currency at any margin, writing nothing', async () => {
+    for (const pct of [2, 10]) {
+      // 26.25 USD at rate 2 = 13.125 EUR -> -1313 (63 cents off the Actual -1250); at margin 10 (125) that is
+      // inside the margin, so only the changed own price makes it flag.
+      const t = setup([sub(1, 'Netflix', '26.25', 2)], [sched('a1', 'Netflix', -1250)]);
+      withRates(t, { usd: '2' });
+      t.repo.upsertConfig({ currencyDriftPercent: pct });
+      const m = t.repo.insertMatch({
+        wallosId: '1',
+        actualScheduleId: 'a1',
+        status: 'LINKED',
+        lastKnownWallosHash: h('Netflix', -1250),
+        lastKnownActualHash: h('Netflix', -1250),
+        lastKnownWallosAmountCents: -1250,
+        lastKnownWallosPriceMinor: -2500,
+        lastKnownWallosCurrency: 'USD',
+      });
+      const before = snapshot(t, m.id);
+      const res = await runSyncCheck(t.deps, t.userId);
+      expect(res.mismatches, String(pct)).toHaveLength(1);
+      expect(res.mismatches[0]?.rateMargin?.sourceChanged).toBe(true);
+      expect(snapshot(t, m.id)).toBe(before);
+    }
+  });
+
+  it('margin 0 reproduces the exact comparison', async () => {
+    const t = usdPair();
+    const m = await baselined(t);
+    t.repo.upsertConfig({ currencyDriftPercent: 0 });
+    withRates(t, { usd: '2.02' });
+    const res = await runSyncCheck(t.deps, t.userId);
+    expect(res.mismatches).toHaveLength(1);
+    expect(res.mismatches[0]?.rateMargin).toBeUndefined();
+    expect(res.linked[0]?.rateMargin).toBeUndefined();
+    expect(t.repo.getMatch(m.id)?.status).toBe('MISMATCH_DETECTED');
+  });
+
+  it('a 0.99 USD subscription: a 1-unit rounding difference stays LINKED at the default margin', async () => {
+    // 0.99 USD at rate 1.98 = 0.50 EUR; Actual typed 0.51 (1 unit off, floor margin 2).
+    const t = setup([sub(1, 'Tiny', '0.99', 2)], [sched('a1', 'Tiny', -51)]);
+    withRates(t, { usd: '1.98' }); // 99 / 1.98 = 50 exactly
+    const m = t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED' });
+    await runSyncCheck(t.deps, t.userId);
+    expect(t.repo.getMatch(m.id)?.lastKnownWallosAmountCents).toBe(-50);
+    const res = await runSyncCheck(t.deps, t.userId);
+    expect(res.mismatches).toEqual([]);
+  });
+
+  it('a missing rate or rate 0 is unmappable and writes nothing', async () => {
+    for (const usd of ['0', '']) {
+      const t = usdPair();
+      const m = await baselined(t);
+      const before = snapshot(t, m.id);
+      withRates(t, { usd });
+      const res = await runSyncCheck(t.deps, t.userId);
+      expect(res.unmappable).toEqual([{ side: 'wallos', id: '1', name: 'Netflix', reason: 'currency_conversion_failed' }]);
+      expect(res.mismatches).toEqual([]);
+      expect(snapshot(t, m.id)).toBe(before);
+      expect(t.repo.getMatch(m.id)?.status).toBe('LINKED');
+    }
+  });
+
+  it('a Wallos or Actual upstream error leaves status and columns unchanged', async () => {
+    const t = usdPair();
+    const m = await baselined(t);
+    const before = snapshot(t, m.id);
+    const wallos = t.deps.wallos as unknown as { listSubscriptions: () => Promise<unknown[]> };
+    const ok = wallos.listSubscriptions;
+    wallos.listSubscriptions = async () => {
+      throw new Error('wallos timeout');
+    };
+    await expect(runSyncCheck(t.deps, t.userId)).rejects.toThrow();
+    wallos.listSubscriptions = ok;
+    (t.deps as { withActual: unknown }).withActual = async () => {
+      throw new Error('actual timeout');
+    };
+    await expect(runSyncCheck(t.deps, t.userId)).rejects.toThrow();
+    expect(snapshot(t, m.id)).toBe(before);
+    expect(t.repo.getMatch(m.id)?.status).toBe('LINKED');
+  });
+
+  it("two users: B's margin and baseline never change A's result", async () => {
+    const t = usdPair();
+    const mA = await baselined(t);
+    const userB = makeUser(t.db);
+    const repoB = createUserRepo(t.db, userB);
+    repoB.upsertConfig({ currencyDriftPercent: 10 });
+    const mB = repoB.insertMatch({
+      wallosId: '1',
+      actualScheduleId: 'a1',
+      status: 'LINKED',
+      lastKnownWallosHash: h('Netflix', -1250),
+      lastKnownActualHash: h('Netflix', -1250),
+      lastKnownWallosAmountCents: -1250,
+      lastKnownWallosPriceMinor: -2500,
+      lastKnownWallosCurrency: 'USD',
+    });
+    const beforeB = snapshot(t, mB.id);
+    withRates(t, { usd: '2.0484' }); // 30 cents off: outside A's 2% margin, inside B's 10%
+    const resA = await runSyncCheck(t.deps, t.userId);
+    expect(resA.mismatches).toHaveLength(1);
+    expect(t.repo.getMatch(mA.id)?.status).toBe('MISMATCH_DETECTED');
+    expect(createUserRepo(t.db, userB).getMatch(mB.id)?.status).toBe('LINKED');
+    expect(snapshot(t, mB.id)).toBe(beforeB);
+    const resB = await runSyncCheck(t.deps, userB);
+    expect(resB.mismatches).toEqual([]);
+    expect(resB.linked[0]?.rateMargin?.marginPercent).toBe(10);
+  });
+
+  it('serialises no own key or secret with a rateMargin present', async () => {
+    const t = usdPair();
+    await baselined(t);
+    withRates(t, { usd: '2.02' });
+    const json = JSON.stringify(await runSyncCheck(t.deps, t.userId));
+    expect(json).toContain('"rateMargin"');
+    expect(json).not.toContain('"own"');
+    expect(json).not.toContain('priceMinor');
+    expect(json).not.toContain('SECRET');
   });
 });
