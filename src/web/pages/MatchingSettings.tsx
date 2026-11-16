@@ -21,7 +21,7 @@ export { DEFAULT_CURRENCY_DRIFT_PERCENT };
 const ENDPOINT = '/api/settings/matching';
 
 const FIELD =
-  'min-h-(--control-h) w-full rounded-md border bg-background px-3 font-mono text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
+  'min-h-(--control-h) rounded-md border bg-background px-3 font-mono text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
 
 /** The value as a number when it is finite and within 0 to 50 inclusive; otherwise null. */
 // eslint-disable-next-line react-refresh/only-export-components -- exported for tests
@@ -209,7 +209,8 @@ function PercentControl(props: PercentControlProps) {
 
 /** Presentational control. Input and slider share one value; the footer Save sends it through onCommit. */
 export function MatchingSettingsView(props: MatchingSettingsViewProps) {
-  const { t } = useT(matchingSettingsMessages);
+  const { t, locale } = useT(matchingSettingsMessages);
+  const num = (n: number) => new Intl.NumberFormat(locale).format(n);
   const { t: tSettings } = useT(settingsPageMessages);
   const statusText =
     props.status === 'saving'
@@ -248,7 +249,7 @@ export function MatchingSettingsView(props: MatchingSettingsViewProps) {
           label={t('label')}
           hint={t('hint')}
           unit={t('unit')}
-          error={t('range', { min: MIN_TOLERANCE_PERCENT, max: MAX_TOLERANCE_PERCENT })}
+          error={t('range', { min: num(MIN_TOLERANCE_PERCENT), max: num(MAX_TOLERANCE_PERCENT) })}
           inputMode="numeric"
           min={MIN_TOLERANCE_PERCENT}
           max={MAX_TOLERANCE_PERCENT}
@@ -265,9 +266,9 @@ export function MatchingSettingsView(props: MatchingSettingsViewProps) {
           hint={t('drift.hint')}
           unit={t('unit')}
           error={t('drift.range', {
-            min: MIN_CURRENCY_DRIFT_PERCENT,
-            max: MAX_CURRENCY_DRIFT_PERCENT,
-            step: CURRENCY_DRIFT_STEP,
+            min: num(MIN_CURRENCY_DRIFT_PERCENT),
+            max: num(MAX_CURRENCY_DRIFT_PERCENT),
+            step: num(CURRENCY_DRIFT_STEP),
           })}
           inputMode="decimal"
           min={MIN_CURRENCY_DRIFT_PERCENT}

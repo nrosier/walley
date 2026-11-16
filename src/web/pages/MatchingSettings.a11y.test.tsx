@@ -120,6 +120,25 @@ describe('currency rate margin accessibility', () => {
     expect(puts).toEqual([]);
   });
 
+  it('formats the step in the error with the locale (0.5 in en, 0,5 in nl)', async () => {
+    for (const [locale, step] of [['en', '0.5'], ['nl', '0,5']] as const) {
+      const { m, input, save } = await mount(locale);
+      type(input, '4.3');
+      fireEvent.submit(save.closest('section')?.querySelector('form') as HTMLFormElement);
+      const error = await screen.findByText(m.drift.range.replace('{min}', '0').replace('{max}', '10').replace('{step}', step));
+      expect(error.textContent).toContain(step);
+      cleanup();
+    }
+  });
+
+  it('keeps both number inputs narrow (no w-full)', async () => {
+    await mount();
+    for (const input of document.querySelectorAll('input[type="number"]')) {
+      expect(input.classList.contains('w-24')).toBe(true);
+      expect(input.classList.contains('w-full')).toBe(false);
+    }
+  });
+
   it('is clean when unchanged and sends nothing on Save', async () => {
     const { input, save } = await mount();
     await waitFor(() => { expect(screen.getByText('No unsaved changes')).toBeTruthy(); });
