@@ -25,6 +25,7 @@ import {
 import { buildCurrencyMap, mapWallosSubscription, resolveCurrencyCode } from '../integrations/wallos/map.js';
 import type { WallosSubscriptionUpdate } from '../integrations/wallos/write.js';
 import { normalizeMatchFields, type MatchFieldsInput } from '../../lib/match-fields.js';
+import { wallosBaselineOf } from './baseline.js';
 import { hashMatchFields } from './hash.js';
 import { readCurrentSides } from './sync-check.js';
 
@@ -118,14 +119,18 @@ function requireSingleAmountSchedule(schedule: APIScheduleEntity): {
 async function rehashAndLink(deps: OverwriteDeps, userId: string, match: MatchRow): Promise<void> {
   const { wallosId, actualScheduleId } = pairOf(match);
   const current = await readCurrentSides(deps, userId);
-  const wf = current.wallosSides.get(wallosId)?.fields ?? null;
+  const wallosSide = current.wallosSides.get(wallosId);
+  const wf = wallosSide?.fields ?? null;
   const af = current.actualSides.get(actualScheduleId)?.fields ?? null;
   const wallosHash = wf === null ? null : hashMatchFields(wf);
   const actualHash = af === null ? null : hashMatchFields(af);
   if (wallosHash === null || actualHash === null) throw new OverwriteReadbackError();
-  deps
-    .repoFor(userId)
-    .updateMatch(match.id, { status: 'LINKED', lastKnownWallosHash: wallosHash, lastKnownActualHash: actualHash });
+  deps.repoFor(userId).updateMatch(match.id, {
+    status: 'LINKED',
+    lastKnownWallosHash: wallosHash,
+    lastKnownActualHash: actualHash,
+    ...wallosBaselineOf(wallosSide),
+  });
 }
 
 interface ActualRead {
@@ -377,7 +382,8 @@ function otherFieldsDiffering(w: MatchFieldsInput, a: MatchFieldsInput): (keyof 
 async function rehashAfterCurrency(deps: OverwriteDeps, userId: string, match: MatchRow): Promise<OverwriteOutcome> {
   const { wallosId, actualScheduleId } = pairOf(match);
   const current = await readCurrentSides(deps, userId);
-  const wf = current.wallosSides.get(wallosId)?.fields ?? null;
+  const wallosSide = current.wallosSides.get(wallosId);
+  const wf = wallosSide?.fields ?? null;
   const af = current.actualSides.get(actualScheduleId)?.fields ?? null;
   if (wf === null || af === null) throw new OverwriteReadbackError();
   const differing = otherFieldsDiffering(wf, af);
@@ -385,9 +391,12 @@ async function rehashAfterCurrency(deps: OverwriteDeps, userId: string, match: M
     const wallosHash = hashMatchFields(wf);
     const actualHash = hashMatchFields(af);
     if (wallosHash === null || actualHash === null) throw new OverwriteReadbackError();
-    deps
-      .repoFor(userId)
-      .updateMatch(match.id, { status: 'LINKED', lastKnownWallosHash: wallosHash, lastKnownActualHash: actualHash });
+    deps.repoFor(userId).updateMatch(match.id, {
+      status: 'LINKED',
+      lastKnownWallosHash: wallosHash,
+      lastKnownActualHash: actualHash,
+      ...wallosBaselineOf(wallosSide),
+    });
     return 'written';
   }
   const baseline: MatchFieldsInput = { ...wf };
@@ -401,6 +410,12 @@ async function rehashAfterCurrency(deps: OverwriteDeps, userId: string, match: M
   }
   const wallosHash = hashMatchFields(baseline);
   if (wallosHash === null) throw new OverwriteReadbackError();
-  deps.repoFor(userId).updateMatch(match.id, { status: 'MISMATCH_DETECTED', lastKnownWallosHash: wallosHash });
+  // Only non-amount fields were swapped, so the re-read amount is the amount inside the synthesized hash.
+  const baselineColumns = wallosBaselineOf(wallosSide);
+  const hashedAmount = baseline.amount.kind === 'single' ? baseline.amount.cents : null;
+  if (baselineColumns.lastKnownWallosAmountCents !== hashedAmount) throw new OverwriteReadbackError();
+  deps
+    .repoFor(userId)
+    .updateMatch(match.id, { status: 'MISMATCH_DETECTED', lastKnownWallosHash: wallosHash, ...baselineColumns });
   return 'currency_changed_other_fields_differ';
 }

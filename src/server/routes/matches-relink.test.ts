@@ -189,6 +189,27 @@ describe('POST /api/matches/:id/relink', () => {
     t.noWrites();
   });
 
+  it('stores the baseline of the new Wallos item when the Wallos side is repointed, and of the survivor otherwise (#229)', async () => {
+    const t = setup();
+    const id = await linkedPair(t);
+    dropWallos(t);
+    expect((await injectAs(t.app, t.sa, relink(id, '8'))).statusCode).toBe(200);
+    expect(t.repoA.getMatch(id)).toMatchObject({
+      lastKnownWallosAmountCents: -999,
+      lastKnownWallosPriceMinor: -999,
+      lastKnownWallosCurrency: 'EUR',
+    });
+    const u = setup();
+    const id2 = await linkedPair(u);
+    dropActual(u);
+    expect((await injectAs(u.app, u.sa, relink(id2, 'sch-b'))).statusCode).toBe(200);
+    expect(u.repoA.getMatch(id2)).toMatchObject({
+      lastKnownWallosAmountCents: -1250,
+      lastKnownWallosPriceMinor: -1250,
+      lastKnownWallosCurrency: 'EUR',
+    });
+  });
+
   it('a linked pair whose Wallos item is disabled is orphaned_wallos; relink is refused and writes nothing', async () => {
     // The real client drops inactive items (inactive 1 or true), so the disabled item 7 is absent from the list.
     const t = setup();

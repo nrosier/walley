@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { CreateDeps } from '../integrations/create.js';
 import { DEFAULT_TOLERANCE_PERCENT } from '../../lib/amount-match.js';
 import type { UpstreamCache } from '../cache/upstream-cache.js';
+import { wallosBaselineOf } from '../matching/baseline.js';
 import { hashMatchFields } from '../matching/hash.js';
 import { OverwriteReadbackError, overwriteActual, overwriteWallos, overwriteWallosCurrency } from '../matching/overwrite.js';
 import { isCandidate, readCurrentSides } from '../matching/sync-check.js';
@@ -99,7 +100,12 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
         if (wallosHash === null || actualHash === null) {
           return await reply.code(400).send({ error: 'invalid_state' });
         }
-        repo.updateMatch(id, { status: 'LINKED', lastKnownWallosHash: wallosHash, lastKnownActualHash: actualHash });
+        repo.updateMatch(id, {
+          status: 'LINKED',
+          lastKnownWallosHash: wallosHash,
+          lastKnownActualHash: actualHash,
+          ...wallosBaselineOf(current.wallosSides.get(match.wallosId)),
+        });
         return await reply.code(200).send({ status: 'LINKED' });
       }
       if (action === 'overwrite_wallos' || action === 'overwrite_actual' || action === 'overwrite_wallos_currency') {
@@ -176,6 +182,7 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
           status: 'LINKED',
           lastKnownWallosHash: wallosHash,
           lastKnownActualHash: actualHash,
+          ...wallosBaselineOf(w),
           firstSeenNextPayment: w.anchorDate ?? null,
         });
       } catch (error: unknown) {
@@ -245,6 +252,7 @@ export const matchesRoutes: FastifyPluginAsync<MatchesRoutesOptions> = async (ap
             itemId,
             lastKnownWallosHash: missingSide === 'wallos' ? targetHash : survivorHash,
             lastKnownActualHash: missingSide === 'actual' ? targetHash : survivorHash,
+            ...wallosBaselineOf(missingSide === 'wallos' ? target : survivor),
             ...(missingSide === 'wallos' ? { firstSeenNextPayment: target.anchorDate ?? null } : {}),
           },
         );

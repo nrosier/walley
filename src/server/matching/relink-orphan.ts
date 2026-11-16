@@ -6,6 +6,7 @@
  */
 import { CreateFlowError, type CreateDeps } from '../integrations/create.js';
 import type { UserRepo } from '../db/repo.js';
+import { wallosBaselineOf, type WallosBaseline } from './baseline.js';
 import { hashMatchFields } from './hash.js';
 import { readCurrentSides } from './sync-check.js';
 
@@ -60,12 +61,14 @@ export async function repointAfterRecreate(
   let wallosHash: string | null = null;
   let actualHash: string | null = null;
   let anchor: string | null = null;
+  let baseline: WallosBaseline = wallosBaselineOf(undefined);
   try {
     const current = await readCurrentSides(deps, userId);
     const w = wallosId === null ? null : (current.wallosSides.get(wallosId)?.fields ?? null);
     const a = actualId === null ? null : (current.actualSides.get(actualId)?.fields ?? null);
     wallosHash = w === null ? null : hashMatchFields(w);
     actualHash = a === null ? null : hashMatchFields(a);
+    baseline = wallosBaselineOf(wallosId === null ? undefined : current.wallosSides.get(wallosId));
     if (target === 'wallos' && wallosId !== null) anchor = current.wallosSides.get(wallosId)?.anchorDate ?? null;
   } catch {
     // Keep the null hashes; the create already succeeded.
@@ -78,6 +81,7 @@ export async function repointAfterRecreate(
       itemId: newItemId,
       lastKnownWallosHash: wallosHash,
       lastKnownActualHash: actualHash,
+      ...baseline,
       ...(target === 'wallos' ? { firstSeenNextPayment: anchor } : {}),
     },
   );
