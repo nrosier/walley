@@ -34,6 +34,67 @@ export function amountWithinTolerance(a: number, b: number, tolerancePercent: nu
   return diff * 100n * BigInt(TOLERANCE_SCALE) <= tol * larger;
 }
 
+/** Smallest rate margin in minor units when the margin is on (#229): absorbs rounding on small prices. */
+export const RATE_MARGIN_FLOOR_MINOR_UNITS = 2;
+
+/** Default user_configs.currency_drift_percent (#229). */
+export const DEFAULT_CURRENCY_DRIFT_PERCENT = 2;
+
+/** Bounds and step of currency_drift_percent (#229). 0 turns the margin off. */
+export const MIN_CURRENCY_DRIFT_PERCENT = 0;
+export const MAX_CURRENCY_DRIFT_PERCENT = 10;
+export const CURRENCY_DRIFT_STEP = 0.5;
+
+function assertDriftPercent(percent: number): void {
+  if (
+    !Number.isFinite(percent) ||
+    percent < MIN_CURRENCY_DRIFT_PERCENT ||
+    percent > MAX_CURRENCY_DRIFT_PERCENT
+  ) {
+    throw new RangeError(
+      `percent must be between ${String(MIN_CURRENCY_DRIFT_PERCENT)} and ${String(MAX_CURRENCY_DRIFT_PERCENT)}`,
+    );
+  }
+}
+
+/**
+ * Rate margin in minor units for a foreign-currency pair (#229): max(2, ceil(percent% of
+ * |actualCents|)), in BigInt with percent rounded to hundredths. Returns null at 0 percent: the
+ * margin is off and the floor does not apply, so comparison stays exact. percent must be in 0..10.
+ */
+export function rateMarginUnits(actualCents: number, percent: number): number | null {
+  assertCents(actualCents, 'actualCents');
+  assertDriftPercent(percent);
+  if (percent === 0) {
+    return null;
+  }
+  const p = BigInt(Math.round(percent * TOLERANCE_SCALE));
+  const scale = 100n * BigInt(TOLERANCE_SCALE);
+  const product = p * BigInt(Math.abs(actualCents));
+  const pct = (product + scale - 1n) / scale;
+  const floor = BigInt(RATE_MARGIN_FLOOR_MINOR_UNITS);
+  return Number(pct > floor ? pct : floor);
+}
+
+/**
+ * True when the converted Wallos amount is within the rate margin of the Actual amount (#229):
+ * |wallosCents - actualCents| <= rateMarginUnits(actualCents, percent), boundary included. Uses the
+ * signed difference, so amounts of opposite sign always fail. False at 0 percent (margin off).
+ */
+export function withinRateMargin(wallosCents: number, actualCents: number, percent: number): boolean {
+  assertCents(wallosCents, 'wallosCents');
+  const margin = rateMarginUnits(actualCents, percent);
+  if (margin === null) {
+    return false;
+  }
+  if ((wallosCents < 0 && actualCents > 0) || (wallosCents > 0 && actualCents < 0)) {
+    return false;
+  }
+  const diff = BigInt(wallosCents) - BigInt(actualCents);
+  const absDiff = diff < 0n ? -diff : diff;
+  return absDiff <= BigInt(margin);
+}
+
 /**
  * Midpoint of a range schedule's bounds in integer cents: (num1 + num2) / 2, an odd sum rounding
  * half away from zero (100 and 101 give 101; -100 and -101 give -101).

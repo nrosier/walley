@@ -61,6 +61,21 @@ export interface SyncWallosSource {
   readonly rateSource: 'override' | 'wallos';
 }
 
+/**
+ * How far a foreign-currency pair's converted Wallos amount is from the Actual amount, against the
+ * user's rate margin (#229). Present only when the margin is above 0, the current Wallos side is
+ * foreign, the Actual amount is a single amount (not a range) and the row's baseline columns are
+ * not null. Display only: never part of the hash.
+ */
+export interface SyncRateMargin {
+  /** |Wallos - Actual| in base-currency minor units, >= 0. */
+  readonly differenceCents: number;
+  /** The margin in the same units (rateMarginUnits). */
+  readonly marginCents: number;
+  /** The user's currency_drift_percent behind marginCents. */
+  readonly marginPercent: number;
+}
+
 /** One side's compared fields on a mismatch. Amount is in the base currency (range: both bounds). */
 export interface SyncMismatchFields {
   readonly frequency: string;
@@ -86,6 +101,12 @@ export interface SyncMismatch {
   readonly actualDrift: boolean;
   readonly wallosFields: SyncMismatchFields;
   readonly actualFields: SyncMismatchFields;
+  /**
+   * Present under the same conditions as SyncRateMargin (#229). `sourceChanged` is true when the
+   * Wallos own-currency price or currency code differs from the baseline, which the margin never
+   * absorbs.
+   */
+  readonly rateMargin?: SyncRateMargin & { readonly sourceChanged: boolean };
 }
 
 export interface SyncUnmappable {
@@ -115,6 +136,11 @@ export interface SyncLinked {
   readonly actualAmountCents: number | null;
   /** True when the Actual schedule is a range (amount is the midpoint). */
   readonly isRange: boolean;
+  /**
+   * Present only when the row is LINKED through the rate margin (#229): the converted Wallos amount
+   * differs from Actual but is within the margin. Same presence conditions as SyncRateMargin.
+   */
+  readonly rateMargin?: SyncRateMargin;
   /**
    * Unlinked items on the missing side that pass the candidate rule against the surviving side at
    * the user's tolerance, best name score first. Empty when orphan is null or orphaned_both.
