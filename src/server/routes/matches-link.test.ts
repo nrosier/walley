@@ -151,6 +151,17 @@ describe('POST /api/matches', () => {
     noWrites();
   });
 
+  it('stores the Wallos baseline amount, price and currency with the hash (#229)', async () => {
+    const { app, sa, repoA } = setup();
+    const res = await injectAs(app, sa, link('7', 'sch-a'));
+    expect(res.statusCode).toBe(201);
+    expect(repoA.getMatch(res.json<{ id: string }>().id)).toMatchObject({
+      lastKnownWallosAmountCents: -1250,
+      lastKnownWallosPriceMinor: -1250,
+      lastKnownWallosCurrency: 'EUR',
+    });
+  });
+
   it('409 already_matched when either id has a row, and keeps one row', async () => {
     const { app, sa, repoA } = setup();
     expect((await injectAs(app, sa, link('7', 'sch-a'))).statusCode).toBe(201);
@@ -245,6 +256,18 @@ describe('POST /api/matches', () => {
 });
 
 describe('POST /api/matches/ignore', () => {
+  it('stores a null hash and null baseline columns, so no baseline write is needed (#229)', async () => {
+    const { app, sa, repoA } = setup();
+    const res = await injectAs(app, sa, ignore('wallos', '7'));
+    expect(res.statusCode).toBe(201);
+    expect(repoA.getMatch(res.json<{ id: string }>().id)).toMatchObject({
+      lastKnownWallosHash: null,
+      lastKnownWallosAmountCents: null,
+      lastKnownWallosPriceMinor: null,
+      lastKnownWallosCurrency: null,
+    });
+  });
+
   it('ignores each side with only that id set and makes no remote call', async () => {
     const { app, sa, repoA, reads, noWrites } = setup();
     const w = await injectAs(app, sa, ignore('wallos', '7'));

@@ -6,6 +6,7 @@
  * Nothing here logs.
  */
 import type { CreateDeps } from '../integrations/create.js';
+import { wallosBaselineOf, type WallosBaseline } from './baseline.js';
 import { hashMatchFields } from './hash.js';
 import { readCurrentSides } from './sync-check.js';
 
@@ -39,6 +40,7 @@ export async function linkCreatedPair(
   let wallosHash: string | null = null;
   let actualHash: string | null = null;
   let anchor: string | null = null;
+  let baseline: WallosBaseline = wallosBaselineOf(undefined);
   try {
     const current = await readCurrentSides(deps, userId);
     const w = current.wallosSides.get(wallosId)?.fields ?? null;
@@ -46,6 +48,7 @@ export async function linkCreatedPair(
     wallosHash = w === null ? null : hashMatchFields(w);
     actualHash = a === null ? null : hashMatchFields(a);
     anchor = current.wallosSides.get(wallosId)?.anchorDate ?? null;
+    baseline = wallosBaselineOf(current.wallosSides.get(wallosId));
   } catch {
     // Keep the null hashes; see above.
   }
@@ -56,6 +59,7 @@ export async function linkCreatedPair(
       status: 'LINKED',
       lastKnownWallosHash: wallosHash,
       lastKnownActualHash: actualHash,
+      ...baseline,
       firstSeenNextPayment: anchor,
     });
     return { matchId: row.id, matchCreated: true };
