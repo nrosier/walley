@@ -139,6 +139,17 @@ describe('tenant isolation', () => {
     expect(a.getConfig()?.wallosUrl).toBe('https://a.test');
   });
 
+  it('B fillWallosBaseline and upsertConfig({ currencyDriftPercent }) never touch A rows', () => {
+    const mine = a.insertMatch({ wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED', lastKnownWallosHash: 'hw' });
+    const cfg = a.upsertConfig({ currencyDriftPercent: 3 });
+    expect(b.fillWallosBaseline(mine.id, 'hw', { amountCents: 1, priceMinor: 2, currency: 'USD' })).toBe(false);
+    b.upsertConfig({ currencyDriftPercent: 9 });
+    expect(a.getMatch(mine.id)).toEqual(mine);
+    expect(a.getConfig()).toEqual(cfg);
+    expect(b.getConfig()?.currencyDriftPercent).toBe(9);
+    expect(a.fillWallosBaseline(mine.id, 'hw', { amountCents: 1, priceMinor: 2, currency: 'USD' })).toBe(true);
+  });
+
   describe('email verification', () => {
     const now = new Date(1_000_000);
     const expiresAt = new Date(now.getTime() + 86_400_000);

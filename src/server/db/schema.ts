@@ -112,11 +112,17 @@ export const userConfigs = sqliteTable(
     actualSyncKeyEnc: text('actual_sync_key_enc'),
     actualBudgetId: text('actual_budget_id'),
     tolerancePercent: real('tolerance_percent').notNull().default(5),
+    /** #229: rate margin (percent of the Actual amount) inside which a foreign-currency pair stays Synced. 0 means exact. */
+    currencyDriftPercent: real('currency_drift_percent').notNull().default(2),
   },
   (t) => [
     check(
       'user_configs_tolerance_check',
       sql`${t.tolerancePercent} >= 0 AND ${t.tolerancePercent} <= 100`,
+    ),
+    check(
+      'user_configs_currency_drift_check',
+      sql`${t.currencyDriftPercent} >= 0 AND ${t.currencyDriftPercent} <= 10`,
     ),
   ],
 );
@@ -135,6 +141,14 @@ export const matches = sqliteTable(
     lastKnownActualHash: text('last_known_actual_hash'),
     /** First next_payment seen for a Wallos item with no start_date (YYYY-MM-DD); the stable date in its hash. Null until seen. */
     firstSeenNextPayment: text('first_seen_next_payment'),
+    /**
+     * #229 rate-margin baseline of the Wallos side, written with the hash it belongs to: the converted
+     * amount in base minor units, the own-currency price in minor units and the own currency code.
+     * Null until filled (rows from before migration 0012 are filled lazily), and nulled with the hash.
+     */
+    lastKnownWallosAmountCents: integer('last_known_wallos_amount_cents'),
+    lastKnownWallosPriceMinor: integer('last_known_wallos_price_minor'),
+    lastKnownWallosCurrency: text('last_known_wallos_currency'),
   },
   (t) => [
     uniqueIndex('matches_user_wallos_unique').on(t.userId, t.wallosId),
