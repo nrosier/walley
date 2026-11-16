@@ -90,7 +90,7 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(12);
+    expect(journalCount(db)).toBe(14);
     const row = db.$client
       .prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u1'")
       .get() as { v: number | null };
@@ -123,7 +123,7 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(12);
+    expect(journalCount(db)).toBe(14);
     const tokens = db.$client.prepare('SELECT count(*) AS n FROM email_verifications').get() as { n: number };
     expect(tokens.n).toBe(0);
     const user = db.$client.prepare("SELECT email_verified_at AS v FROM users WHERE id = 'u1'").get() as { v: number | null };
@@ -150,11 +150,80 @@ describe('openDatabase', () => {
     raw.close();
 
     const db = track(openDatabase(path));
-    expect(journalCount(db)).toBe(12);
+    expect(journalCount(db)).toBe(14);
     const row = db.$client
       .prepare("SELECT first_seen_next_payment AS f, last_known_wallos_hash AS h, status FROM matches WHERE id = 'm1'")
       .get() as { f: string | null; h: string; status: string };
     expect(row).toEqual({ f: null, h: 'hw', status: 'LINKED' });
+  });
+
+  function oldDb(name: string, entries: number): string {
+    const old = join(dir, name);
+    cpSync(MIGRATIONS_FOLDER, old, { recursive: true });
+    const journalPath = join(old, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: unknown[] };
+    journal.entries = journal.entries.slice(0, entries);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    const path = join(dir, `${name}.db`);
+    const raw = new Database(path);
+    migrate(drizzle(raw), { migrationsFolder: old });
+    raw.prepare('INSERT INTO users (id, email, key_salt, created_at) VALUES (?, ?, ?, ?)').run('u1', 'a@example.com', Buffer.alloc(32, 1), 1234);
+    raw
+      .prepare("INSERT INTO matches (id, user_id, wallos_id, actual_schedule_id, status, last_known_wallos_hash, last_known_actual_hash) VALUES ('m1', 'u1', 'w1', 'a1', 'LINKED', 'hw', 'ha')")
+      .run();
+    raw
+      .prepare("INSERT INTO user_configs (user_id, wallos_url, wallos_api_key_enc, actual_url, actual_password_enc, actual_sync_key_enc, actual_budget_id, tolerance_percent) VALUES ('u1', 'https://w', 'enc-w', 'https://a', 'enc-p', 'enc-s', 'b1', 7)")
+      .run();
+    raw.close();
+    return path;
+  }
+
+  const CONFIG_SQL = 'SELECT * FROM user_configs WHERE user_id = ?';
+  const MATCH_SQL =
+    "SELECT status, last_known_wallos_hash AS hw, last_known_actual_hash AS ha, last_known_wallos_amount_cents AS c, last_known_wallos_price_minor AS p, last_known_wallos_currency AS cur FROM matches WHERE id = 'm1'";
+
+  it('upgrades 0011 to the rate-margin columns and keeps every config column byte-identical', () => {
+    const path = oldDb('old-migrations-0011', 12);
+    const before = new Database(path);
+    const configBefore = before.prepare(CONFIG_SQL).get('u1') as Record<string, unknown>;
+    before.close();
+
+    const db = track(openDatabase(path));
+    expect(journalCount(db)).toBe(14);
+    expect(db.$client.prepare(MATCH_SQL).get()).toEqual({
+      status: 'LINKED', hw: 'hw', ha: 'ha', c: null, p: null, cur: null,
+    });
+    const configAfter = db.$client.prepare(CONFIG_SQL).get('u1') as Record<string, unknown>;
+    expect(configAfter.currency_drift_percent).toBe(2);
+    const rest = { ...configAfter };
+    delete rest.currency_drift_percent;
+    expect(rest).toEqual(configBefore);
+    expect(rest.tolerance_percent).toBe(7);
+    expect(rest.wallos_api_key_enc).toBe('enc-w');
+  });
+
+  it('upgrades 0012 to 0013 with an existing row and keeps a stored drift value', () => {
+    const path = oldDb('old-migrations-0012', 13);
+    const raw = new Database(path);
+    raw.prepare("UPDATE user_configs SET currency_drift_percent = 4.5 WHERE user_id = 'u1'").run();
+    raw.close();
+
+    const db = track(openDatabase(path));
+    expect(journalCount(db)).toBe(14);
+    const row = db.$client.prepare(CONFIG_SQL).get('u1') as Record<string, unknown>;
+    expect(row.currency_drift_percent).toBe(4.5);
+    expect(row.actual_sync_key_enc).toBe('enc-s');
+  });
+
+  it('refuses a currency_drift_percent outside 0..10 and accepts the bounds', () => {
+    const db = track(openDatabase(join(dir, 'walley.db')));
+    db.$client.prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)').run('u1', 'a@example.com', Buffer.alloc(32, 1));
+    const insert = db.$client.prepare('INSERT INTO user_configs (user_id, currency_drift_percent) VALUES (?, ?)');
+    expect(() => insert.run('u1', 10.5)).toThrow(/CHECK/i);
+    expect(() => insert.run('u1', -0.5)).toThrow(/CHECK/i);
+    expect(() => insert.run('u1', 10)).not.toThrow();
+    expect(() => db.$client.prepare("UPDATE user_configs SET currency_drift_percent = 0 WHERE user_id = 'u1'").run()).not.toThrow();
+    expect(() => db.$client.prepare("UPDATE user_configs SET currency_drift_percent = 11 WHERE user_id = 'u1'").run()).toThrow(/CHECK/i);
   });
 
   it('is idempotent and keeps data across a second open', () => {
@@ -163,11 +232,11 @@ describe('openDatabase', () => {
     first.$client
       .prepare('INSERT INTO users (id, email, key_salt) VALUES (?, ?, ?)')
       .run('u1', 'a@example.com', Buffer.alloc(32, 1));
-    expect(journalCount(first)).toBe(12);
+    expect(journalCount(first)).toBe(14);
     closeDatabase(first);
 
     const second = track(openDatabase(path));
-    expect(journalCount(second)).toBe(12);
+    expect(journalCount(second)).toBe(14);
     const users = second.$client.prepare('SELECT id FROM users').all() as { id: string }[];
     expect(users).toEqual([{ id: 'u1' }]);
   });

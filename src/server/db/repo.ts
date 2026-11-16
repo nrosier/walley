@@ -39,6 +39,8 @@ export interface UserConfigInput {
   actualSyncKeyEnc?: string | null;
   actualBudgetId?: string | null;
   tolerancePercent?: number;
+  /** #229: rate margin percent, 0..10 (DB check). */
+  currencyDriftPercent?: number;
 }
 
 export interface MatchInput {
@@ -47,6 +49,10 @@ export interface MatchInput {
   status: MatchStatus;
   lastKnownWallosHash?: string | null;
   lastKnownActualHash?: string | null;
+  /** #229 baseline of the Wallos side: converted base minor units, own-currency minor price, own currency code. */
+  lastKnownWallosAmountCents?: number | null;
+  lastKnownWallosPriceMinor?: number | null;
+  lastKnownWallosCurrency?: string | null;
   /** Anchor for a Wallos item with no start_date. Set only on insert or by setFirstSeenNextPayment, never by updateMatch. */
   firstSeenNextPayment?: string | null;
 }
@@ -66,6 +72,9 @@ export interface MatchSideReplacement {
   itemId: string;
   lastKnownWallosHash: string | null;
   lastKnownActualHash: string | null;
+  lastKnownWallosAmountCents?: number | null;
+  lastKnownWallosPriceMinor?: number | null;
+  lastKnownWallosCurrency?: string | null;
   /** Used only when `side` is `wallos`: the new item's anchor (null if none). The old item's anchor is never kept. */
   firstSeenNextPayment?: string | null;
 }
@@ -175,6 +184,17 @@ export interface UserRepo {
    * Returns true when written; false when the row is not this user's or already has an anchor.
    */
   setFirstSeenNextPayment(id: string, date: string): boolean;
+  /**
+   * #229: lazily fills the rate-margin baseline of this user's match. One user-scoped conditional
+   * UPDATE: runs only when the row's `last_known_wallos_hash` still equals `expectedWallosHash` and
+   * `last_known_wallos_amount_cents` is still null, so a concurrent ignore_diff or overwrite is never
+   * overwritten. Returns true only when a row changed.
+   */
+  fillWallosBaseline(
+    id: string,
+    expectedWallosHash: string,
+    values: { amountCents: number; priceMinor: number; currency: string },
+  ): boolean;
   /** Returns false when the id is not this user's; that row is not touched. */
   updateMatch(id: string, patch: MatchPatch): boolean;
   /**
@@ -239,6 +259,7 @@ function pickConfigValues(input: UserConfigInput): ConfigValues {
   if (input.actualSyncKeyEnc !== undefined) values.actualSyncKeyEnc = input.actualSyncKeyEnc;
   if (input.actualBudgetId !== undefined) values.actualBudgetId = input.actualBudgetId;
   if (input.tolerancePercent !== undefined) values.tolerancePercent = input.tolerancePercent;
+  if (input.currencyDriftPercent !== undefined) values.currencyDriftPercent = input.currencyDriftPercent;
   return values;
 }
 
@@ -253,6 +274,15 @@ function pickMatchValues(input: MatchPatch): MatchValues {
   }
   if (input.lastKnownActualHash !== undefined) {
     values.lastKnownActualHash = input.lastKnownActualHash;
+  }
+  if (input.lastKnownWallosAmountCents !== undefined) {
+    values.lastKnownWallosAmountCents = input.lastKnownWallosAmountCents;
+  }
+  if (input.lastKnownWallosPriceMinor !== undefined) {
+    values.lastKnownWallosPriceMinor = input.lastKnownWallosPriceMinor;
+  }
+  if (input.lastKnownWallosCurrency !== undefined) {
+    values.lastKnownWallosCurrency = input.lastKnownWallosCurrency;
   }
   return values;
 }
@@ -303,7 +333,15 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
     );
     const ids = tx.select({ id: matches.id }).from(matches).where(scope).all().map((r) => r.id);
     if (ids.length > 0) {
-      tx.update(matches).set({ lastKnownWallosHash: null }).where(scope).run();
+      tx.update(matches)
+        .set({
+          lastKnownWallosHash: null,
+          lastKnownWallosAmountCents: null,
+          lastKnownWallosPriceMinor: null,
+          lastKnownWallosCurrency: null,
+        })
+        .where(scope)
+        .run();
     }
     return ids;
   };
@@ -526,6 +564,26 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
       );
     },
 
+    fillWallosBaseline(id, expectedWallosHash, values) {
+      return (
+        db
+          .update(matches)
+          .set({
+            lastKnownWallosAmountCents: values.amountCents,
+            lastKnownWallosPriceMinor: values.priceMinor,
+            lastKnownWallosCurrency: values.currency,
+          })
+          .where(
+            and(
+              ownMatch(id),
+              eq(matches.lastKnownWallosHash, expectedWallosHash),
+              isNull(matches.lastKnownWallosAmountCents),
+            ),
+          )
+          .run().changes === 1
+      );
+    },
+
     updateMatch(id, patch) {
       const values = pickMatchValues(patch);
       if (Object.keys(values).length === 0) {
@@ -547,6 +605,9 @@ export function createUserRepo(db: AppDatabase, userId: string): UserRepo {
           status: 'LINKED',
           lastKnownWallosHash: next.lastKnownWallosHash,
           lastKnownActualHash: next.lastKnownActualHash,
+          lastKnownWallosAmountCents: next.lastKnownWallosAmountCents ?? null,
+          lastKnownWallosPriceMinor: next.lastKnownWallosPriceMinor ?? null,
+          lastKnownWallosCurrency: next.lastKnownWallosCurrency ?? null,
           ...(next.side === 'wallos' ? { firstSeenNextPayment: next.firstSeenNextPayment ?? null } : {}),
         })
         .where(

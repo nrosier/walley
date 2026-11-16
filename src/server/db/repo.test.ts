@@ -308,6 +308,71 @@ describe('createUserRepo', () => {
     });
   });
 
+  describe('rate-margin baseline (#229)', () => {
+    const base = { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' } as const;
+    const vals = { amountCents: -1250, priceMinor: -2500, currency: 'USD' };
+
+    it('insertMatch and updateMatch write the three columns', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch({ ...base, lastKnownWallosAmountCents: -1250, lastKnownWallosPriceMinor: -2500, lastKnownWallosCurrency: 'USD' });
+      expect(row).toMatchObject({ lastKnownWallosAmountCents: -1250, lastKnownWallosPriceMinor: -2500, lastKnownWallosCurrency: 'USD' });
+      repo.updateMatch(row.id, { lastKnownWallosAmountCents: -1, lastKnownWallosPriceMinor: -2, lastKnownWallosCurrency: 'GBP' });
+      expect(repo.getMatch(row.id)).toMatchObject({ lastKnownWallosAmountCents: -1, lastKnownWallosPriceMinor: -2, lastKnownWallosCurrency: 'GBP' });
+      repo.updateMatch(row.id, { lastKnownWallosAmountCents: null, lastKnownWallosPriceMinor: null, lastKnownWallosCurrency: null });
+      expect(repo.getMatch(row.id)).toMatchObject({ lastKnownWallosAmountCents: null, lastKnownWallosPriceMinor: null, lastKnownWallosCurrency: null });
+    });
+
+    it('replaceMatchSide writes them from next, or nulls them when omitted', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch({ ...base, lastKnownWallosAmountCents: 5, lastKnownWallosPriceMinor: 6, lastKnownWallosCurrency: 'USD' });
+      const hashes = { lastKnownWallosHash: 'hw', lastKnownActualHash: 'ha' };
+      expect(repo.replaceMatchSide(row.id, base, { side: 'actual', itemId: 'a2', ...hashes, lastKnownWallosAmountCents: -1250, lastKnownWallosPriceMinor: -2500, lastKnownWallosCurrency: 'EUR' })).toBe(true);
+      expect(repo.getMatch(row.id)).toMatchObject({ lastKnownWallosAmountCents: -1250, lastKnownWallosPriceMinor: -2500, lastKnownWallosCurrency: 'EUR' });
+      expect(repo.replaceMatchSide(row.id, { ...base, actualScheduleId: 'a2' }, { side: 'actual', itemId: 'a3', ...hashes })).toBe(true);
+      expect(repo.getMatch(row.id)).toMatchObject({ lastKnownWallosAmountCents: null, lastKnownWallosPriceMinor: null, lastKnownWallosCurrency: null });
+    });
+
+    it('an override save and clear reset all three columns with the hash', () => {
+      const repo = createUserRepo(db, userId);
+      const full = { ...base, lastKnownWallosHash: 'hw', lastKnownWallosAmountCents: 1, lastKnownWallosPriceMinor: 2, lastKnownWallosCurrency: 'USD' } as const;
+      const row = repo.insertMatch(full);
+      repo.saveSubscriptionOverride('w1', { rate: '1.5', now: new Date(0) });
+      expect(repo.getMatch(row.id)).toMatchObject({ lastKnownWallosHash: null, lastKnownWallosAmountCents: null, lastKnownWallosPriceMinor: null, lastKnownWallosCurrency: null });
+      repo.updateMatch(row.id, { lastKnownWallosHash: 'hw', lastKnownWallosAmountCents: 1, lastKnownWallosPriceMinor: 2, lastKnownWallosCurrency: 'USD' });
+      repo.clearSubscriptionOverride('w1');
+      expect(repo.getMatch(row.id)).toMatchObject({ lastKnownWallosHash: null, lastKnownWallosAmountCents: null, lastKnownWallosPriceMinor: null, lastKnownWallosCurrency: null });
+    });
+
+    it('fillWallosBaseline writes once while the hash matches and the columns are null', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch({ ...base, lastKnownWallosHash: 'hw' });
+      expect(repo.fillWallosBaseline(row.id, 'other', vals)).toBe(false);
+      expect(repo.getMatch(row.id)?.lastKnownWallosAmountCents).toBeNull();
+      expect(repo.fillWallosBaseline(row.id, 'hw', vals)).toBe(true);
+      expect(repo.getMatch(row.id)).toMatchObject({ lastKnownWallosHash: 'hw', lastKnownWallosAmountCents: -1250, lastKnownWallosPriceMinor: -2500, lastKnownWallosCurrency: 'USD' });
+      expect(repo.fillWallosBaseline(row.id, 'hw', { amountCents: 9, priceMinor: 9, currency: 'EUR' })).toBe(false);
+      expect(repo.getMatch(row.id)?.lastKnownWallosAmountCents).toBe(-1250);
+    });
+
+    it('fillWallosBaseline returns false when the hash moved or is null, or the id is unknown', () => {
+      const repo = createUserRepo(db, userId);
+      const row = repo.insertMatch(base);
+      expect(repo.fillWallosBaseline(row.id, 'hw', vals)).toBe(false);
+      repo.updateMatch(row.id, { lastKnownWallosHash: 'new' });
+      expect(repo.fillWallosBaseline(row.id, 'hw', vals)).toBe(false);
+      expect(repo.fillWallosBaseline('missing', 'new', vals)).toBe(false);
+    });
+
+    it('upsertConfig stores currencyDriftPercent, defaults to 2, and the check refuses 10.5', () => {
+      const repo = createUserRepo(db, userId);
+      expect(repo.upsertConfig({}).currencyDriftPercent).toBe(2);
+      expect(repo.upsertConfig({ currencyDriftPercent: 0.5 }).currencyDriftPercent).toBe(0.5);
+      expect(() => repo.upsertConfig({ currencyDriftPercent: 10.5 })).toThrow();
+      expect(() => repo.upsertConfig({ currencyDriftPercent: -0.5 })).toThrow();
+      expect(repo.getConfig()?.currencyDriftPercent).toBe(0.5);
+    });
+  });
+
   describe('replaceMatchSide', () => {
     const hashes = { lastKnownWallosHash: 'hw', lastKnownActualHash: 'ha' };
     const linked = { wallosId: 'w1', actualScheduleId: 'a1', status: 'LINKED' } as const;
