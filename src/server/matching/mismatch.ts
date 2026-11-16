@@ -1,5 +1,7 @@
 import type { MatchFieldsInput } from "../../lib/match-fields.js";
 import type { MatchStatus } from "../../lib/match-status.js";
+import { rateMarginUnits, withinRateMargin } from "../../lib/amount-match.js";
+import type { SyncRateMargin } from "../../lib/sync-check-types.js";
 import { hashMatchFields } from "./hash.js";
 
 /** One saved matches row with its stored hashes. The caller has already scoped these rows to one user. */
@@ -9,6 +11,22 @@ export interface MismatchSavedRow {
   status: MatchStatus;
   lastKnownWallosHash: string | null;
   lastKnownActualHash: string | null;
+  /** #229 baseline columns; absent or null for a row with no baseline yet (exact comparison). */
+  lastKnownWallosAmountCents?: number | null;
+  lastKnownWallosPriceMinor?: number | null;
+  lastKnownWallosCurrency?: string | null;
+}
+
+/** #229: the Wallos subscription's own price (signed minor units, like Actual) and currency code. */
+export interface WallosOwn {
+  readonly priceMinor: number;
+  readonly currencyCode: string;
+}
+
+export interface DetectMismatchesOptions {
+  readonly wallosOwnById?: ReadonlyMap<string, WallosOwn>;
+  /** The user's currency_drift_percent (0..10). Default 0: no margin, exact comparison as before #229. */
+  readonly currencyDriftPercent?: number;
 }
 
 export type DriftStatus = Extract<MatchStatus, "LINKED" | "MISMATCH_DETECTED">;
@@ -31,6 +49,15 @@ export interface MismatchResult {
   wallosRebaselined: boolean;
   wallosDrift: boolean;
   actualDrift: boolean;
+  /** #229: LINKED only because a rate-only Wallos difference is inside the margin. Hashes and baseline are not advanced. */
+  withinMargin: boolean;
+  /** #229: display data, see SyncMismatch.rateMargin / SyncLinked.rateMargin. Absent when not applicable. */
+  rateMargin?: SyncRateMargin & { sourceChanged: boolean };
+  /**
+   * #229 baseline columns: 'set' writes them with the hash (null or re-baselined hash), 'fill' writes
+   * them only if still null and the stored hash equals the current one, 'none' leaves them.
+   */
+  wallosBaselineWrite: "none" | "set" | "fill";
 }
 
 export interface UnmappablePair {
@@ -71,7 +98,9 @@ export function detectMismatches(
   currentByWallosId: ReadonlyMap<string, MatchFieldsInput>,
   currentByActualId: ReadonlyMap<string, MatchFieldsInput>,
   legacyByWallosId: ReadonlyMap<string, MatchFieldsInput> = new Map(),
+  options: DetectMismatchesOptions = {},
 ): DetectMismatchesResult {
+  const pct = options.currencyDriftPercent ?? 0;
   const results: MismatchResult[] = [];
   const unmappable: UnmappablePair[] = [];
 
@@ -103,6 +132,7 @@ export function detectMismatches(
     let wallosDrift = storedWallos !== currentWallosHash;
     const actualDrift = storedActual !== currentActualHash;
     let wallosRebaselined = false;
+    let baselineWrite: MismatchResult["wallosBaselineWrite"] = row.lastKnownWallosHash === null ? "set" : "none";
     if (wallosDrift) {
       const legacy = legacyByWallosId.get(row.wallosId);
       if (legacy !== undefined && storedWallos === hashMatchFields(legacy)) {
@@ -110,9 +140,69 @@ export function detectMismatches(
         wallosRebaselined = true;
         wallosDrift = false;
         storedWallos = currentWallosHash;
+        baselineWrite = "set";
       }
     }
+
+    // #229 rate margin. Only a rate-only Wallos difference can be absorbed; everything else stays exact.
+    const own = options.wallosOwnById?.get(row.wallosId);
+    const baseAmount = row.lastKnownWallosAmountCents ?? null;
+    const basePrice = row.lastKnownWallosPriceMinor ?? null;
+    const baseCurrency = row.lastKnownWallosCurrency ?? null;
+    const hasBaseline = baseAmount !== null && basePrice !== null && baseCurrency !== null;
+    const foreignNow =
+      own !== undefined && own.currencyCode.toUpperCase() !== wallos.currency.trim().toUpperCase();
+    let withinMargin = false;
+    if (
+      wallosDrift &&
+      !actualDrift &&
+      pct > 0 &&
+      hasBaseline &&
+      own !== undefined &&
+      foreignNow &&
+      own.currencyCode === baseCurrency &&
+      own.priceMinor === basePrice &&
+      actual.amount.kind === "single" &&
+      wallos.amount.kind === "single" &&
+      hashMatchFields({ ...wallos, amount: { kind: "single", cents: baseAmount } }) === storedWallos &&
+      withinRateMargin(wallos.amount.cents, actual.amount.cents, pct)
+    ) {
+      withinMargin = true;
+      wallosDrift = false;
+    }
+
+    let rateMargin: MismatchResult["rateMargin"];
+    if (
+      pct > 0 &&
+      hasBaseline &&
+      baselineWrite !== "set" &&
+      own !== undefined &&
+      foreignNow &&
+      actual.amount.kind === "single" &&
+      wallos.amount.kind === "single"
+    ) {
+      const marginCents = rateMarginUnits(actual.amount.cents, pct);
+      if (marginCents !== null) {
+        rateMargin = {
+          differenceCents: Math.abs(wallos.amount.cents - actual.amount.cents),
+          marginCents,
+          marginPercent: pct,
+          sourceChanged: own.priceMinor !== basePrice || own.currencyCode !== baseCurrency,
+        };
+      }
+    }
+
     const drift = wallosDrift || actualDrift;
+    if (
+      baselineWrite === "none" &&
+      !withinMargin &&
+      currentWallosHash === storedWallos &&
+      row.lastKnownWallosAmountCents == null &&
+      row.lastKnownWallosPriceMinor == null &&
+      row.lastKnownWallosCurrency == null
+    ) {
+      baselineWrite = "fill";
+    }
 
     results.push({
       wallosId: row.wallosId,
@@ -127,6 +217,9 @@ export function detectMismatches(
       wallosRebaselined,
       wallosDrift,
       actualDrift,
+      withinMargin,
+      ...(rateMargin === undefined ? {} : { rateMargin }),
+      wallosBaselineWrite: baselineWrite,
     });
   }
 
