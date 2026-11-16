@@ -25,6 +25,10 @@ const en = {
   ignoredTitle: 'Ignored items ({count})',
   counts: '{shown} of {total} pairs, {differing} with differences',
   differs: 'differs',
+  rateMargin: {
+    hint: 'Within rate margin: {amount} ({percent})',
+    hintNoPercent: 'Within rate margin: {amount}',
+  },
   states: {
     loading: 'Checking Wallos and Actual Budget...',
     empty: 'Nothing to link here.',
@@ -124,6 +128,10 @@ const nl: typeof en = {
   ignoredTitle: 'Genegeerde items ({count})',
   counts: '{shown} van {total} paren, {differing} met verschillen',
   differs: 'wijkt af',
+  rateMargin: {
+    hint: 'Binnen de koersmarge: {amount} ({percent})',
+    hintNoPercent: 'Binnen de koersmarge: {amount}',
+  },
   states: {
     loading: 'Wallos en Actual Budget worden gecontroleerd...',
     empty: 'Hier valt niets te koppelen.',
