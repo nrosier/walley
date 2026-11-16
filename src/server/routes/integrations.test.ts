@@ -838,6 +838,43 @@ describe('create saves the pair as a LINKED match (#108)', () => {
     expect(res.json()).toEqual({ wallosSubscriptionId: '55', matchId: rows[0]?.id, matchCreated: true });
   });
 
+  it('stores the Wallos baseline columns with the hashes, and nulls them when the read-back fails (#229)', async () => {
+    const t = setup();
+    const res = await injectAs(t.app, t.sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a' } });
+    expect(res.statusCode).toBe(201);
+    expect(createUserRepo(t.db, t.a).listMatches()[0]).toMatchObject({
+      lastKnownWallosAmountCents: -1250,
+      lastKnownWallosPriceMinor: -1250,
+      lastKnownWallosCurrency: 'EUR',
+    });
+
+    const state = { failing: false };
+    const f = setup({
+      wallos: {
+        listSubscriptions: async () => {
+          if (state.failing) throw new Error('wallos down');
+          return [{ id: 7, name: 'Netflix', price: '12.50', currency_id: 1, cycle: 3, frequency: 1, next_payment: '2026-11-03', inactive: 0 }];
+        },
+        listPaymentMethods: async () => [],
+        listCategories: async () => [],
+        listCurrencies: async () => [{ id: 1, code: 'EUR', rate: '1' }],
+      } as unknown as WallosClient,
+      createSchedule: async () => {
+        state.failing = true;
+        return { scheduleId: 'sch-a', payeeId: 'p1', payeeCreated: true, categoryApplied: false };
+      },
+    });
+    const failed = await injectAs(f.app, f.sa, { method: 'POST', url: SCHED_URL, payload: SCHED_BODY });
+    expect(failed.statusCode).toBe(201);
+    expect(createUserRepo(f.db, f.a).listMatches()[0]).toMatchObject({
+      lastKnownWallosHash: null,
+      lastKnownActualHash: null,
+      lastKnownWallosAmountCents: null,
+      lastKnownWallosPriceMinor: null,
+      lastKnownWallosCurrency: null,
+    });
+  });
+
   it("two users: B's create never links A's rows, and A has no match", async () => {
     const { app, sb, a, b, db } = setup({
       createSchedule: async () => ({ scheduleId: 'sch-b', payeeId: 'p1', payeeCreated: true, categoryApplied: false }),
@@ -932,6 +969,54 @@ describe('Recreate an orphaned match side with matchId (#109)', () => {
     expect(rows[0]).toMatchObject({ id: row.id, wallosId: '7', actualScheduleId: 'sch-a', status: 'LINKED' });
     expect(rows[0]?.lastKnownActualHash).toMatch(/^[0-9a-f]{64}$/);
     expect(await syncLinked(t.app, t.sa)).toEqual([expect.objectContaining({ matchId: row.id, orphan: null, status: 'LINKED' })]);
+  });
+
+  it('Recreate stores the baseline of the pair Wallos side, and nulls it when the read-back fails (#229)', async () => {
+    const t = setup({ createSchedule: async () => NEW_SCHEDULE });
+    const row = createUserRepo(t.db, t.a).insertMatch({ wallosId: '7', actualScheduleId: 'gone', status: 'LINKED' });
+    expect((await injectAs(t.app, t.sa, { method: 'POST', url: SCHED_URL, payload: { ...SCHED_BODY, matchId: row.id } })).statusCode).toBe(201);
+    expect(createUserRepo(t.db, t.a).getMatch(row.id)).toMatchObject({
+      lastKnownWallosAmountCents: -1250,
+      lastKnownWallosPriceMinor: -1250,
+      lastKnownWallosCurrency: 'EUR',
+    });
+    const w = setup();
+    const row2 = createUserRepo(w.db, w.a).insertMatch({ wallosId: '99', actualScheduleId: 'sch-a', status: 'LINKED' });
+    expect((await injectAs(w.app, w.sa, { method: 'POST', url: SUB_URL, payload: { scheduleId: 'sch-a', matchId: row2.id } })).statusCode).toBe(201);
+    expect(createUserRepo(w.db, w.a).getMatch(row2.id)).toMatchObject({
+      wallosId: '55',
+      lastKnownWallosAmountCents: -1250,
+      lastKnownWallosPriceMinor: -1250,
+      lastKnownWallosCurrency: 'EUR',
+    });
+
+    const state = { failing: false };
+    const f = setup({
+      wallos: {
+        listSubscriptions: async () => {
+          if (state.failing) throw new Error('wallos down');
+          return [{ id: 7, name: 'Netflix', price: '12.50', currency_id: 1, cycle: 3, frequency: 1, next_payment: '2026-11-03', inactive: 0 }];
+        },
+        listPaymentMethods: async () => [],
+        listCategories: async () => [],
+        listCurrencies: async () => [{ id: 1, code: 'EUR', rate: '1' }],
+      } as unknown as WallosClient,
+      createSchedule: async () => {
+        state.failing = true;
+        return NEW_SCHEDULE;
+      },
+    });
+    const row3 = createUserRepo(f.db, f.a).insertMatch({ wallosId: '7', actualScheduleId: 'gone', status: 'LINKED' });
+    // checkRecreate reads first (still fine); the read-back after the create then fails.
+    expect((await injectAs(f.app, f.sa, { method: 'POST', url: SCHED_URL, payload: { ...SCHED_BODY, matchId: row3.id } })).statusCode).toBe(201);
+    expect(createUserRepo(f.db, f.a).getMatch(row3.id)).toMatchObject({
+      actualScheduleId: 'sch-a',
+      lastKnownWallosHash: null,
+      lastKnownActualHash: null,
+      lastKnownWallosAmountCents: null,
+      lastKnownWallosPriceMinor: null,
+      lastKnownWallosCurrency: null,
+    });
   });
 
   it('Recreate in Wallos keeps the match id, and the next sync check shows it linked with orphan null', async () => {

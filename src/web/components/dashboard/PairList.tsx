@@ -53,6 +53,23 @@ export interface PairListProps {
   detailsFetch?: typeof fetch;
 }
 
+/** The within-rate-margin hint text of a Synced pair (#229); the percent is left out when the Actual amount is 0. */
+function rateMarginText(
+  link: SyncLinked,
+  margin: NonNullable<SyncLinked['rateMargin']>,
+  baseCurrency: string,
+  locale: string,
+  t: (key: 'rateMargin.hint' | 'rateMargin.hintNoPercent', params: Record<string, string>) => string,
+): string {
+  const amount = formatMoney(margin.differenceCents, baseCurrency, locale);
+  const actual = link.actualAmountCents === null ? 0 : Math.abs(link.actualAmountCents);
+  if (actual === 0) return t('rateMargin.hintNoPercent', { amount });
+  const percent = new Intl.NumberFormat(locale, { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(
+    margin.differenceCents / actual,
+  );
+  return t('rateMargin.hint', { amount, percent });
+}
+
 /** A linked pair's side: name, amount, the pair's status badge and, when offered, its actions menu. */
 function LinkedCell({
   row,
@@ -60,6 +77,7 @@ function LinkedCell({
   badge,
   baseCurrency,
   differs,
+  rateMargin,
   actions,
   review,
   onOpenDetails,
@@ -69,6 +87,8 @@ function LinkedCell({
   badge: NonNullable<PairRow['badge']>;
   baseCurrency: string;
   differs: boolean;
+  /** The within-margin hint of a Synced pair on its Wallos cell (id and text); null hides it. */
+  rateMargin: { id: string; text: string } | null;
   /** The menu items for this pair's surviving cell; null hides the menu. */
   actions: MoreActionsItem[] | null;
   /** The Review button for a mismatch pair's cell; null hides it. */
@@ -85,8 +105,8 @@ function LinkedCell({
       data-linked=""
       tabIndex={-1}
       aria-label={t('row.actionsFor', { name: row.name })}
-      aria-describedby={ROW_HINT_ID}
-      className="flex h-full items-center gap-x-3 px-3 py-1.5 text-sm"
+      aria-describedby={rateMargin === null ? ROW_HINT_ID : `${ROW_HINT_ID} ${rateMargin.id}`}
+      className={`flex h-full items-center gap-x-3 px-3 py-1.5 text-sm ${rateMargin === null ? '' : 'max-md:flex-wrap'}`}
     >
       <button
         type="button"
@@ -99,6 +119,11 @@ function LinkedCell({
       >
         {row.name}
       </button>
+      {rateMargin !== null ? (
+        <span id={rateMargin.id} data-rate-margin="" className="shrink-0 whitespace-nowrap text-xs text-muted max-md:whitespace-normal">
+          {rateMargin.text}
+        </span>
+      ) : null}
       {row.isRange ? (
         <Badge variant="mismatch" title={t('row.rangeHint')}>
           {t('row.range')}
@@ -146,7 +171,7 @@ const GROUP_KINDS: readonly PairKind[] = ['linked', 'suggested', 'wallos', 'actu
  * in one foldable box per kind (linked, suggested, Wallos only, Actual only); an empty group has no box.
  */
 export function PairList(props: PairListProps) {
-  const { t } = useT(syncDashboardMessages);
+  const { t, locale } = useT(syncDashboardMessages);
   const unlinkLabel = useT(diffModalMessages).t('unlink');
   const [folded, setFolded] = useState<ReadonlySet<PairKind>>(() => new Set());
   /** The synced item whose read-only details dialog is open; null when closed. */
@@ -186,6 +211,11 @@ export function PairList(props: PairListProps) {
             badge={r.badge}
             baseCurrency={props.baseCurrency}
             differs={r.differs}
+            rateMargin={
+              side === 'wallos' && r.link !== null && r.link.status === 'LINKED' && r.link.rateMargin !== undefined
+                ? { id: `rate-margin-${r.link.matchId.replace(/\s/g, '_')}`, text: rateMarginText(r.link, r.link.rateMargin, props.baseCurrency, locale, t) }
+                : null
+            }
             actions={menuHere && r.link !== null ? linkedActions(r.link) : null}
             onOpenDetails={openDetails}
             review={

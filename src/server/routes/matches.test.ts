@@ -11,6 +11,7 @@ import { injectAs, makeAuthApp, makeUser, signIn, TEST_ORIGIN } from '../test/au
 
 const H1 = 'a'.repeat(64);
 const H2 = 'b'.repeat(64);
+const NULL_BASELINE = { lastKnownWallosAmountCents: null, lastKnownWallosPriceMinor: null, lastKnownWallosCurrency: null };
 
 interface FakeSched {
   id: string;
@@ -188,6 +189,21 @@ describe('POST /api/matches/:id/resolve', () => {
     expect(check.mismatches).toEqual([]);
     expect(repoA.getMatch(m.id)?.status).toBe('LINKED');
     noWrites();
+  });
+
+  it('ignore_diff stores the Wallos baseline columns of the current side (#229)', async () => {
+    const { app, sa, row, repoA, remote } = setup();
+    const m = row('MISMATCH_DETECTED');
+    expect(repoA.getMatch(m.id)).toMatchObject(NULL_BASELINE);
+    remote.subs[0] = { ...remote.subs[0], price: '13.00' };
+    const res = await injectAs(app, sa, { method: 'POST', url: url(m.id), payload: { action: 'ignore_diff' } });
+    expect(res.statusCode).toBe(200);
+    expect(repoA.getMatch(m.id)).toMatchObject({
+      lastKnownWallosAmountCents: -1300,
+      lastKnownWallosPriceMinor: -1300,
+      lastKnownWallosCurrency: 'EUR',
+    });
+    expect(JSON.stringify(res.json())).not.toMatch(/1300|EUR/);
   });
 
   it('ignore_diff ignores client-supplied hashes', async () => {

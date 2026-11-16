@@ -369,7 +369,7 @@ const CASES: Record<string, Case> = {
         url: '/api/settings/matching',
         status: [200],
         verify: (res) => {
-          expect(res.json()).toEqual({ tolerancePercent: 5 });
+          expect(res.json()).toEqual({ tolerancePercent: 5, currencyDriftPercent: 2 });
         },
       },
     ],
@@ -383,7 +383,7 @@ const CASES: Record<string, Case> = {
         payload: { tolerancePercent: 9, userId: b },
         status: [200],
         verify: (res) => {
-          expect(res.json()).toEqual({ tolerancePercent: 9 });
+          expect(res.json()).toEqual({ tolerancePercent: 9, currencyDriftPercent: 2 });
         },
       },
     ],

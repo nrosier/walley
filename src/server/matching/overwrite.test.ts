@@ -12,7 +12,7 @@ import type { MatchFieldsInput } from '../../lib/match-fields.js';
 import { createCapturingMailer } from '../mail/index.js';
 import { injectAs, makeAuthApp, makeUser, signIn } from '../test/auth-helpers.js';
 import { hashMatchFields } from './hash.js';
-import { overwriteWallosCurrency } from './overwrite.js';
+import { overwriteActual, overwriteWallos, overwriteWallosCurrency } from './overwrite.js';
 import { runSyncCheck } from './sync-check.js';
 
 const H1 = 'a'.repeat(64);
@@ -164,6 +164,33 @@ function setup(opts: SetupOptions = {}) {
   };
 }
 
+describe('overwrite_wallos and overwrite_actual baseline columns (#229)', () => {
+  it('overwrite_actual re-reads a foreign-currency Wallos side: signed converted amount, own price and currency', async () => {
+    const s = setup({ amount: -999 });
+    const m = s.row('MISMATCH_DETECTED');
+    expect(await overwriteActual(s.deps, s.userA, m, new Date())).toBe('written');
+    const stored = s.repoA.getMatch(m.id);
+    expect(stored?.status).toBe('LINKED');
+    // USD 15.00 at rate 1.1 against a rate-1 EUR budget: -1364 (rounded), written to Actual as the same amount.
+    expect(stored).toMatchObject({ lastKnownWallosAmountCents: -1364, lastKnownWallosPriceMinor: -1500, lastKnownWallosCurrency: 'USD' });
+    expect(stored?.lastKnownWallosHash).toBe(hashMatchFields(fieldsOf(-1364, 'EUR')));
+    expect(s.actualWrites.updateSchedule).toHaveBeenCalledWith('sch-a', { amount: -1364 });
+    expect(s.wallosWrites.updateSubscription).not.toHaveBeenCalled();
+  });
+
+  it('overwrite_wallos with a base-currency subscription stores its own price and currency', async () => {
+    const s = setup({ sub: { currency_id: 1, price: '12.50' }, amount: -1499 });
+    const m = s.row('MISMATCH_DETECTED');
+    expect(await overwriteWallos(s.deps, s.userA, m, new Date())).toBe('written');
+    expect(s.wallosWrites.updateSubscription.mock.calls[0]?.[2]).toEqual({ next_payment: '2026-11-03', price: '14.99' });
+    expect(s.repoA.getMatch(m.id)).toMatchObject({
+      lastKnownWallosAmountCents: -1499,
+      lastKnownWallosPriceMinor: -1499,
+      lastKnownWallosCurrency: 'EUR',
+    });
+  });
+});
+
 describe('overwrite_wallos_currency', () => {
   it('requires confirm: true and writes nothing without it', async () => {
     const s = setup();
@@ -197,6 +224,8 @@ describe('overwrite_wallos_currency', () => {
     expect(stored?.status).toBe('LINKED');
     expect(stored?.lastKnownWallosHash).toBe(hashMatchFields(fieldsOf(-1250, 'EUR')));
     expect(stored?.lastKnownActualHash).toBe(hashMatchFields(fieldsOf(-1250, 'EUR')));
+    // #229: the re-read side is now in the base currency.
+    expect(stored).toMatchObject({ lastKnownWallosAmountCents: -1250, lastKnownWallosPriceMinor: -1250, lastKnownWallosCurrency: 'EUR' });
     expect(s.remote.subs[0]).toMatchObject({ notes: 'keep me', category_id: 4 });
     // A raw foreign-currency number never reaches Actual: this action makes no Actual write at all.
     s.noActualWrites();
@@ -383,6 +412,8 @@ describe('overwrite_wallos_currency', () => {
         expect(stored?.status).toBe('MISMATCH_DETECTED');
         expect(stored?.lastKnownActualHash).toBe(H2);
         expect(stored?.lastKnownWallosHash).not.toBe(H1);
+        // #229: the columns describe the re-read side; its amount is the amount inside the synthesized baseline.
+        expect(stored).toMatchObject({ lastKnownWallosAmountCents: -1250, lastKnownWallosPriceMinor: -1250, lastKnownWallosCurrency: 'EUR' });
         for (let i = 0; i < 2; i++) {
           const check = await s.check();
           expect(check.mismatches).toHaveLength(1);

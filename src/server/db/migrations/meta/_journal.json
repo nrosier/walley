@@ -85,6 +85,20 @@
       "when": 1793223225993,
       "tag": "0011_void_pending_verification_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1794829318578,
+      "tag": "0012_currency_rate_margin",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1794829330522,
+      "tag": "0013_currency_drift_check",
+      "breakpoints": true
     }
   ]
 }

@@ -134,6 +134,13 @@ export function DiffModal({ mismatch, baseCurrency, onClose, onIgnoreDiff, onOve
   const wallosRate = source === undefined ? '' : formatRate(source.rate);
   const effective = mismatch !== null && source !== undefined ? effectiveRate(source, mismatch.wallosFields, baseCurrency, locale) : null;
 
+  // The rate margin (#229): only with a foreign-currency Wallos side; the server omits it otherwise.
+  const margin = mismatch?.rateMargin;
+  const actualSingle = mismatch?.actualFields.amount.kind === 'single' ? Math.abs(mismatch.actualFields.amount.cents) : 0;
+  const percent = (n: number): string => `${n.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%`;
+  const marginDifference = margin === undefined ? '' : `${formatMoney(margin.differenceCents, baseCurrency, locale)}${actualSingle > 0 ? ` (${percent((margin.differenceCents / actualSingle) * 100)})` : ''}`;
+  const marginText = margin === undefined ? '' : `${formatMoney(margin.marginCents, baseCurrency, locale)} (${percent(margin.marginPercent)})`;
+
   const overwrite = (
     label: string,
     hint: string,
@@ -299,6 +306,20 @@ export function DiffModal({ mismatch, baseCurrency, onClose, onIgnoreDiff, onOve
               <dd className="font-mono">{effective ?? wallosRate}</dd>
               <dt className="text-muted">{t('source.rateFrom')}</dt>
               <dd>{t(`source.rateSources.${source.rateSource}`)}</dd>
+              {margin === undefined ? null : margin.sourceChanged ? (
+                <>
+                  <dt className="text-muted">{t('margin.label')}</dt>
+                  <dd data-rate-margin="source-changed">{t('margin.sourceChanged')}</dd>
+                </>
+              ) : (
+                <>
+                  <dt className="text-muted">{t('margin.difference')}</dt>
+                  <dd data-rate-margin="difference" className="font-mono">{marginDifference}</dd>
+                  <dt className="text-muted">{t('margin.label')}</dt>
+                  <dd data-rate-margin="margin" className="font-mono">{marginText}</dd>
+                  <dd data-rate-margin="why" className="col-start-2">{t('margin.why')}</dd>
+                </>
+              )}
             </dl>
             <RateField
               prefill={{

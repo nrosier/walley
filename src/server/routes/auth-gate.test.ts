@@ -322,7 +322,7 @@ describe('buildApp wires account and settings routes', () => {
     for (const v of [0, 50]) {
       const res = await put({ tolerancePercent: v });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ tolerancePercent: v });
+      expect(res.json()).toEqual({ tolerancePercent: v, currencyDriftPercent: 2 });
     }
     for (const v of [-0.1, 50.1]) {
       const res = await put({ tolerancePercent: v });
@@ -347,7 +347,7 @@ describe('buildApp wires account and settings routes', () => {
     const get = (s: typeof a) => injectAs(t.app, s, { method: 'GET', url: '/api/settings/matching' });
     expect((await put(b, 15)).statusCode).toBe(200);
     expect((await put(a, 30)).statusCode).toBe(200);
-    expect((await get(a)).json()).toEqual({ tolerancePercent: 30 });
-    expect((await get(b)).json()).toEqual({ tolerancePercent: 15 });
+    expect((await get(a)).json()).toEqual({ tolerancePercent: 30, currencyDriftPercent: 2 });
+    expect((await get(b)).json()).toEqual({ tolerancePercent: 15, currencyDriftPercent: 2 });
   });
 });

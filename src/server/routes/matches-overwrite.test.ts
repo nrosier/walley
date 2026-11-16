@@ -198,6 +198,8 @@ describe('POST /api/matches/:id/resolve overwrite actions', () => {
     expect(stored?.lastKnownWallosHash).toBe(hashMatchFields(fieldsOf('Netflix', -1499)));
     expect(stored?.lastKnownActualHash).toBe(hashMatchFields(fieldsOf('Netflix', -1499)));
     expect(stored?.lastKnownWallosHash).not.toBe('c'.repeat(64));
+    // #229: the baseline columns describe the re-read Wallos side (price 14.99 after the write).
+    expect(stored).toMatchObject({ lastKnownWallosAmountCents: -1499, lastKnownWallosPriceMinor: -1499, lastKnownWallosCurrency: 'EUR' });
     expect(remote.subs[0]).toMatchObject({ notes: 'keep me', category_id: 4 });
   });
 
@@ -219,6 +221,8 @@ describe('POST /api/matches/:id/resolve overwrite actions', () => {
     expect(stored?.status).toBe('LINKED');
     expect(stored?.lastKnownActualHash).toBe(hashMatchFields(fieldsOf('Netflix', -1250)));
     expect(stored?.lastKnownWallosHash).toBe(hashMatchFields(fieldsOf('Netflix', -1250)));
+    // #229: the re-read Wallos side is unchanged by an Actual overwrite.
+    expect(stored).toMatchObject({ lastKnownWallosAmountCents: -1250, lastKnownWallosPriceMinor: -1250, lastKnownWallosCurrency: 'EUR' });
   });
 
   it('refuses range and pattern schedules for both actions and writes nothing', async () => {

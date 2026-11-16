@@ -4,7 +4,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- Currency rate margin (issue 229): a foreign-currency pair now stays in sync when the converted Wallos amount differs from the Actual amount by at most 2 cents or a set percentage (2% by default, 0 to 10% in Settings under "Currency rate margin"; 0 turns it off), as long as the Wallos price in its own currency and its currency have not changed. Rate moves and rounding no longer flag a Mismatch; a real price or currency change still does. Synced rows show "Within rate margin" and the diff modal shows the difference and the margin.
+
+### Changed
+
+- The Matching settings form now validates in the app instead of the browser, so the tolerance control's out-of-range error also appears inline (issue 229).
+- Two database migrations (0012 and 0013) add the baseline columns and the new setting. Existing data is kept and the new columns fill in on the next check (issue 229).
 
 ## [0.6.0] - 2026-11-14
 

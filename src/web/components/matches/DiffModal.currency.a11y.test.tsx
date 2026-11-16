@@ -530,3 +530,82 @@ describe('Change Wallos currency edge cases', () => {
     vi.restoreAllMocks();
   });
 });
+
+// Issue 229: the rate margin and difference in the "Wallos currency and rate" block.
+describe.each(['en', 'nl'] as const)('Rate margin in the source block (%s)', (locale) => {
+  const m = messages[locale];
+
+  /** The foreign pair with a margin payload; `actualCents` and `baseCurrency` replace the EUR fixture values. */
+  function withMargin(
+    margin: { differenceCents: number; marginCents: number; marginPercent: number; sourceChanged: boolean } | null,
+    opts: { actualCents?: number; baseCurrency?: string; source?: SyncWallosSource | null } = {},
+  ): SyncCheckResult {
+    const r = foreign(opts.source === undefined ? USD : opts.source);
+    const actualCents = opts.actualCents ?? 1200;
+    return {
+      ...r,
+      baseCurrency: opts.baseCurrency ?? r.baseCurrency,
+      mismatches: r.mismatches.map((x) => ({
+        ...x,
+        actualFields: { ...x.actualFields, amount: { kind: 'single' as const, cents: actualCents } },
+        ...(margin === null ? {} : { rateMargin: margin }),
+      })),
+    };
+  }
+  const block = (dialog: HTMLElement): string => plain(dialog.querySelector<HTMLElement>('[data-wallos-source]')?.textContent);
+
+  it('shows the difference with its percent and the margin with the setting when the source is unchanged', async () => {
+    const { dialog } = await openDiff(locale, withMargin({ differenceCents: 31, marginCents: 25, marginPercent: 2, sourceChanged: false }));
+    const text = block(dialog);
+    expect(plain(dialog.querySelector('[data-rate-margin="difference"]')?.textContent)).toBe(locale === 'en' ? '€0.31 (2.58%)' : '€ 0,31 (2,58%)');
+    expect(plain(dialog.querySelector('[data-rate-margin="margin"]')?.textContent)).toBe(locale === 'en' ? '€0.25 (2%)' : '€ 0,25 (2%)');
+    expect(text).toContain(m.margin.difference);
+    expect(text).toContain(m.margin.label);
+    expect(text).toContain(m.margin.why);
+    expect(text).not.toContain(m.margin.sourceChanged);
+    expect(dialog.querySelector('[data-rate-margin="difference"]')?.className).toContain('font-mono');
+  });
+
+  it('formats a zero-decimal budget currency (JPY) without fraction digits', async () => {
+    const { dialog } = await openDiff(locale, withMargin({ differenceCents: 31, marginCents: 25, marginPercent: 2.5, sourceChanged: false }, { actualCents: 1200, baseCurrency: 'JPY' }));
+    const diff = plain(dialog.querySelector('[data-rate-margin="difference"]')?.textContent);
+    const marg = plain(dialog.querySelector('[data-rate-margin="margin"]')?.textContent);
+    expect(diff).toMatch(/31(?![.,]\d)/);
+    expect(diff).toContain(locale === 'en' ? '(2.58%)' : '(2,58%)');
+    expect(marg).toMatch(/25(?![.,]\d)/);
+    expect(marg).toContain(locale === 'en' ? '(2.5%)' : '(2,5%)');
+  });
+
+  it('omits the difference percent when the Actual amount is 0', async () => {
+    const { dialog } = await openDiff(locale, withMargin({ differenceCents: 31, marginCents: 25, marginPercent: 2, sourceChanged: false }, { actualCents: 0 }));
+    const diff = plain(dialog.querySelector('[data-rate-margin="difference"]')?.textContent);
+    expect(diff).toBe(locale === 'en' ? '€0.31' : '€ 0,31');
+    expect(diff).not.toContain('%');
+  });
+
+  it('says the margin does not apply when the Wallos price or currency changed', async () => {
+    const { dialog } = await openDiff(locale, withMargin({ differenceCents: 31, marginCents: 25, marginPercent: 2, sourceChanged: true }));
+    const text = block(dialog);
+    expect(text).toContain(m.margin.sourceChanged);
+    expect(text).not.toContain(m.margin.why);
+    expect(dialog.querySelector('[data-rate-margin="difference"]')).toBeNull();
+  });
+
+  it('adds nothing without rateMargin, and nothing for a base-currency pair', async () => {
+    const plainPair = await openDiff(locale, withMargin(null));
+    expect(plainPair.dialog.querySelector('[data-rate-margin]')).toBeNull();
+    expect(block(plainPair.dialog)).not.toContain(m.margin.label);
+    cleanupDashboard();
+    const base = await openDiff(locale, withMargin(null, { source: null }));
+    expect(base.dialog.querySelector('[data-wallos-source]')).toBeNull();
+    expect(base.dialog.querySelector('[data-rate-margin]')).toBeNull();
+  });
+
+  it('keeps the tab order and the description wiring with the margin text', async () => {
+    const { dialog } = await openDiff(locale, withMargin({ differenceCents: 31, marginCents: 25, marginPercent: 2, sourceChanged: false }));
+    expect(names(dialog)).toContain(m.ignoreDiff);
+    expect(document.activeElement).toBe(buttonIn(dialog, m.ignoreDiff));
+    const ids = (dialog.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+    for (const id of ids) expect(document.getElementById(id)).not.toBeNull();
+  });
+});

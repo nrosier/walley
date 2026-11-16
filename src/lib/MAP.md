@@ -1,6 +1,6 @@
 # src/lib
 
-- `amount-match.ts`: `amountWithinTolerance` (integer math on absolute values, larger-of-two base), `rangeMidpointCents` (half away from zero), `DEFAULT_TOLERANCE_PERCENT`.
+- `amount-match.ts`: `amountWithinTolerance` (integer math on absolute values, larger-of-two base), `rangeMidpointCents` (half away from zero), `DEFAULT_TOLERANCE_PERCENT`, plus the #229 rate margin: `rateMarginUnits` (max(2, ceil(percent% of |Actual|)), null at 0%), `withinRateMargin` (signed difference, false at 0%) and the `*_CURRENCY_DRIFT_*` / `RATE_MARGIN_FLOOR_MINOR_UNITS` constants.
 - `amount-match.test.ts`: tests for `amount-match.ts`.
 - `match-badge.ts`: `MATCH_BADGES` and `matchBadge` (status to label and tone), plus `pairBadge({status, orphan})` returning `PairBadgeKind` (`synced` | `mismatch` | `ignored` | `orphaned`); any non-null orphan wins.
 - `match-badge.test.ts`: tests for `match-badge.ts`, including the `pairBadge` truth table.
@@ -17,7 +17,7 @@
 - `billing-cycle.ts`: `billingCycleOf(frequency, interval?)` (#136), the one mapping from an Actual frequency and interval (Wallos items arrive in that form too) to `{ key: monthly|yearly|weekly|custom_days, count }`, null when invalid. Used by `sync-check.ts` for unlinked items; browser-safe, no labels.
 - `billing-cycle.test.ts`: tests for `billing-cycle.ts`.
 - `sync-item-details.ts`: browser-safe types of `GET /api/sync/items/:side/:id` (#155): `WallosItemDetails` and `ActualItemDetails` (`SyncItemDetails` is the union). Types only.
-- `sync-check-types.ts`: browser-safe response types of `POST /api/sync/check` (`SyncCheckResult`, `SyncItem`, `SyncCandidate`, `SyncMismatch`, `SyncUnmappable`, `SyncOrphaned`, `SyncLinked` (with `relinkCandidateIds`, the unlinked missing-side ids that pass the candidate rule for an orphaned row, best name score first), `SyncIgnored`, `SyncWallosSource` (#223, optional display-only `source` on `SyncMismatchFields`), `SyncOrphanKind`, `UnmappableReason`). Types only; re-exported by `src/server/matching/sync-check.ts` for the web app.
+- `sync-check-types.ts`: browser-safe response types of `POST /api/sync/check` (`SyncCheckResult`, `SyncItem`, `SyncCandidate`, `SyncMismatch`, `SyncUnmappable`, `SyncOrphaned`, `SyncLinked` (with `relinkCandidateIds`, the unlinked missing-side ids that pass the candidate rule for an orphaned row, best name score first), `SyncIgnored`, `SyncRateMargin` (#229, optional `rateMargin` on `SyncLinked` and `SyncMismatch`), `SyncWallosSource` (#223, optional display-only `source` on `SyncMismatchFields`), `SyncOrphanKind`, `UnmappableReason`). Types only; re-exported by `src/server/matching/sync-check.ts` for the web app.
 - `match-status.ts`: match status constants and the `isMatchStatus` guard.
 - `password-policy.ts`: `PASSWORD_MIN_CODE_POINTS` (15) and `PASSWORD_MAX_CODE_POINTS` (256), shared by `src/server/auth/passwords.ts` and the account form's `minLength`.
 - `currency-exponent.ts`: `currencyExponent(code)` minor-unit digits per ISO code (0 for IRR, JPY, KRW; 2 otherwise, `DEFAULT_CURRENCY_EXPONENT`), from the @actual-app/api currency list.
