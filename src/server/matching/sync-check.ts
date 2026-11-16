@@ -7,7 +7,7 @@
 import { billingCycleOf } from '../../lib/billing-cycle.js';
 import { actualToWallos, FrequencyMappingError } from '../../lib/frequency-mapper.js';
 import { CurrencyConversionError } from '../../lib/currency-convert.js';
-import { amountWithinTolerance, DEFAULT_TOLERANCE_PERCENT, rangeMidpointCents } from '../../lib/amount-match.js';
+import { amountWithinTolerance, DEFAULT_CURRENCY_DRIFT_PERCENT, DEFAULT_TOLERANCE_PERCENT, rangeMidpointCents } from '../../lib/amount-match.js';
 import type { MatchFieldsInput } from '../../lib/match-fields.js';
 import { NAME_MATCH_THRESHOLD, nameScore } from '../../lib/name-match.js';
 import type {
@@ -20,6 +20,7 @@ import type {
   SyncMismatchFields,
   SyncOrphanKind,
   SyncOrphaned,
+  SyncRateMargin,
   SyncUnmappable,
   SyncWallosSource,
   UnmappableReason,
@@ -40,7 +41,8 @@ import {
 } from '../integrations/wallos/map.js';
 import type { UpstreamCache } from '../cache/upstream-cache.js';
 import { classifySavedPairs } from './engine.js';
-import { detectMismatches } from './mismatch.js';
+import { wallosBaselineOf } from './baseline.js';
+import { detectMismatches, type WallosOwn } from './mismatch.js';
 
 export interface SyncCheckDeps extends Pick<CreateDeps, 'wallos' | 'repoFor' | 'withActual'> {
   /** Clock in ms since the epoch. */
@@ -395,7 +397,9 @@ export async function runSyncCheck(
   options: RunSyncCheckOptions = {},
 ): Promise<SyncCheckResult> {
   const repo = deps.repoFor(userId);
-  const tolerance = repo.getConfig()?.tolerancePercent ?? DEFAULT_TOLERANCE_PERCENT;
+  const config = repo.getConfig();
+  const tolerance = config?.tolerancePercent ?? DEFAULT_TOLERANCE_PERCENT;
+  const currencyDriftPercent = config?.currencyDriftPercent ?? DEFAULT_CURRENCY_DRIFT_PERCENT;
   const rows = repo.listMatches();
   const { wallosSides, actualSides, baseCode } = await readCurrentSides(deps, userId, {
     ...(deps.cache === undefined ? {} : { cache: deps.cache }),
@@ -414,7 +418,12 @@ export async function runSyncCheck(
   const actualFields = fieldInputsOf(actualSides);
   const legacyWallosFields = new Map<string, MatchFieldsInput>();
   for (const [id, s] of wallosSides) if (s.legacyFields) legacyWallosFields.set(id, s.legacyFields);
-  const drift = detectMismatches(rows, wallosFields, actualFields, legacyWallosFields);
+  const wallosOwnById = new Map<string, WallosOwn>();
+  for (const [id, s] of wallosSides) if (s.own !== undefined) wallosOwnById.set(id, s.own);
+  const drift = detectMismatches(rows, wallosFields, actualFields, legacyWallosFields, {
+    wallosOwnById,
+    currencyDriftPercent,
+  });
   const rowByPair = new Map(rows.map((r) => [`${r.wallosId ?? ''}\u0000${r.actualScheduleId ?? ''}`, r]));
   const mismatches: SyncMismatch[] = [];
   for (const r of drift.results) {
@@ -424,8 +433,19 @@ export async function runSyncCheck(
     if (r.nextStatus !== row.status) patch.status = r.nextStatus;
     if (r.wallosHash !== row.lastKnownWallosHash) patch.lastKnownWallosHash = r.wallosHash;
     if (r.actualHash !== row.lastKnownActualHash) patch.lastKnownActualHash = r.actualHash;
-    if (Object.keys(patch).length > 0) repo.updateMatch(row.id, patch);
     const w = wallosSides.get(r.wallosId);
+    if (r.wallosBaselineWrite === 'set') Object.assign(patch, wallosBaselineOf(w));
+    if (Object.keys(patch).length > 0) repo.updateMatch(row.id, patch);
+    if (r.wallosBaselineWrite === 'fill') {
+      const b = wallosBaselineOf(w);
+      if (b.lastKnownWallosAmountCents !== null && b.lastKnownWallosPriceMinor !== null && b.lastKnownWallosCurrency !== null) {
+        repo.fillWallosBaseline(row.id, r.wallosHash, {
+          amountCents: b.lastKnownWallosAmountCents,
+          priceMinor: b.lastKnownWallosPriceMinor,
+          currency: b.lastKnownWallosCurrency,
+        });
+      }
+    }
     const a = actualSides.get(r.actualScheduleId);
     const wf = wallosFields.get(r.wallosId);
     const af = actualFields.get(r.actualScheduleId);
@@ -443,6 +463,7 @@ export async function runSyncCheck(
         actualDrift: r.actualDrift,
         wallosFields: mismatchFieldsOf(wf, w.source),
         actualFields: mismatchFieldsOf(af),
+        ...(r.rateMargin === undefined ? {} : { rateMargin: r.rateMargin }),
       });
     }
   }
@@ -487,9 +508,15 @@ export async function runSyncCheck(
 
   // Read-only display lists. The status is the one just written (or kept) above.
   const nextStatusById = new Map<string, SyncLinked['status']>();
+  const marginById = new Map<string, SyncRateMargin>();
   for (const r of drift.results) {
     const row = rowByPair.get(`${r.wallosId}\u0000${r.actualScheduleId}`);
-    if (row !== undefined) nextStatusById.set(row.id, r.nextStatus);
+    if (row === undefined) continue;
+    nextStatusById.set(row.id, r.nextStatus);
+    if (r.withinMargin && r.rateMargin !== undefined) {
+      const { differenceCents, marginCents, marginPercent } = r.rateMargin;
+      marginById.set(row.id, { differenceCents, marginCents, marginPercent });
+    }
   }
   const classByPair = new Map(classified.pairs.map((p) => [`${p.wallosId}\u0000${p.actualScheduleId}`, p.classification]));
   const linked: SyncLinked[] = [];
@@ -513,6 +540,7 @@ export async function runSyncCheck(
         actualAmountCents: a?.amountCents ?? null,
         isRange: a?.isRange ?? false,
         relinkCandidateIds: relinkCandidateIdsOf(orphan, w, a, unlinkedWallos, unlinkedActual, tolerance),
+        ...(marginById.has(row.id) ? { rateMargin: marginById.get(row.id) } : {}),
       });
     } else {
       const side = row.status === 'IGNORED_WALLOS' ? 'wallos' : 'actual';
