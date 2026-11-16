@@ -83,6 +83,12 @@ export interface Side extends SyncItem {
   readonly anchorDate?: string | null;
   /** Wallos sides of a foreign-currency subscription only (#223): own price, currency and rate. Display only, not hashed. */
   readonly source?: SyncWallosSource;
+  /**
+   * Wallos sides that mapped (foreign or base currency) only (#229): the subscription's own price in
+   * minor units and own currency code. SERVER ONLY: never copied into the payload (toItem and
+   * linked pick fields by name). Feeds wallosBaselineOf.
+   */
+  readonly own?: { readonly priceMinor: number; readonly currencyCode: string };
 }
 
 function mapActual(
@@ -298,6 +304,7 @@ export async function readCurrentSides(
         fields,
         legacyFields: legacyWallosNameFields(fields, raw.name ?? ''),
         ...(wallosSource === null ? {} : { source: wallosSource }),
+        own: { priceMinor: mapped.priceCents, currencyCode: code },
       };
     } catch (error: unknown) {
       if (!(error instanceof WallosMappingError || error instanceof CurrencyConversionError)) throw error;
