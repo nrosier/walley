@@ -564,6 +564,18 @@ describe('#223 Wallos source currency on a mismatch', () => {
     expect(json).not.toContain('ACTUAL-SECRET-PW');
   });
 
+  it('never serialises the server-only own price (#229)', async () => {
+    const t = setup(
+      [sub(1, 'Netflix', '25.00', 2), sub(2, 'Base', '5.00', 1), sub(3, 'Yen', '2000', 3)],
+      [sched('a1', 'Netflix', { num1: -1400, num2: -1600 }), sched('a9', 'Other', -100)],
+    );
+    t.repo.insertMatch({ wallosId: '1', actualScheduleId: 'a1', status: 'LINKED', lastKnownWallosHash: null, lastKnownActualHash: h('Netflix', -1250) });
+    const json = JSON.stringify(await runSyncCheck(t.deps, t.userId));
+    expect(json).toContain('"mismatches":[{');
+    expect(json).not.toContain('"own"');
+    expect(json).not.toContain('priceMinor');
+  });
+
   it('keeps the hash of an unchanged base and foreign pair byte-identical to the pinned value', async () => {
     for (const [price, currency, pinned] of [['12.50', 1, PINNED_HASH_BASE_PAIR], ['25.00', 2, PINNED_HASH_FOREIGN_PAIR]] as const) {
       const t = setup([sub(1, 'Netflix', price, currency)], [sched('a1', 'Netflix', -1250)]);
