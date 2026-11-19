@@ -27,6 +27,11 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 # The pinned base digest ships zlib 1.3.2-r1. Upgrading it fixes CVE-2026-4738
 # (issue 197). Drop this step once the base digest ships zlib >= 1.4-r0.
 RUN apk add --no-cache 'zlib>=1.4-r0'
+# The pinned base digest ships libcrypto3 and libssl3 3.5.9-r0. Upgrading them
+# fixes CVE-2026-107496 (issue 236) and CVE-2026-88822, CVE-2026-88823,
+# CVE-2026-95691 and CVE-2026-95692. Drop this step once the base digest ships
+# libcrypto3 and libssl3 >= 3.5.9-r1.
+RUN apk add --no-cache 'libcrypto3>=3.5.9-r1' 'libssl3>=3.5.9-r1'
 USER node
 ENV HOST=0.0.0.0 PORT=3000 DATABASE_PATH=/data/walley.db DATA_DIR=/data
 EXPOSE 3000
