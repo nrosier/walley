@@ -4,7 +4,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+- The runtime image upgrades Alpine `libcrypto3` and `libssl3` to 3.5.9-r1 or later, which fixes CVE-2026-107496 (issue 236) and CVE-2026-88822, CVE-2026-88823, CVE-2026-95691 and CVE-2026-95692. Walley does not use the affected code path: Node uses its own bundled OpenSSL, and Walley does no CMS or elliptic-curve encryption.
 
 ## [0.7.0] - 2026-11-16
 
