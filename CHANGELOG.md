@@ -4,9 +4,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.7.1] - 2026-11-19
+
 ### Security
 
 - The runtime image upgrades Alpine `libcrypto3` and `libssl3` to 3.5.9-r1 or later, which fixes CVE-2026-107496 (issue 236) and CVE-2026-88822, CVE-2026-88823, CVE-2026-95691 and CVE-2026-95692. Walley does not use the affected code path: Node uses its own bundled OpenSSL, and Walley does no CMS or elliptic-curve encryption.
+- Upgrades @fastify/static to 10.1.12, which fixes CVE-2026-130811. With dotfile denial and directory listing enabled, a denied dot-directory such as `/.git/` could list its contents. Walley does not enable directory listing.
+
+### Changed
+
+- Dependency updates: @fastify/static 10.1.12 and lucide-react 1.76.0 in the runtime; jose 6.2.18, vitest 5.1.1 and typescript-eslint 8.73.0 in development; the dependency-review GitHub Action v5.0.1 in CI. No user-visible change is expected.
 
 ## [0.7.0] - 2026-11-16
 
