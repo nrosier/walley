@@ -36,7 +36,7 @@
     "fastify": "5.12.8",
     "lucide-react": "1.76.0",
     "nodemailer": "10.6.0",
-    "openid-client": "6.9.0",
+    "openid-client": "6.9.1",
     "radix-ui": "1.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1"
