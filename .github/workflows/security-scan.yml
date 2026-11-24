@@ -55,7 +55,7 @@ jobs:
         id: grype
         # Runs even if the SBOM artifact upload failed, as long as Syft wrote the SBOM.
         if: always() && hashFiles('sbom.cyclonedx.json') != ''
-        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        uses: anchore/scan-action@11983a512817154c80a9db660c1a184be7513ed6 # v7.4.3
         with:
           sbom: sbom.cyclonedx.json
           grype-version: v0.121.2
